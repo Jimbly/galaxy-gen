@@ -38,6 +38,7 @@
     "minimist": "^1.2.5",
     "mkdirp": "^0.5.1",
     "request": "^2.88.0",
+    "simplex-noise": "^2.4.0",
     "winston": "^3.2.1",
     "ws": "^7.1.1"
   },

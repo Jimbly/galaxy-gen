@@ -16,3 +16,4 @@ deps['gl-mat4/multiply'] = require('gl-mat4/multiply');
 deps['gl-mat4/perspective'] = require('gl-mat4/perspective');
 deps['gl-mat4/transpose'] = require('gl-mat4/transpose');
 deps['@jimbly/howler/src/howler.core.js'] = require('@jimbly/howler/src/howler.core.js');
+deps['simplex-noise'] = require('simplex-noise');

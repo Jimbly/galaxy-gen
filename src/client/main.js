@@ -58,13 +58,21 @@ export function main() {
   ui.scaleSizes(13 / 32);
   ui.setFontHeight(8);
 
-  let params = {
-    seed: 1,
-  };
-  let gen_params;
 
   const width = 256;
-  const height = 256;
+  const height = width;
+  let params = {
+    width,
+    arms: 7,
+    len_mods: 4,
+    twirl: 2,
+    center: 0.25,
+    seed: 1,
+    arm_soft: 0.3,
+    noise_freq: 5,
+    noise_weight: 1,
+  };
+  let gen_params;
   const tex_total_size = width * height;
   let tex_data = new Uint8Array(tex_total_size * 4);
   let debug_tex;
@@ -72,9 +80,11 @@ export function main() {
   let color = vec4(0,0,0,1);
   function updateTexture(galaxy) {
     let start = Date.now();
+    let { data } = galaxy;
 
     for (let ii = 0; ii < tex_total_size; ++ii) {
-      v3set(color, 0.8, 0.7, 0.3);
+      let d = data[ii];
+      v3set(color, d/255, d/255, d/255);
       for (let jj = 0; jj < 4; ++jj) {
         tex_data[ii * 4 + jj] = clamp(color[jj] * 255, 0, 255);
       }
@@ -103,6 +113,10 @@ export function main() {
     console.log(`Debug texture update in ${(Date.now() - start)}ms`);
   }
 
+  function round4(v) {
+    return round(v * 1000)/1000;
+  }
+
   function test(dt) {
 
     gl.clearColor(0, 0.72, 1, 1);
@@ -125,6 +139,41 @@ export function main() {
     ui.print(null, x, y, z, `Seed: ${params.seed}`);
     y += ui.font_height;
     params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Arms: ${params.arms}`);
+    y += ui.font_height;
+    params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Arm Length Mods: ${params.len_mods}`);
+    y += ui.font_height;
+    params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Twirl: ${params.twirl}`);
+    y += ui.font_height;
+    params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Center: ${params.center}`);
+    y += ui.font_height;
+    params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 2 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Arm Softness: ${params.arm_soft}`);
+    y += ui.font_height;
+    params.arm_soft = round4(ui.slider(params.arm_soft, { x, y, z, min: -1, max: 1 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Noise Freq: ${params.noise_freq}`);
+    y += ui.font_height;
+    params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Noise Weight: ${params.noise_weight}`);
+    y += ui.font_height;
+    params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 1 }));
     y += button_spacing;
 
     let w = min(game_width, game_height);
