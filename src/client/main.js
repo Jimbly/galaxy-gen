@@ -5,7 +5,10 @@ glov_local_storage.storage_prefix = 'glovjs-playground'; // Before requiring any
 const engine = require('./glov/engine.js');
 const { genGalaxy } = require('./galaxy.js');
 const { min, round } = Math;
+const input = require('./glov/input.js');
+const { KEYS } = input;
 const net = require('./glov/net.js');
+const shaders = require('./glov/shaders.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
@@ -58,19 +61,30 @@ export function main() {
   ui.scaleSizes(13 / 32);
   ui.setFontHeight(8);
 
+  let tex_palette = textures.load({
+    url: 'palette/pal1.png',
+    filter_min: gl.NEAREST,
+    filter_mag: gl.NEAREST,
+    wrap_s: gl.CLAMP_TO_EDGE,
+    wrap_t: gl.CLAMP_TO_EDGE,
+  });
+
+  let shader_galaxy = shaders.create('shaders/galaxy.fp');
+
 
   const width = 256;
   const height = width;
   let params = {
     width,
+    dither: 0.5,
     arms: 7,
     len_mods: 4,
-    twirl: 2,
-    center: 0.25,
+    twirl: 4,
+    center: 0.09,
     seed: 1,
-    arm_soft: 0.3,
     noise_freq: 5,
-    noise_weight: 1,
+    noise_weight: 0.22,
+    lone_clusters: 200,
   };
   let gen_params;
   const tex_total_size = width * height;
@@ -107,7 +121,7 @@ export function main() {
     }
     if (!debug_sprite) {
       debug_sprite = createSprite({
-        texs: [debug_tex],
+        texs: [debug_tex, tex_palette],
       });
     }
     console.log(`Debug texture update in ${(Date.now() - start)}ms`);
@@ -116,6 +130,8 @@ export function main() {
   function round4(v) {
     return round(v * 1000)/1000;
   }
+
+  let view = 1;
 
   function test(dt) {
 
@@ -131,10 +147,18 @@ export function main() {
       let galaxy = genGalaxy(params);
       updateTexture(galaxy);
     }
-    // if (ui.buttonText({ x, y, text: 'Test', w: ui.button_width * 0.5 }) || !maze) {
-    //   mazeGen();
+
+    if (ui.buttonText({ x, y, text: `View: ${view}`, w: ui.button_width * 0.5 }) || input.keyDownEdge(KEYS.V)) {
+      view = (view + 1) % 2;
+    }
+    y += button_spacing;
+
+    // if (view === 1) {
+    //   ui.print(null, x, y, z, `Dither: ${params.dither}`);
+    //   y += ui.font_height;
+    //   params.dither = round4(ui.slider(params.dither, { x, y, z, min: 0, max: 1 }));
+    //   y += button_spacing;
     // }
-    // y += button_spacing;
 
     ui.print(null, x, y, z, `Seed: ${params.seed}`);
     y += ui.font_height;
@@ -158,12 +182,7 @@ export function main() {
 
     ui.print(null, x, y, z, `Center: ${params.center}`);
     y += ui.font_height;
-    params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 2 }));
-    y += button_spacing;
-
-    ui.print(null, x, y, z, `Arm Softness: ${params.arm_soft}`);
-    y += ui.font_height;
-    params.arm_soft = round4(ui.slider(params.arm_soft, { x, y, z, min: -1, max: 1 }));
+    params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
     y += button_spacing;
 
     ui.print(null, x, y, z, `Noise Freq: ${params.noise_freq}`);
@@ -173,18 +192,28 @@ export function main() {
 
     ui.print(null, x, y, z, `Noise Weight: ${params.noise_weight}`);
     y += ui.font_height;
-    params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 1 }));
+    params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
+    y += button_spacing;
+
+    ui.print(null, x, y, z, `Lone Clusters: ${params.lone_clusters}`);
+    y += ui.font_height;
+    params.lone_clusters = round(ui.slider(params.lone_clusters, { x, y, z, min: 0, max: 1000 }));
     y += button_spacing;
 
     let w = min(game_width, game_height);
     x = game_width - w;
     y = 0;
-    debug_sprite.draw({
+    let draw_param = {
       x, y, w, h: w,
       z: Z.UI - 10,
-      //uvs: debug_uvs,
-      //shader: shader_hex,
-    });
+    };
+    if (view === 1) {
+      draw_param.shader = shader_galaxy;
+    }
+    draw_param.shader_params = {
+      params: [width, params.dither],
+    };
+    debug_sprite.draw(draw_param);
   }
 
   function testInit(dt) {

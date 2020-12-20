@@ -1,1 +1,2 @@
-Palettize the results, want to be able to adjust the points at which the colors are applied, colors come from image (or just a 256x1 image?)
+Try completely different approach:
+  Generate (thousands of) clusters of stars and draw them as additive glowing dots
