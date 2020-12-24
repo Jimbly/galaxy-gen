@@ -1,2 +1,29 @@
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots
+
+Scale
+  seed 1 = sum = 1.9M
+  @ 100B stars, that's 52.6K per density value = 13.4M for a single core pixel
+  @ 1B = 134K
+  @ 100B, 512res = 3.3M
+  @ 100B, 1024res = 838K
+
+  How many layers of zoom to get ~50 stars on-screen at 100% density?
+    if linear, @100B, and dividing by 4 each time, 15 zoom levels  (4^15 = 1B)
+      that's looking at 3LY across, that's good
+      zoom is 2^15 = 32K which means even a 1K texel gets subdivided into 32*32 screens at max zoom
+
+  Milky Way is 105Kly in diameter
+  1 LY = 63K au
+
+  Elite Dangerous:
+    galactic core: 3LY (parsec) cubed holds 10 million stars
+    the bubble: 3-5 LY betweens closest stars? => 1 star per parsec!
+    the fringe often 50LY between stars, more than 100LY in dark areas
+  So, what if our density value is instead a "distance between stars"
+
+Plan:
+  galaxy top level is 128Kly across
+  layer is a 256 density map plus points of interest
+  new density map always a 4x reduction?
+  output is a texture and a density map and we just blend them

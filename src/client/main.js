@@ -3,8 +3,8 @@ const glov_local_storage = require('./glov/local_storage.js');
 glov_local_storage.storage_prefix = 'glovjs-playground'; // Before requiring anything else that might load from this
 
 const engine = require('./glov/engine.js');
-const { genGalaxy } = require('./galaxy.js');
-const { min, round } = Math;
+const { createGalaxy } = require('./galaxy.js');
+const { abs, max, min, pow, round } = Math;
 const input = require('./glov/input.js');
 const { KEYS } = input;
 const net = require('./glov/net.js');
@@ -13,7 +13,7 @@ const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
 const { clamp, clone, deepEqual } = require('../common/util.js');
-const { vec4, v3set } = require('./glov/vmath.js');
+const { vec2 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 
 window.Z = window.Z || {};
@@ -53,6 +53,7 @@ export function main() {
     font,
     viewport_postprocess: false,
     antialias: false,
+    do_borders: false,
   })) {
     return;
   }
@@ -72,10 +73,9 @@ export function main() {
   let shader_galaxy = shaders.create('shaders/galaxy.fp');
 
 
-  const width = 256;
-  const height = width;
+  const buf_dim = 256;
   let params = {
-    width,
+    buf_dim,
     dither: 0.5,
     arms: 7,
     len_mods: 4,
@@ -87,44 +87,15 @@ export function main() {
     lone_clusters: 200,
   };
   let gen_params;
-  const tex_total_size = width * height;
-  let tex_data = new Uint8Array(tex_total_size * 4);
-  let debug_tex;
   let debug_sprite;
-  let color = vec4(0,0,0,1);
-  function updateTexture(galaxy) {
-    let start = Date.now();
-    let { data } = galaxy;
-
-    for (let ii = 0; ii < tex_total_size; ++ii) {
-      let d = data[ii];
-      v3set(color, d/255, d/255, d/255);
-      for (let jj = 0; jj < 4; ++jj) {
-        tex_data[ii * 4 + jj] = clamp(color[jj] * 255, 0, 255);
-      }
-    }
-
-    if (!debug_tex) {
-      debug_tex = textures.load({
-        name: 'proc_gen_debug',
-        format: textures.format.RGBA8,
-        width,
-        height,
-        data: tex_data,
-        filter_min: gl.NEAREST,
-        filter_mag: gl.NEAREST,
-        wrap_s: gl.CLAMP_TO_EDGE,
-        wrap_t: gl.CLAMP_TO_EDGE,
-      });
-    } else {
-      debug_tex.updateData(width, height, tex_data);
-    }
+  function updateTexture(tex) {
     if (!debug_sprite) {
       debug_sprite = createSprite({
-        texs: [debug_tex, tex_palette],
+        texs: [tex, tex_palette],
       });
+    } else {
+      debug_sprite.texs[0] = tex;
     }
-    console.log(`Debug texture update in ${(Date.now() - start)}ms`);
   }
 
   function round4(v) {
@@ -132,20 +103,41 @@ export function main() {
   }
 
   let view = 1;
-
+  let zoom_level = 0;
+  let zoom_offs = vec2(0,0);
+  let galaxy;
+  let cell;
+  let style = font.styleColored(null, 0x000000ff);
+  let mouse_pos = vec2();
+  function doZoom(x, y, delta) {
+    let cur_zoom = pow(2, zoom_level);
+    let new_zoom_level = max(0, zoom_level + delta);
+    let new_zoom = pow(2, new_zoom_level);
+    // Calc actual coords at [x,y]
+    let point_x = zoom_offs[0] + x / cur_zoom;
+    let point_y = zoom_offs[1] + y / cur_zoom;
+    // Calc new x0 at new zoom relative to these coords
+    zoom_offs[0] = max(0, point_x - x / new_zoom);
+    zoom_offs[1] = max(0, point_y - y / new_zoom);
+    zoom_level = new_zoom_level;
+  }
   function test(dt) {
 
-    gl.clearColor(0, 0.72, 1, 1);
+    gl.clearColor(0, 0, 0, 1);
     let z = Z.UI;
 
     let x = ui.button_height;
     let button_spacing = ui.button_height + 6;
-    let y = ui.button_height;
+    let y = 4;
 
     if (!deepEqual(params, gen_params)) {
       gen_params = clone(params);
-      let galaxy = genGalaxy(params);
-      updateTexture(galaxy);
+      if (galaxy) {
+        galaxy.dispose();
+      }
+      galaxy = createGalaxy(params);
+      cell = galaxy.getCell(0, 0);
+      updateTexture(cell.tex);
     }
 
     if (ui.buttonText({ x, y, text: `View: ${view}`, w: ui.button_width * 0.5 }) || input.keyDownEdge(KEYS.V)) {
@@ -154,64 +146,126 @@ export function main() {
     y += button_spacing;
 
     // if (view === 1) {
-    //   ui.print(null, x, y, z, `Dither: ${params.dither}`);
+    //   ui.print(style, x, y, z, `Dither: ${params.dither}`);
     //   y += ui.font_height;
     //   params.dither = round4(ui.slider(params.dither, { x, y, z, min: 0, max: 1 }));
     //   y += button_spacing;
     // }
 
-    ui.print(null, x, y, z, `Seed: ${params.seed}`);
+    ui.print(style, x, y, z, `Seed: ${params.seed}`);
     y += ui.font_height;
     params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Arms: ${params.arms}`);
+    ui.print(style, x, y, z, `Arms: ${params.arms}`);
     y += ui.font_height;
     params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Arm Length Mods: ${params.len_mods}`);
+    ui.print(style, x, y, z, `Arm Length Mods: ${params.len_mods}`);
     y += ui.font_height;
     params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Twirl: ${params.twirl}`);
+    ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
     y += ui.font_height;
     params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Center: ${params.center}`);
+    ui.print(style, x, y, z, `Center: ${params.center}`);
     y += ui.font_height;
     params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Noise Freq: ${params.noise_freq}`);
+    ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
     y += ui.font_height;
     params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Noise Weight: ${params.noise_weight}`);
+    ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
     y += ui.font_height;
     params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
     y += button_spacing;
 
-    ui.print(null, x, y, z, `Lone Clusters: ${params.lone_clusters}`);
+    ui.print(style, x, y, z, `Lone Clusters: ${params.lone_clusters}`);
     y += ui.font_height;
     params.lone_clusters = round(ui.slider(params.lone_clusters, { x, y, z, min: 0, max: 1000 }));
     y += button_spacing;
 
+    ui.panel({
+      x: x - 4, y: 0, w: ui.button_width + 8, h: y, z: z - 1,
+    });
+
+
     let w = min(game_width, game_height);
+    x = game_width - w + 4;
+    y = w - ui.button_height;
+
+    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '-' })) {
+      doZoom(0.5, 0.5, -1);
+    }
+    x += ui.button_height + 2;
+    let new_zoom = ui.slider(zoom_level, { x, y, z, min: 0, max: 16 });
+    if (abs(new_zoom - zoom_level) > 0.000001) {
+      doZoom(0.5, 0.5, new_zoom - zoom_level);
+    }
+    x += ui.button_width + 2;
+    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '+' })) {
+      doZoom(0.5, 0.5, 1);
+    }
+    x += ui.button_height + 2;
+    let zoom = pow(2, zoom_level);
+    ui.print(null, x, y + (ui.button_height - ui.font_height)/2, z,
+      `${zoom.toFixed(0)}X`);
+
     x = game_width - w;
-    y = 0;
+    y -= ui.font_height - 2;
+    ui.print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
+
+    let map_x0 = game_width - w;
+    let map_y0 = 0;
+    input.mousePos(mouse_pos);
+    mouse_pos[0] = zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
+    mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
+    y -= ui.font_height - 2;
+    ui.print(null, x+2, y, z, `Mouse: ${round4(mouse_pos[0])},${round4(mouse_pos[1])}`);
+
+    x = map_x0;
+    y = map_y0;
+
+    let mouse_wheel = input.mouseWheel();
+    if (mouse_wheel) {
+      input.mousePos(mouse_pos);
+      if (zoom_level === 0 && mouse_wheel < 0) {
+        // recenter
+        zoom_offs[0] = zoom_offs[1] = 0;
+      } else {
+        doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
+        zoom = pow(2, zoom_level);
+      }
+    }
+    let drag = input.drag();
+    if (drag) {
+      let { delta } = drag;
+      zoom_offs[0] -= delta[0] / w / zoom;
+      zoom_offs[1] -= delta[1] / w / zoom;
+    }
+    zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
+    zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
+
+
     let draw_param = {
-      x, y, w, h: w,
+      x: x + (cell.x0 - zoom_offs[0]) * zoom * w,
+      y: y + (cell.y0 - zoom_offs[1]) * zoom * w,
+      w: w * zoom,
+      h: w * zoom,
       z: Z.UI - 10,
     };
     if (view === 1) {
       draw_param.shader = shader_galaxy;
     }
     draw_param.shader_params = {
-      params: [width, params.dither],
+      params: [buf_dim, params.dither],
     };
     debug_sprite.draw(draw_param);
   }
