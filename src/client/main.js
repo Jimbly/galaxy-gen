@@ -86,7 +86,7 @@ export function main() {
     seed: 1,
     noise_freq: 5,
     noise_weight: 0.22,
-    lone_clusters: 200,
+    poi_count: 200,
     width_ly: 128*1024,
   };
   let gen_params;
@@ -216,9 +216,9 @@ export function main() {
     params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
     y += button_spacing;
 
-    ui.print(style, x, y, z, `Lone Clusters: ${params.lone_clusters}`);
+    ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
     y += ui.font_height;
-    params.lone_clusters = round(ui.slider(params.lone_clusters, { x, y, z, min: 0, max: 1000 }));
+    params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
     y += button_spacing;
 
     ui.panel({

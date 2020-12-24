@@ -6,9 +6,21 @@ const SimplexNoise = require('simplex-noise');
 const textures = require('./glov/textures.js');
 const { clamp, lerp, easeOut, easeInOut } = require('../common/util.js');
 
+const POI_TYPE_OFFS = [
+  [1, 0,0,
+   0.5, 0,-1, 0.5, -1,0, 0.5, 0,1, 0.5, 1,0], // 4 neighbors
+  [1, 0,0,
+   0.5, 0,-1, 0.5, 0,-2, 0.5, -1,0, 0.5, -2,0, 0.5, 1,0, 0.5, 2,0, 0.5, 0,1, 0.5, 0,2, // plus pattern
+   0.2, -1,-1, 0.2, 1,-1, 0.2, -1,1, 0.2, 1,1], // diagonals
+  [1, 0,0,
+   0.2, 0,-1, 0.2, 0,-2, 0.2, -1,0, 0.2, -2,0, 0.2, 1,0, 0.2, 2,0, 0.2, 0,1, 0.2, 0,2,
+   0.2, -1,-1, 0.2, 1,-1, 0.2, -1,1, 0.2, 1,1],
+];
+
+
 let noise = new Array(1);
 function genGalaxy(params) {
-  let { seed, arms, buf_dim, twirl, center, lone_clusters, len_mods, noise_freq, noise_weight } = params;
+  let { seed, arms, buf_dim, twirl, center, poi_count, len_mods, noise_freq, noise_weight } = params;
   for (let ii = 0; ii < noise.length; ++ii) {
     noise[ii] = new SimplexNoise(`${seed}n${ii}`);
   }
@@ -79,27 +91,19 @@ function genGalaxy(params) {
     }
   }
 
-  const LONE_BORDER = 5;
-  let OFFS = [
-    [0.5, -buf_dim, 0.5, -1, 0.5, 1, 0.5, buf_dim], // 4 neighbors
-    [0.5, -buf_dim, 0.5, -buf_dim*2, 0.5, -1, 0.5, -2, 0.5, 1, 0.5, 2, 0.5, buf_dim, 0.5, buf_dim * 2, // plus pattern
-     0.2, -buf_dim-1, 0.2, -buf_dim+1, 0.2, buf_dim-1, 0.2, buf_dim+1], // diagonals
-    [0.2, -buf_dim, 0.2, -buf_dim*2, 0.2, -1, 0.2, -2, 0.2, 1, 0.2, 2, 0.2, buf_dim, 0.2, buf_dim * 2,
-     0.2, -buf_dim-1, 0.2, -buf_dim+1, 0.2, buf_dim-1, 0.2, buf_dim+1],
-  ];
-  for (let ii = 0; ii < lone_clusters; ++ii) {
-    let x = LONE_BORDER + rand.range(buf_dim - LONE_BORDER * 2);
-    let y = LONE_BORDER + rand.range(buf_dim - LONE_BORDER * 2);
-    let idx = x + y * buf_dim;
+  const POI_BORDER = 5;
+  let pois = [];
+  for (let ii = 0; ii < poi_count; ++ii) {
+    let x = POI_BORDER + rand.range(buf_dim - POI_BORDER * 2);
+    let y = POI_BORDER + rand.range(buf_dim - POI_BORDER * 2);
     let v = rand.floatBetween(0.2, 1);
-    data[idx] = max(data[idx], v);
-    // Add a glow - should only be used for high level rendering, not for density?
-    let offs = OFFS[rand.range(OFFS.length)];
-    for (let jj = 0; jj < offs.length; jj+=2) {
-      let v2 = v * offs[jj];
-      let d = offs[jj+1];
-      data[idx + d] = max(data[idx + d], v2);
-    }
+    let type = rand.range(POI_TYPE_OFFS.length);
+    pois.push({
+      x: (x + 0.5) / buf_dim,
+      y: (y + 0.5) / buf_dim, type, v,
+    });
+    // Also add a little density around the POI
+    data[x + y * buf_dim] = max(data[x + y * buf_dim], v * 0.5);
   }
 
   let sum = 0;
@@ -110,6 +114,7 @@ function genGalaxy(params) {
   return {
     data,
     sum,
+    pois,
     // relative position and size to entire galaxy
     x0: 0, y0: 0, w: 1, h: 1,
   };
@@ -183,11 +188,19 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     let py = floor(cy / LAYER_STEP);
     let pres = pow(LAYER_STEP, layer_idx - 1);
     let parent = this.getCell(layer_idx - 1, py * pres + px);
-    let data = expandLinear16X(parent.data, buf_dim, cx - px * LAYER_STEP, cy - py * LAYER_STEP);
+    let qx = cx - px * LAYER_STEP;
+    let qy = cy - py * LAYER_STEP;
+    let data = expandLinear16X(parent.data, buf_dim, qx, qy);
+    let x0 = cx / layer_res;
+    let y0 = cy / layer_res;
+    let w = 1/layer_res;
+    // TODO: This probably filters pois into two different children due to floating point consistency?
+    let pois = parent.pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
     cell = {
       data,
+      pois,
       // relative position and size to entire galaxy
-      x0: cx / layer_res, y0: cy / layer_res, w: 1/layer_res, h: 1/layer_res,
+      x0, y0, w, h: w,
     };
   }
 
@@ -201,7 +214,7 @@ Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
   if (cell.tex) {
     return cell;
   }
-  let { data } = cell;
+  let { data, pois, x0, y0, w } = cell;
 
   for (let ii = 0; ii < tex_total_size; ++ii) {
     let d = data[ii];
@@ -209,6 +222,29 @@ Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
       tex_data[ii * 4 + jj] = clamp(floor(d * 255), 0, 255);
     }
     tex_data[ii * 4 + 3] = 255;
+  }
+
+  for (let ii = 0; ii < pois.length; ++ii) {
+    let poi = pois[ii];
+    let { x, y, type, v } = poi;
+    x = floor((x - x0) / w * buf_dim);
+    y = floor((y - y0) / w * buf_dim);
+    let idx = (x + y * buf_dim) * 4;
+    let offs = POI_TYPE_OFFS[type];
+    for (let jj = 0; jj < offs.length; jj+=3) {
+      let v2 = clamp(floor(v * offs[jj] * 255), 0, 255);
+      let dx = offs[jj+1];
+      let dy = offs[jj+2];
+      let xx = x + dx;
+      let yy = y + dy;
+      if (xx < 0 || xx >= buf_dim || yy < 0 || yy >= buf_dim) {
+        continue;
+      }
+      let d = (dx + dy * buf_dim) * 4;
+      for (let kk = 0; kk < 3; ++kk) {
+        tex_data[idx + d + kk] = max(tex_data[idx + d + kk], v2);
+      }
+    }
   }
 
   if (tex_pool.length) {
