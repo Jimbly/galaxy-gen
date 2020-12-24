@@ -2,9 +2,11 @@
 const glov_local_storage = require('./glov/local_storage.js');
 glov_local_storage.storage_prefix = 'glovjs-playground'; // Before requiring anything else that might load from this
 
+const assert = require('assert');
+const camera2d = require('./glov/camera2d.js');
 const engine = require('./glov/engine.js');
-const { createGalaxy } = require('./galaxy.js');
-const { abs, max, min, pow, round } = Math;
+const { createGalaxy, LAYER_STEP } = require('./galaxy.js');
+const { abs, floor, max, min, pow, round } = Math;
 const input = require('./glov/input.js');
 const { KEYS } = input;
 const net = require('./glov/net.js');
@@ -13,7 +15,7 @@ const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
 const { clamp, clone, deepEqual } = require('../common/util.js');
-const { vec2 } = require('./glov/vmath.js');
+const { unit_vec, vec2, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 
 window.Z = window.Z || {};
@@ -85,16 +87,17 @@ export function main() {
     noise_freq: 5,
     noise_weight: 0.22,
     lone_clusters: 200,
+    width_ly: 128*1024,
   };
   let gen_params;
   let debug_sprite;
-  function updateTexture(tex) {
+  let galaxy;
+  function allocSprite() {
     if (!debug_sprite) {
+      let tex = galaxy.getCellTextured(0, 0).tex;
       debug_sprite = createSprite({
         texs: [tex, tex_palette],
       });
-    } else {
-      debug_sprite.texs[0] = tex;
     }
   }
 
@@ -102,24 +105,51 @@ export function main() {
     return round(v * 1000)/1000;
   }
 
+  function format(v) {
+    assert(v >= 0);
+    if (!v) {
+      return '0';
+    }
+    if (v > 900) {
+      return `${(v/1000).toFixed(1)}K`;
+    }
+    if (v > 9) {
+      return `${round(v)}`;
+    }
+    let precis = 1;
+    let check = 0.2;
+    while (true) {
+      if (v > check) {
+        return v.toFixed(precis);
+      }
+      check *= 0.1;
+      precis++;
+    }
+  }
+
   let view = 1;
   let zoom_level = 0;
   let zoom_offs = vec2(0,0);
-  let galaxy;
-  let cell;
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
+  let fade_color = vec4(1,1,1,1);
+  const MAX_ZOOM = 16;
   function doZoom(x, y, delta) {
     let cur_zoom = pow(2, zoom_level);
-    let new_zoom_level = max(0, zoom_level + delta);
+    let new_zoom_level = max(0, min(zoom_level + delta, MAX_ZOOM));
     let new_zoom = pow(2, new_zoom_level);
     // Calc actual coords at [x,y]
     let point_x = zoom_offs[0] + x / cur_zoom;
     let point_y = zoom_offs[1] + y / cur_zoom;
     // Calc new x0 at new zoom relative to these coords
-    zoom_offs[0] = max(0, point_x - x / new_zoom);
-    zoom_offs[1] = max(0, point_y - y / new_zoom);
+    zoom_offs[0] = point_x - x / new_zoom;
+    zoom_offs[1] = point_y - y / new_zoom;
     zoom_level = new_zoom_level;
+
+    if (zoom_level === 0) {
+      // recenter
+      zoom_offs[0] = zoom_offs[1] = 0;
+    }
   }
   function test(dt) {
 
@@ -136,8 +166,7 @@ export function main() {
         galaxy.dispose();
       }
       galaxy = createGalaxy(params);
-      cell = galaxy.getCell(0, 0);
-      updateTexture(cell.tex);
+      allocSprite();
     }
 
     if (ui.buttonText({ x, y, text: `View: ${view}`, w: ui.button_width * 0.5 }) || input.keyDownEdge(KEYS.V)) {
@@ -205,7 +234,7 @@ export function main() {
       doZoom(0.5, 0.5, -1);
     }
     x += ui.button_height + 2;
-    let new_zoom = ui.slider(zoom_level, { x, y, z, min: 0, max: 16 });
+    let new_zoom = ui.slider(zoom_level, { x, y, z, min: 0, max: MAX_ZOOM });
     if (abs(new_zoom - zoom_level) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - zoom_level);
     }
@@ -219,16 +248,26 @@ export function main() {
       `${zoom.toFixed(0)}X`);
 
     x = game_width - w;
-    y -= ui.font_height - 2;
-    ui.print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
+    // y -= ui.font_height;
+    // ui.print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
 
     let map_x0 = game_width - w;
     let map_y0 = 0;
     input.mousePos(mouse_pos);
     mouse_pos[0] = zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
     mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
-    y -= ui.font_height - 2;
+    y -= ui.font_height;
     ui.print(null, x+2, y, z, `Mouse: ${round4(mouse_pos[0])},${round4(mouse_pos[1])}`);
+
+    let legend_scale = 0.25;
+    let legend_x0 = game_width - w*legend_scale - 2;
+    let legend_x1 = game_width - 2;
+    y = w;
+    ui.drawLine(legend_x0, y - 4, legend_x1, y - 4, z, 1, 1, unit_vec);
+    ui.drawLine(legend_x0, y - 6, legend_x0, y - 2, z, 1, 1, unit_vec);
+    ui.drawLine(legend_x1, y - 6, legend_x1, y - 2, z, 1, 1, unit_vec);
+    let ly = legend_scale * params.width_ly / zoom;
+    ui.print(null, legend_x0, y - 6 - ui.font_height, z, `${format(ly)}ly`);
 
     x = map_x0;
     y = map_y0;
@@ -236,13 +275,8 @@ export function main() {
     let mouse_wheel = input.mouseWheel();
     if (mouse_wheel) {
       input.mousePos(mouse_pos);
-      if (zoom_level === 0 && mouse_wheel < 0) {
-        // recenter
-        zoom_offs[0] = zoom_offs[1] = 0;
-      } else {
-        doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
-        zoom = pow(2, zoom_level);
-      }
+      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
+      zoom = pow(2, zoom_level);
     }
     let drag = input.drag();
     if (drag) {
@@ -253,21 +287,61 @@ export function main() {
     zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
     zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
 
-
-    let draw_param = {
-      x: x + (cell.x0 - zoom_offs[0]) * zoom * w,
-      y: y + (cell.y0 - zoom_offs[1]) * zoom * w,
-      w: w * zoom,
-      h: w * zoom,
-      z: Z.UI - 10,
-    };
-    if (view === 1) {
-      draw_param.shader = shader_galaxy;
+    let draw_count = 0;
+    function drawCell(cell, alpha, zv) {
+      ++draw_count;
+      fade_color[3] = alpha;
+      let draw_param = {
+        x: x + (cell.x0 - zoom_offs[0]) * zoom * w,
+        y: y + (cell.y0 - zoom_offs[1]) * zoom * w,
+        w: w * zoom * cell.w,
+        h: w * zoom * cell.h,
+        z: zv,
+        color: fade_color,
+      };
+      if (view === 1) {
+        draw_param.shader = shader_galaxy;
+      }
+      draw_param.shader_params = {
+        params: [buf_dim, params.dither],
+      };
+      if (!cell.texs) {
+        cell.texs = [cell.tex, tex_palette];
+      }
+      debug_sprite.texs = cell.texs;
+      debug_sprite.draw(draw_param);
     }
-    draw_param.shader_params = {
-      params: [buf_dim, params.dither],
-    };
-    debug_sprite.draw(draw_param);
+    function drawLevel(level, alpha, zv) {
+      let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
+      let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
+      let gal_y0 = (camera2d.y0Real() - map_y0) / w / zoom + zoom_offs[1];
+      let gal_y1 = (camera2d.y1Real() - map_y0) / w / zoom + zoom_offs[1];
+      let layer_res = pow(LAYER_STEP, level);
+      let layer_x0 = max(0, floor(gal_x0 * layer_res));
+      let layer_x1 = min(layer_res - 1, floor(gal_x1 * layer_res));
+      let layer_y0 = max(0, floor(gal_y0 * layer_res));
+      let layer_y1 = min(layer_res - 1, floor(gal_y1 * layer_res));
+      for (let yy = layer_y0; yy <= layer_y1; ++yy) {
+        for (let xx = layer_x0; xx <= layer_x1; ++xx) {
+          let cell = galaxy.getCellTextured(level, yy * layer_res + xx);
+          drawCell(cell, alpha, zv);
+        }
+      }
+    }
+    let base_z = Z.UI - 10;
+    let draw_level = max(0, (zoom_level - 1) / (LAYER_STEP/2));
+    let level0 = floor(draw_level);
+    let extra = (draw_level - level0) * 10; // fade for 10% of range
+    if (extra >= 1) {
+      level0++;
+      draw_level = level0;
+    }
+    drawLevel(level0, 1, base_z);
+    if (draw_level > level0) {
+      drawLevel(level0 + 1, extra, base_z + 1);
+    }
+
+    ui.print(null, legend_x0, w - 6 - ui.font_height*2, z, `${draw_count} cells drawn`);
   }
 
   function testInit(dt) {

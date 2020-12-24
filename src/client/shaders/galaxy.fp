@@ -19,5 +19,5 @@ void main(void) {
     palettized = texture2D(tex1, vec2(tex.r + 0.0625, 0.5));
   }
 
-  gl_FragColor = vec4(palettized.rgb, 1.0);
+  gl_FragColor = vec4(palettized.rgb, interp_color.a);
 }

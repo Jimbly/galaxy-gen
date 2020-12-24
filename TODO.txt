@@ -1,3 +1,6 @@
+Add points of interest during rendering phase, not into density map
+Do next layer via cubic interpolation including neighbors instead
+
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots
 

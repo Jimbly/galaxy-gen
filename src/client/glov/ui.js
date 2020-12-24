@@ -978,7 +978,7 @@ export function slider(value, param) {
 
   slider_dragging = false;
 
-  let shrinkdiff = handle_shrink - vshrink;
+  let shrinkdiff = handle_shrink - vshrink + 0.4;
   drawHBox({
     x: param.x + param.h * shrinkdiff/2,
     y: param.y + param.h * (1 - vshrink)/2,

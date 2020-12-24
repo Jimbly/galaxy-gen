@@ -1,4 +1,6 @@
-const { abs, atan2, cos, floor, max, min, sin, sqrt, PI } = Math;
+export const LAYER_STEP = 4;
+const assert = require('assert');
+const { abs, atan2, floor, max, min, sqrt, pow, PI } = Math;
 const { randCreate } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
 const textures = require('./glov/textures.js');
@@ -16,7 +18,7 @@ function genGalaxy(params) {
     arm_len[ii] = rand.random();
   }
 
-  let data = new Uint8Array(buf_dim * buf_dim);
+  let data = new Float32Array(buf_dim * buf_dim);
   for (let idx = 0, yy = 0; yy < buf_dim; ++yy) {
     let y = yy / buf_dim * 2 - 1; // -1 ... 1
     for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
@@ -73,7 +75,7 @@ function genGalaxy(params) {
       v += noise_v * noise_weight;
       // noise_v = max(0, 1 - (1 - noise_v) * d * noise_weight);
       // v *= noise_v;
-      data[idx] = clamp(v, 0, 1) * 255;
+      data[idx] = clamp(v, 0, 1);
     }
   }
 
@@ -89,7 +91,7 @@ function genGalaxy(params) {
     let x = LONE_BORDER + rand.range(buf_dim - LONE_BORDER * 2);
     let y = LONE_BORDER + rand.range(buf_dim - LONE_BORDER * 2);
     let idx = x + y * buf_dim;
-    let v = rand.floatBetween(0.2, 1) * 255;
+    let v = rand.floatBetween(0.2, 1);
     data[idx] = max(data[idx], v);
     // Add a glow - should only be used for high level rendering, not for density?
     let offs = OFFS[rand.range(OFFS.length)];
@@ -104,10 +106,10 @@ function genGalaxy(params) {
   for (let ii = 0; ii < data.length; ++ii) {
     sum += data[ii];
   }
-  console.log(sum);
 
   return {
     data,
+    sum,
     // relative position and size to entire galaxy
     x0: 0, y0: 0, w: 1, h: 1,
   };
@@ -122,30 +124,98 @@ function Galaxy(params) {
   let tex_total_size = this.tex_total_size = buf_dim * buf_dim;
   this.tex_data = new Uint8Array(tex_total_size * 4);
   this.layers = [];
-  this.layers[0] = [];
-  this.layers[0][0] = this.root = genGalaxy(params);
+}
+
+function expandLinear16X(data, buf_dim, xq, yq) {
+  let ret = new Float32Array(data.length);
+  let qs = buf_dim / 4;
+  for (let yy = 0; yy < buf_dim / 4; ++yy) {
+    let oy = yy * 4;
+    for (let xx = 0; xx < buf_dim / 4; ++xx) {
+      let ox = xx * 4;
+      let in_idx = (yy + yq *qs) * buf_dim + xx + xq * qs;
+      let v00 = data[in_idx];
+      let v10 = v00;
+      if (xx + xq * qs + 1 < buf_dim) {
+        v10 = data[in_idx + 1];
+      }
+      let v01 = v00;
+      let v11 = v10;
+      if (yy + yq * qs + 1 < buf_dim) {
+        v01 = data[in_idx + buf_dim];
+        if (xx + xq * qs + 1 < buf_dim) {
+          v11 = data[in_idx + buf_dim + 1];
+        }
+      }
+      for (let jj = 0; jj < 4; ++jj) {
+        let yf = jj / 4;
+        let v0 = lerp(yf, v00, v01);
+        let v1 = lerp(yf, v10, v11);
+        for (let ii = 0; ii < 4; ++ii) {
+          ret[(oy + jj) * buf_dim + ox + ii] = lerp(ii / 4, v0, v1);
+        }
+      }
+    }
+  }
+  return ret;
 }
 
 Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
-  let { buf_dim, tex_data, tex_total_size, layers } = this;
-  let layer = layers[layer_idx][cell_idx];
-  let { data } = layer;
+  let { layers, buf_dim } = this;
+  let layer = layers[layer_idx];
+  if (!layer) {
+    layer = layers[layer_idx] = [];
+  }
+  let cell = layer[cell_idx];
+  if (cell) {
+    return cell;
+  }
+
+  // Fill it
+  if (layer_idx === 0) {
+    assert(cell_idx === 0);
+    cell = genGalaxy(this.params);
+  } else {
+    let layer_res = pow(LAYER_STEP, layer_idx);
+    let cx = cell_idx % layer_res;
+    let cy = floor(cell_idx / layer_res);
+    let px = floor(cx / LAYER_STEP);
+    let py = floor(cy / LAYER_STEP);
+    let pres = pow(LAYER_STEP, layer_idx - 1);
+    let parent = this.getCell(layer_idx - 1, py * pres + px);
+    let data = expandLinear16X(parent.data, buf_dim, cx - px * LAYER_STEP, cy - py * LAYER_STEP);
+    cell = {
+      data,
+      // relative position and size to entire galaxy
+      x0: cx / layer_res, y0: cy / layer_res, w: 1/layer_res, h: 1/layer_res,
+    };
+  }
+
+  layer[cell_idx] = cell;
+  return cell;
+};
+
+Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
+  let { buf_dim, tex_data, tex_total_size } = this;
+  let cell = this.getCell(layer_idx, cell_idx);
+  if (cell.tex) {
+    return cell;
+  }
+  let { data } = cell;
 
   for (let ii = 0; ii < tex_total_size; ++ii) {
     let d = data[ii];
     for (let jj = 0; jj < 3; ++jj) {
-      tex_data[ii * 4 + jj] = d;
+      tex_data[ii * 4 + jj] = clamp(floor(d * 255), 0, 255);
     }
     tex_data[ii * 4 + 3] = 255;
   }
 
-  if (!layer.tex && tex_pool.length) {
-    layer.tex = tex_pool.pop();
-  }
-  if (layer.tex) {
-    layer.tex.updateData(buf_dim, buf_dim, tex_data);
+  if (tex_pool.length) {
+    cell.tex = tex_pool.pop();
+    cell.tex.updateData(buf_dim, buf_dim, tex_data);
   } else {
-    layer.tex = textures.load({
+    cell.tex = textures.load({
       name: `galaxy_${++tex_id_idx}`,
       format: textures.format.RGBA8,
       width: buf_dim,
@@ -157,7 +227,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
       wrap_t: gl.CLAMP_TO_EDGE,
     });
   }
-  return layer;
+  return cell;
 };
 
 Galaxy.prototype.dispose = function () {
