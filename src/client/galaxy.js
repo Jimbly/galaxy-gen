@@ -133,24 +133,82 @@ function Galaxy(params) {
 }
 
 const SAMPLE_PAD = 4;
-function expandLinear16X(data, buf_dim, xq, yq) {
+// function expandLinear16X(data, buf_dim, xq, yq) {
+//   let sample_dim = buf_dim + SAMPLE_PAD * 2;
+//   let ret = new Float32Array(buf_dim * buf_dim);
+//   let qs = buf_dim / 4;
+//   for (let yy = 0; yy < buf_dim; ++yy) {
+//     for (let xx = 0; xx < buf_dim; ++xx) {
+//       let x_in = floor(xx / 4);
+//       let dx = xx/4 - x_in;
+//       let y_in = floor(yy / 4);
+//       let dy = yy/4 - y_in;
+//       let in_idx = (y_in + yq * qs + SAMPLE_PAD) * sample_dim + x_in + xq * qs + SAMPLE_PAD;
+//       let v00 = data[in_idx];
+//       let v10 = data[in_idx + 1];
+//       let v01 = data[in_idx + sample_dim];
+//       let v11 = data[in_idx + sample_dim + 1];
+//       let v0 = lerp(dy, v00, v01);
+//       let v1 = lerp(dy, v10, v11);
+//       ret[xx + yy * buf_dim] = lerp(dx, v0, v1);
+//     }
+//   }
+//   return ret;
+// }
+
+// from http://paulbourke.net/miscellaneous/imageprocess/
+let cubic_weights = (function () {
+  function cub(v) {
+    return v*v*v;
+  }
+  function p(v) {
+    return max(0, v);
+  }
+  function r(x) {
+    let v= 1/6 * (cub(p(x+2)) - 4 * cub(p(x+1)) + 6*cub(p(x)) - 4 * cub(p(x-1)));
+    return v;
+  }
+  function weight(ii, jj, dx, dy) {
+    return r(ii - dx/4) * r(jj - dy/4);
+  }
+  let ret = [];
+  for (let dy = 0; dy < 4; ++dy) {
+    let row = [];
+    ret.push(row);
+    for (let dx = 0; dx < 4; ++dx) {
+      let w = [];
+      for (let ii = -1; ii <= 2; ++ii) {
+        for (let jj = -1; jj <= 2; ++jj) {
+          w.push(weight(ii, jj, dx, dy));
+        }
+      }
+      row.push(w);
+    }
+  }
+  return ret;
+}());
+function expandBicubic16X(data, buf_dim, xq, yq) {
   let sample_dim = buf_dim + SAMPLE_PAD * 2;
   let ret = new Float32Array(buf_dim * buf_dim);
   let qs = buf_dim / 4;
+  let idx_add = (yq * qs + SAMPLE_PAD) * sample_dim + xq * qs + SAMPLE_PAD;
   for (let yy = 0; yy < buf_dim; ++yy) {
+    let y_in = floor(yy / 4);
+    let dy = yy - y_in * 4;
+    let in_idx_y = y_in * sample_dim + idx_add;
+    let w_row = cubic_weights[dy];
     for (let xx = 0; xx < buf_dim; ++xx) {
       let x_in = floor(xx / 4);
-      let dx = xx/4 - x_in;
-      let y_in = floor(yy / 4);
-      let dy = yy/4 - y_in;
-      let in_idx = (y_in + yq * qs + SAMPLE_PAD) * sample_dim + x_in + xq * qs + SAMPLE_PAD;
-      let v00 = data[in_idx];
-      let v10 = data[in_idx + 1];
-      let v01 = data[in_idx + sample_dim];
-      let v11 = data[in_idx + sample_dim + 1];
-      let v0 = lerp(dy, v00, v01);
-      let v1 = lerp(dy, v10, v11);
-      ret[xx + yy * buf_dim] = lerp(dx, v0, v1);
+      let dx = xx - x_in * 4;
+      let in_idx = in_idx_y + x_in;
+      let sum = 0;
+      let weights = w_row[dx];
+      for (let ii = -1, widx=0; ii <= 2; ++ii) {
+        for (let jj = -1; jj <= 2; ++jj, ++widx) {
+          sum += data[in_idx + ii + jj * sample_dim] * weights[widx];
+        }
+      }
+      ret[xx + yy * buf_dim] = sum;
     }
   }
   return ret;
@@ -232,10 +290,8 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     let parent = this.getCell(layer_idx - 1, py * pres + px);
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
-    console.log('start gen', layer_idx, cx, cy);
     let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
-    let data = expandLinear16X(sample_buf, buf_dim, qx, qy);
-    console.log('end gen', layer_idx, cx, cy);
+    let data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
     let x0 = cx / layer_res;
     let y0 = cy / layer_res;
     let w = 1/layer_res;

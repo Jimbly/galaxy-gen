@@ -1,4 +1,3 @@
-Do next layer via cubic interpolation including neighbors instead
 Add mouse-over showing a cell boundary and saying how many stars are in it
 
 Try completely different approach:
