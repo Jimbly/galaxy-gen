@@ -99,8 +99,9 @@ function genGalaxy(params) {
     let v = rand.floatBetween(0.2, 1);
     let type = rand.range(POI_TYPE_OFFS.length);
     pois.push({
-      x: (x + 0.5) / buf_dim,
-      y: (y + 0.5) / buf_dim, type, v,
+      x: x / buf_dim,
+      y: y / buf_dim,
+      type, v,
     });
     // Also add a little density around the POI
     data[x + y * buf_dim] = max(data[x + y * buf_dim], v * 0.5);
@@ -131,39 +132,80 @@ function Galaxy(params) {
   this.layers = [];
 }
 
+const SAMPLE_PAD = 4;
 function expandLinear16X(data, buf_dim, xq, yq) {
-  let ret = new Float32Array(data.length);
+  let sample_dim = buf_dim + SAMPLE_PAD * 2;
+  let ret = new Float32Array(buf_dim * buf_dim);
   let qs = buf_dim / 4;
-  for (let yy = 0; yy < buf_dim / 4; ++yy) {
-    let oy = yy * 4;
-    for (let xx = 0; xx < buf_dim / 4; ++xx) {
-      let ox = xx * 4;
-      let in_idx = (yy + yq *qs) * buf_dim + xx + xq * qs;
+  for (let yy = 0; yy < buf_dim; ++yy) {
+    for (let xx = 0; xx < buf_dim; ++xx) {
+      let x_in = floor(xx / 4);
+      let dx = xx/4 - x_in;
+      let y_in = floor(yy / 4);
+      let dy = yy/4 - y_in;
+      let in_idx = (y_in + yq * qs + SAMPLE_PAD) * sample_dim + x_in + xq * qs + SAMPLE_PAD;
       let v00 = data[in_idx];
-      let v10 = v00;
-      if (xx + xq * qs + 1 < buf_dim) {
-        v10 = data[in_idx + 1];
-      }
-      let v01 = v00;
-      let v11 = v10;
-      if (yy + yq * qs + 1 < buf_dim) {
-        v01 = data[in_idx + buf_dim];
-        if (xx + xq * qs + 1 < buf_dim) {
-          v11 = data[in_idx + buf_dim + 1];
-        }
-      }
-      for (let jj = 0; jj < 4; ++jj) {
-        let yf = jj / 4;
-        let v0 = lerp(yf, v00, v01);
-        let v1 = lerp(yf, v10, v11);
-        for (let ii = 0; ii < 4; ++ii) {
-          ret[(oy + jj) * buf_dim + ox + ii] = lerp(ii / 4, v0, v1);
-        }
-      }
+      let v10 = data[in_idx + 1];
+      let v01 = data[in_idx + sample_dim];
+      let v11 = data[in_idx + sample_dim + 1];
+      let v0 = lerp(dy, v00, v01);
+      let v1 = lerp(dy, v10, v11);
+      ret[xx + yy * buf_dim] = lerp(dx, v0, v1);
     }
   }
   return ret;
 }
+
+
+// Gets a padded buffer from the specified cell and all neighbors
+Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
+  let { sample_buf, buf_dim } = this;
+  let key = [layer_idx, cx, cy].join();
+  if (this.last_sample_buf === key) {
+    return sample_buf;
+  }
+  let layer_res = pow(LAYER_STEP, layer_idx);
+  let sample_dim = buf_dim + SAMPLE_PAD * 2;
+  if (!sample_buf) {
+    sample_buf = this.sample_buf = new Float32Array(sample_dim*sample_dim);
+  }
+  // Call getCell() on all requirements (may recurse into here)
+  let bufs = [];
+  for (let dy = -1; dy <= 1; ++dy) {
+    let py = cy + dy;
+    bufs[dy] = [];
+    for (let dx = -1; dx <= 1; ++dx) {
+      let px = cx + dx;
+      let buf;
+      if (px < 0 || px >= layer_res || py < 0 || py >= layer_res) {
+        buf = null;
+      } else {
+        let cell = this.getCell(layer_idx, px + py * layer_res);
+        buf = cell.data;
+      }
+      bufs[dy][dx] = buf;
+    }
+  }
+
+  for (let dy = -1; dy <= 1; ++dy) {
+    for (let dx = -1; dx <= 1; ++dx) {
+      let buf = bufs[dy][dx];
+      let ox = SAMPLE_PAD + dx * buf_dim;
+      let oy = SAMPLE_PAD + dy * buf_dim;
+      let x0 = max(0, -ox);
+      let y0 = max(0, -oy);
+      let x1 = min(buf_dim, sample_dim - ox);
+      let y1 = min(buf_dim, sample_dim - oy);
+      for (let xx = x0; xx < x1; ++xx) {
+        for (let yy = y0; yy < y1; ++yy) {
+          sample_buf[ox + xx + (oy + yy) * sample_dim] = buf ? buf[xx + yy * buf_dim] : 0;
+        }
+      }
+    }
+  }
+  this.last_sample_buf = key;
+  return sample_buf;
+};
 
 Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   let { layers, buf_dim } = this;
@@ -190,7 +232,10 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     let parent = this.getCell(layer_idx - 1, py * pres + px);
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
-    let data = expandLinear16X(parent.data, buf_dim, qx, qy);
+    console.log('start gen', layer_idx, cx, cy);
+    let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
+    let data = expandLinear16X(sample_buf, buf_dim, qx, qy);
+    console.log('end gen', layer_idx, cx, cy);
     let x0 = cx / layer_res;
     let y0 = cy / layer_res;
     let w = 1/layer_res;
@@ -224,6 +269,7 @@ Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
     tex_data[ii * 4 + 3] = 255;
   }
 
+  // Render in POIs
   for (let ii = 0; ii < pois.length; ++ii) {
     let poi = pois[ii];
     let { x, y, type, v } = poi;
