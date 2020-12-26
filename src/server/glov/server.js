@@ -238,6 +238,9 @@ export function startup(params) {
     if (!filename) {
       return;
     }
+    if (filename.match(/\.git[/\\]/)) {
+      return;
+    }
     filename = filename.replace(/\\/g, '/');
     let m = filename.match(/(.*)\.ver\.json$/);
     if (!m) {
