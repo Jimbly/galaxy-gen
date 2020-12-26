@@ -1,7 +1,8 @@
 Instead of blurring layers 6/7, rendering stars into the buffer using an appropriate kernel (sub-texel offsets)
-Add option to zoom smoothly
+  kernel based on star type?
 Try strict pixely
   Need to do a dual-texture blend in the pixel shader and posterize after that
+Fix star count rounding error by parent assigning star counts (and pois) to children, not the other way around
 
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots

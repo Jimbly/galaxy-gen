@@ -15,7 +15,7 @@ const shaders = require('./glov/shaders.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
-const { clamp, clone, deepEqual } = require('../common/util.js');
+const { clamp, clone, deepEqual, easeOut } = require('../common/util.js');
 const { unit_vec, vec2, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 
@@ -149,13 +149,14 @@ export function main() {
 
   let view = 1;
   let zoom_level = local_storage.getJSON('zoom', 0);
+  let target_zoom_level =  zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let fade_color = vec4(1,1,1,1);
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
-  function doZoom(x, y, delta) {
+  function doZoomActual(x, y, delta) {
     let cur_zoom = pow(2, zoom_level);
     let new_zoom_level = max(0, min(zoom_level + delta, MAX_ZOOM));
     let new_zoom = pow(2, new_zoom_level);
@@ -175,6 +176,27 @@ export function main() {
     local_storage.setJSON('offsy', zoom_offs[1]);
     local_storage.setJSON('zoom', zoom_level);
   }
+  let queued_zooms = [];
+  function zoomTick() {
+    let dt = engine.frame_dt;
+    for (let ii = 0; ii < queued_zooms.length; ++ii) {
+      let zm = queued_zooms[ii];
+      let new_progress = min(1, zm.progress + dt/500);
+      let dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
+      zm.progress = new_progress;
+      doZoomActual(zm.x, zm.y, zm.delta * dp);
+      if (new_progress === 1) {
+        queued_zooms.splice(ii, 1);
+      }
+    }
+  }
+  function doZoom(x, y, delta) {
+    target_zoom_level = max(0, min(target_zoom_level + delta, MAX_ZOOM));
+    queued_zooms.push({
+      x, y, delta,
+      progress: 0,
+    });
+  }
   function test(dt) {
 
     gl.clearColor(0, 0, 0, 1);
@@ -183,6 +205,10 @@ export function main() {
     let x = 4;
     let button_spacing = ui.button_height + 6;
     let y = 4;
+
+    let w = min(game_width, game_height);
+    let map_x0 = game_width - w;
+    let map_y0 = 0;
 
     if (!deepEqual(params, gen_params)) {
       gen_params = clone(params);
@@ -250,7 +276,6 @@ export function main() {
     });
 
 
-    let w = min(game_width, game_height);
     x = game_width - w + 4;
     y = w - ui.button_height;
 
@@ -258,15 +283,22 @@ export function main() {
       doZoom(0.5, 0.5, -1);
     }
     x += ui.button_height + 2;
-    let new_zoom = ui.slider(zoom_level, { x, y, z, min: 0, max: MAX_ZOOM });
-    if (abs(new_zoom - zoom_level) > 0.000001) {
-      doZoom(0.5, 0.5, new_zoom - zoom_level);
+    let new_zoom = ui.slider(target_zoom_level, { x, y, z, min: 0, max: MAX_ZOOM });
+    if (abs(new_zoom - target_zoom_level) > 0.000001) {
+      doZoom(0.5, 0.5, new_zoom - target_zoom_level);
     }
     x += ui.button_width + 2;
     if (ui.buttonText({ x, y, z, w: ui.button_height, text: '+' })) {
       doZoom(0.5, 0.5, 1);
     }
     x += ui.button_height + 2;
+    let mouse_wheel = input.mouseWheel();
+    if (mouse_wheel) {
+      input.mousePos(mouse_pos);
+      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
+    }
+
+    zoomTick();
     let zoom = pow(2, zoom_level);
     let zoom_text_y = y + (ui.button_height - ui.font_height)/2;
     let zoom_text_w = ui.print(null, x, zoom_text_y, z,
@@ -276,9 +308,6 @@ export function main() {
     x = game_width - w;
     // y -= ui.font_height;
     // ui.print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
-
-    let map_x0 = game_width - w;
-    let map_y0 = 0;
 
     let legend_scale = 0.25;
     let legend_x0 = game_width - w*legend_scale - 2;
@@ -296,12 +325,6 @@ export function main() {
     x = map_x0;
     y = map_y0;
 
-    let mouse_wheel = input.mouseWheel();
-    if (mouse_wheel) {
-      input.mousePos(mouse_pos);
-      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
-      zoom = pow(2, zoom_level);
-    }
     let drag = input.drag();
     if (drag) {
       let { delta } = drag;
