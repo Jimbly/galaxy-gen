@@ -31,7 +31,7 @@ const glov_sprites = require('./sprites.js');
 const textures = require('./textures.js');
 const { clamp, clone, lerp, merge } = require('../../common/util.js');
 const { mat43, m43identity, m43mul } = require('./mat43.js');
-const { vec2, vec4, v4scale } = require('./vmath.js');
+const { vec2, vec4, v4scale, unit_vec } = require('./vmath.js');
 
 const MODAL_DARKEN = 0.75;
 let KEYS;
@@ -1376,6 +1376,11 @@ export function drawHollowRect(x0, y0, x1, y1, z, w, spread, color) {
   drawLine(x1, y0, x1, y1, z, w, spread, color);
   drawLine(x1, y1, x0, y1, z, w, spread, color);
   drawLine(x0, y1, x0, y0, z, w, spread, color);
+}
+
+export function drawHollowRect2(param) {
+  drawHollowRect(param.x, param.y, param.x + param.w, param.y + param.h,
+    param.z || Z.UI, param.line_width || 1, param.spread || 1, param.color || unit_vec);
 }
 
 export function drawCone(x0, y0, x1, y1, z, w0, w1, spread, color) {

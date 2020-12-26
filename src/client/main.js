@@ -10,6 +10,7 @@ const { abs, floor, max, min, pow, round } = Math;
 const input = require('./glov/input.js');
 const { KEYS } = input;
 const net = require('./glov/net.js');
+const perf = require('./glov/perf.js');
 const shaders = require('./glov/shaders.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
@@ -26,7 +27,7 @@ Z.UI_TEST = 200;
 
 // let app = exports;
 // Virtual viewport for our game logic
-const game_width = 384;
+const game_width = 256 + 90;
 const game_height = 256;
 
 export function main() {
@@ -75,6 +76,7 @@ export function main() {
   let shader_galaxy = shaders.create('shaders/galaxy.fp');
 
 
+  const MAX_ZOOM = 16;
   const buf_dim = 256;
   let params = {
     buf_dim,
@@ -88,6 +90,8 @@ export function main() {
     noise_weight: 0.22,
     poi_count: 200,
     width_ly: 128*1024,
+    star_count: 100*1000*1000*1000,
+    max_zoom: MAX_ZOOM,
   };
   let gen_params;
   let debug_sprite;
@@ -110,6 +114,12 @@ export function main() {
     if (!v) {
       return '0';
     }
+    if (v > 900000000) {
+      return `${(v/1000000000).toFixed(1)}B`;
+    }
+    if (v > 900000) {
+      return `${(v/1000000).toFixed(1)}M`;
+    }
     if (v > 900) {
       return `${(v/1000).toFixed(1)}K`;
     }
@@ -127,13 +137,24 @@ export function main() {
     }
   }
 
+  let cells_drawn = 0;
+  perf.addMetric({
+    name: 'cells',
+    show_stat: 'true',
+    labels: {
+      'cells: ': () => cells_drawn.toString(),
+    },
+  });
+
+
   let view = 1;
   let zoom_level = 0;
   let zoom_offs = vec2(0,0);
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let fade_color = vec4(1,1,1,1);
-  const MAX_ZOOM = 16;
+  const color_highlight = vec4(1,1,0,0.75);
+  const color_text_backdrop = vec4(0,0,0,0.5);
   function doZoom(x, y, delta) {
     let cur_zoom = pow(2, zoom_level);
     let new_zoom_level = max(0, min(zoom_level + delta, MAX_ZOOM));
@@ -156,7 +177,7 @@ export function main() {
     gl.clearColor(0, 0, 0, 1);
     let z = Z.UI;
 
-    let x = ui.button_height;
+    let x = 4;
     let button_spacing = ui.button_height + 6;
     let y = 4;
 
@@ -244,8 +265,10 @@ export function main() {
     }
     x += ui.button_height + 2;
     let zoom = pow(2, zoom_level);
-    ui.print(null, x, y + (ui.button_height - ui.font_height)/2, z,
+    let zoom_text_y = y + (ui.button_height - ui.font_height)/2;
+    let zoom_text_w = ui.print(null, x, zoom_text_y, z,
       `${zoom.toFixed(0)}X`);
+    ui.drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + ui.font_height, z - 1, color_text_backdrop);
 
     x = game_width - w;
     // y -= ui.font_height;
@@ -253,21 +276,19 @@ export function main() {
 
     let map_x0 = game_width - w;
     let map_y0 = 0;
-    input.mousePos(mouse_pos);
-    mouse_pos[0] = zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
-    mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
-    y -= ui.font_height;
-    ui.print(null, x+2, y, z, `Mouse: ${round4(mouse_pos[0])},${round4(mouse_pos[1])}`);
 
     let legend_scale = 0.25;
     let legend_x0 = game_width - w*legend_scale - 2;
-    let legend_x1 = game_width - 2;
+    let legend_x1 = game_width - 4;
     y = w;
     ui.drawLine(legend_x0, y - 4, legend_x1, y - 4, z, 1, 1, unit_vec);
     ui.drawLine(legend_x0, y - 6, legend_x0, y - 2, z, 1, 1, unit_vec);
     ui.drawLine(legend_x1, y - 6, legend_x1, y - 2, z, 1, 1, unit_vec);
     let ly = legend_scale * params.width_ly / zoom;
-    ui.print(null, legend_x0, y - 6 - ui.font_height, z, `${format(ly)}ly`);
+    let legend_y = y - 6 - ui.font_height;
+    font.drawSizedAligned(null, legend_x0, legend_y, z, ui.font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
+      `${format(ly)}ly`);
+    ui.drawRect(legend_x0 - 2, legend_y, legend_x1 + 2, y, z - 1, color_text_backdrop);
 
     x = map_x0;
     y = map_y0;
@@ -287,9 +308,36 @@ export function main() {
     zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
     zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
 
-    let draw_count = 0;
-    function drawCell(cell, alpha, zv) {
-      ++draw_count;
+    input.mousePos(mouse_pos);
+    mouse_pos[0] = zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
+    mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
+
+    let overlay_y = 0;
+    let overlay_x = map_x0 + 2;
+    let overlay_w = 0;
+    function overlayText(line) {
+      let textw = ui.print(null, overlay_x, overlay_y, z, line);
+      overlay_w = max(overlay_w, textw);
+      overlay_y += ui.font_height;
+    }
+    overlayText(`Mouse: ${round4(mouse_pos[0])},${round4(mouse_pos[1])}`);
+    function highlightCell(draw_param, cell) {
+      draw_param.color = color_highlight;
+      draw_param.z += 2;
+      draw_param.x -= 0.5;
+      draw_param.y -= 0.5;
+      draw_param.w += 1;
+      draw_param.h += 1;
+      ui.drawHollowRect2(draw_param);
+
+      overlayText(`Layer ${cell.layer_idx}, Cell ${cell.cell_idx} (${cell.cx},${cell.cy})`);
+      overlayText(`Stars: ${format(cell.star_count)}`);
+      overlayText(`POIs: ${cell.pois.length}`);
+    }
+
+    cells_drawn = 0;
+    function drawCell(cell, alpha, zv, do_highlight) {
+      ++cells_drawn;
       fade_color[3] = alpha;
       let draw_param = {
         x: x + (cell.x0 - zoom_offs[0]) * zoom * w,
@@ -310,8 +358,13 @@ export function main() {
       }
       debug_sprite.texs = cell.texs;
       debug_sprite.draw(draw_param);
+      if (do_highlight && mouse_pos[0] >= cell.x0 && mouse_pos[0] < cell.x0 + cell.w &&
+        mouse_pos[1] >= cell.y0 && mouse_pos[1] < cell.y0 + cell.h
+      ) {
+        highlightCell(draw_param, cell);
+      }
     }
-    function drawLevel(level, alpha, zv) {
+    function drawLevel(level, alpha, zv, do_highlight) {
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_y0 = (camera2d.y0Real() - map_y0) / w / zoom + zoom_offs[1];
@@ -324,7 +377,7 @@ export function main() {
       for (let yy = layer_y0; yy <= layer_y1; ++yy) {
         for (let xx = layer_x0; xx <= layer_x1; ++xx) {
           let cell = galaxy.getCellTextured(level, yy * layer_res + xx);
-          drawCell(cell, alpha, zv);
+          drawCell(cell, alpha, zv, do_highlight);
         }
       }
     }
@@ -336,12 +389,12 @@ export function main() {
       level0++;
       draw_level = level0;
     }
-    drawLevel(level0, 1, base_z);
+    drawLevel(level0, 1, base_z, true);
     if (draw_level > level0) {
-      drawLevel(level0 + 1, extra, base_z + 1);
+      drawLevel(level0 + 1, extra, base_z + 1, false);
     }
 
-    ui.print(null, legend_x0, w - 6 - ui.font_height*2, z, `${draw_count} cells drawn`);
+    ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
   }
 
   function testInit(dt) {

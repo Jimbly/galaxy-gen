@@ -1,6 +1,6 @@
 export const LAYER_STEP = 4;
 const assert = require('assert');
-const { abs, atan2, floor, max, min, sqrt, pow, PI } = Math;
+const { abs, atan2, floor, max, min, sqrt, pow, PI, round } = Math;
 const { randCreate } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
 const textures = require('./glov/textures.js');
@@ -20,7 +20,10 @@ const POI_TYPE_OFFS = [
 
 let noise = new Array(1);
 function genGalaxy(params) {
-  let { seed, arms, buf_dim, twirl, center, poi_count, len_mods, noise_freq, noise_weight } = params;
+  let {
+    seed, arms, buf_dim, twirl, center, poi_count, len_mods, noise_freq, noise_weight,
+    star_count, max_zoom,
+  } = params;
   for (let ii = 0; ii < noise.length; ++ii) {
     noise[ii] = new SimplexNoise(`${seed}n${ii}`);
   }
@@ -93,18 +96,21 @@ function genGalaxy(params) {
 
   const POI_BORDER = 5;
   let pois = [];
+  let poi_offs = 0.5 / pow(2, max_zoom);
   for (let ii = 0; ii < poi_count; ++ii) {
     let x = POI_BORDER + rand.range(buf_dim - POI_BORDER * 2);
     let y = POI_BORDER + rand.range(buf_dim - POI_BORDER * 2);
     let v = rand.floatBetween(0.2, 1);
+    // Also add a little density around the POI
+    let idx = x + y * buf_dim;
+    data[idx] = max(data[idx], v * 0.5);
+    x = x/buf_dim + poi_offs; // center in a final zoomed in cell
+    y = y/buf_dim + poi_offs; // center in a final zoomed in cell
     let type = rand.range(POI_TYPE_OFFS.length);
     pois.push({
-      x: x / buf_dim,
-      y: y / buf_dim,
+      x, y,
       type, v,
     });
-    // Also add a little density around the POI
-    data[x + y * buf_dim] = max(data[x + y * buf_dim], v * 0.5);
   }
 
   let sum = 0;
@@ -115,6 +121,7 @@ function genGalaxy(params) {
   return {
     data,
     sum,
+    star_count,
     pois,
     // relative position and size to entire galaxy
     x0: 0, y0: 0, w: 1, h: 1,
@@ -280,8 +287,11 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   if (layer_idx === 0) {
     assert(cell_idx === 0);
     cell = genGalaxy(this.params);
+    cell.layer_idx = cell.cell_idx = cell.cx = cell.cy = 0;
   } else {
+    // How many cells wide is this layer?
     let layer_res = pow(LAYER_STEP, layer_idx);
+    let max_res = pow(2, this.params.max_zoom);
     let cx = cell_idx % layer_res;
     let cy = floor(cell_idx / layer_res);
     let px = floor(cx / LAYER_STEP);
@@ -290,8 +300,26 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     let parent = this.getCell(layer_idx - 1, py * pres + px);
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
+
+    // Calc sum of our quadrant/sector relative to parent's sum
+    let qs = buf_dim / LAYER_STEP;
+    let our_sum = 0;
+    for (let yy = 0; yy < buf_dim / LAYER_STEP; ++yy) {
+      for (let xx = 0; xx < buf_dim / LAYER_STEP; ++xx) {
+        our_sum += parent.data[qx * qs + xx + (qy * qs + yy) * buf_dim];
+      }
+    }
+    let star_count = round(parent.star_count * our_sum / parent.sum);
+
     let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
     let data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
+    if (layer_res === max_res) {
+      // realize stars
+    }
+    let sum = 0;
+    for (let ii = 0; ii < data.length; ++ii) {
+      sum += data[ii];
+    }
     let x0 = cx / layer_res;
     let y0 = cy / layer_res;
     let w = 1/layer_res;
@@ -300,8 +328,11 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     cell = {
       data,
       pois,
+      sum,
+      star_count,
       // relative position and size to entire galaxy
       x0, y0, w, h: w,
+      layer_idx, cell_idx, cx, cy,
     };
   }
 

@@ -1,4 +1,6 @@
-Add mouse-over showing a cell boundary and saying how many stars are in it
+At some level, generate individual stars (all become POIs?)
+Add option to zoom smoothly
+Try strict pixely - do blend in shader and posterize after that?
 
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots
