@@ -147,9 +147,9 @@ export function main() {
   });
 
 
-  let view = 1;
+  let view = local_storage.getJSON('view', 1);
   let zoom_level = local_storage.getJSON('zoom', 0);
-  let target_zoom_level =  zoom_level;
+  let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
@@ -221,6 +221,7 @@ export function main() {
 
     if (ui.buttonText({ x, y, text: `View: ${view}`, w: ui.button_width * 0.5 }) || input.keyDownEdge(KEYS.V)) {
       view = (view + 1) % 2;
+      local_storage.setJSON('view', view);
     }
     y += button_spacing;
 

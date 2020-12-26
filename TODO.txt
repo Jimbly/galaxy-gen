@@ -1,7 +1,6 @@
-Instead of blurring layers 6/7, rendering stars into the buffer using an appropriate kernel (sub-texel offsets)
-  kernel based on star type?
 Try strict pixely
   Need to do a dual-texture blend in the pixel shader and posterize after that
+  Can also have variably-loaded cell textures and only blend if we have both loaded!
 Fix star count rounding error by parent assigning star counts (and pois) to children, not the other way around
 
 Try completely different approach:
