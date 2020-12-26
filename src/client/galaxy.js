@@ -1,10 +1,12 @@
 export const LAYER_STEP = 4;
+export const STAR_LAYER = 6;
+export const MAX_LAYER = 8;
 const assert = require('assert');
 const { abs, atan2, floor, max, min, sqrt, pow, PI, round } = Math;
-const { randCreate } = require('./glov/rand_alea.js');
+const { randCreate, mashString } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
 const textures = require('./glov/textures.js');
-const { clamp, lerp, easeOut, easeInOut } = require('../common/util.js');
+const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
 
 const POI_TYPE_OFFS = [
   [1, 0,0,
@@ -19,6 +21,7 @@ const POI_TYPE_OFFS = [
 
 
 let noise = new Array(1);
+let rand = randCreate(0);
 function genGalaxy(params) {
   let {
     seed, arms, buf_dim, twirl, center, poi_count, len_mods, noise_freq, noise_weight,
@@ -27,7 +30,7 @@ function genGalaxy(params) {
   for (let ii = 0; ii < noise.length; ++ii) {
     noise[ii] = new SimplexNoise(`${seed}n${ii}`);
   }
-  let rand = randCreate(seed);
+  rand.reseed(seed);
   let arm_len = new Array(len_mods);
   for (let ii = 0; ii < arm_len.length; ++ii) {
     arm_len[ii] = rand.random();
@@ -272,6 +275,70 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
   return sample_buf;
 };
 
+Galaxy.prototype.realizeStars = function (cell) {
+  let { layer_idx, cell_idx, star_count, data, sum, x0, y0, w } = cell;
+  if (!star_count) {
+    data.fill(0);
+    cell.stars = [];
+    return;
+  }
+  let { buf_dim, params } = this;
+  let { seed } = params;
+  rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
+  let stars = cell.stars = [];
+  let scale = star_count / sum * 1.03;
+  let value_scale = sum / star_count;
+  function addStar(xx, yy) {
+    stars.push({
+      type: rand.range(POI_TYPE_OFFS.length),
+      x: x0 + xx/buf_dim * w,
+      y: y0 + yy/buf_dim * w,
+      v: (0.5 + rand.random()) * value_scale,
+    });
+  }
+  for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
+    for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
+      let v = data[idx];
+      let expected_stars = v * scale;
+      // assert(expected_stars < 10); // sometimes more than 65
+      // assert(expected_stars < 50);
+      let actual_stars = floor(rand.random() * (expected_stars + 1) + expected_stars * 0.5);
+      for (let ii = 0; ii < actual_stars; ++ii) {
+        // uniform within sub-cell
+        addStar(xx + rand.random(), yy + rand.random());
+      }
+    }
+  }
+  // console.log((stars.length-star_count)/star_count, stars.length, star_count); // about 5% under to 30% over
+  while (stars.length < star_count) {
+    addStar(rand.floatBetween(0, buf_dim), rand.floatBetween(0, buf_dim));
+  }
+  while (stars.length > star_count) {
+    ridx(stars, rand.range(stars.length));
+  }
+  // TODO: relaxation step to separate really close stars (1/1000 ly? <=2px in highest res buffer?)
+  this.renderStars(cell);
+};
+
+// render into data appropriately for the current zoom
+Galaxy.prototype.renderStars = function (cell) {
+  let { layer_idx, data, x0, y0, w, stars } = cell;
+  let { buf_dim, params } = this;
+  let { max_zoom } = params;
+  let layer_res = pow(LAYER_STEP, layer_idx);
+  let max_res = pow(2, max_zoom);
+  let reduce = 1; // layer_res / max_res;
+  data.fill(0);
+  for (let ii = 0; ii < stars.length; ++ii) {
+    let star = stars[ii];
+    let { x, y, v } = star;
+    x = floor((x - x0) / w * buf_dim);
+    y = floor((y - y0) / w * buf_dim);
+    let idx = x + y * buf_dim;
+    data[idx] += v * reduce;
+  }
+};
+
 Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   let { layers, buf_dim } = this;
   let layer = layers[layer_idx];
@@ -291,7 +358,6 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   } else {
     // How many cells wide is this layer?
     let layer_res = pow(LAYER_STEP, layer_idx);
-    let max_res = pow(2, this.params.max_zoom);
     let cx = cell_idx % layer_res;
     let cy = floor(cell_idx / layer_res);
     let px = floor(cx / LAYER_STEP);
@@ -301,59 +367,144 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
 
-    // Calc sum of our quadrant/sector relative to parent's sum
-    let qs = buf_dim / LAYER_STEP;
-    let our_sum = 0;
-    for (let yy = 0; yy < buf_dim / LAYER_STEP; ++yy) {
-      for (let xx = 0; xx < buf_dim / LAYER_STEP; ++xx) {
-        our_sum += parent.data[qx * qs + xx + (qy * qs + yy) * buf_dim];
-      }
-    }
-    let star_count = round(parent.star_count * our_sum / parent.sum);
-
-    let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
-    let data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
-    if (layer_res === max_res) {
-      // realize stars
-    }
-    let sum = 0;
-    for (let ii = 0; ii < data.length; ++ii) {
-      sum += data[ii];
-    }
     let x0 = cx / layer_res;
     let y0 = cy / layer_res;
     let w = 1/layer_res;
-    // TODO: This probably filters pois into two different children due to floating point consistency?
-    let pois = parent.pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
     cell = {
-      data,
-      pois,
-      sum,
-      star_count,
       // relative position and size to entire galaxy
       x0, y0, w, h: w,
       layer_idx, cell_idx, cx, cy,
     };
+    cell.pois = parent.pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
+    let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
+    let data = cell.data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
+    let sum = 0;
+    for (let ii = 0; ii < data.length; ++ii) {
+      sum += data[ii];
+    }
+    cell.sum = sum;
+
+    if (parent.stars) {
+      // filter existing stars
+      cell.stars = parent.stars.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
+      cell.star_count = cell.stars.length;
+      this.renderStars(cell);
+    } else {
+      // count or generate stars
+
+      // Calc sum of our quadrant/sector relative to parent's sum
+      let qs = buf_dim / LAYER_STEP;
+      let our_sum = 0;
+      for (let yy = 0; yy < buf_dim / LAYER_STEP; ++yy) {
+        for (let xx = 0; xx < buf_dim / LAYER_STEP; ++xx) {
+          our_sum += parent.data[qx * qs + xx + (qy * qs + yy) * buf_dim];
+        }
+      }
+      cell.star_count = round(parent.star_count * our_sum / parent.sum);
+      if (layer_idx === STAR_LAYER) { // || cell.star_count < 100000) {
+        // realize stars
+        this.realizeStars(cell);
+      }
+    }
   }
 
   layer[cell_idx] = cell;
   return cell;
 };
 
+let temp_data;
 Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
   let { buf_dim, tex_data, tex_total_size } = this;
   let cell = this.getCell(layer_idx, cell_idx);
   if (cell.tex) {
     return cell;
   }
-  let { data, pois, x0, y0, w } = cell;
+  let { data, pois, x0, y0, w, stars, cx, cy } = cell;
 
-  for (let ii = 0; ii < tex_total_size; ++ii) {
-    let d = data[ii];
-    for (let jj = 0; jj < 3; ++jj) {
-      tex_data[ii * 4 + jj] = clamp(floor(d * 255), 0, 255);
+  let layer_res = pow(LAYER_STEP, layer_idx);
+  let max_res = pow(2, this.params.max_zoom);
+  if (stars && layer_res === max_res) {
+    for (let ii = 0; ii < tex_total_size; ++ii) {
+      for (let jj = 0; jj < 3; ++jj) {
+        tex_data[ii * 4 + jj] = 0;
+      }
+      tex_data[ii * 4 + 3] = 255;
     }
-    tex_data[ii * 4 + 3] = 255;
+    if (layer_res === max_res) {
+      // Render in stars, merge POIs into this?
+      for (let ii = 0; ii < stars.length; ++ii) {
+        let poi = stars[ii];
+        let { x, y, type, v } = poi;
+        x = floor((x - x0) / w * buf_dim);
+        y = floor((y - y0) / w * buf_dim);
+        let idx = (x + y * buf_dim) * 4;
+        let offs = POI_TYPE_OFFS[type];
+        for (let jj = 0; jj < offs.length; jj+=3) {
+          let v2 = clamp(floor(v * offs[jj] * 255), 0, 255);
+          let dx = offs[jj+1];
+          let dy = offs[jj+2];
+          let xx = x + dx;
+          let yy = y + dy;
+          if (xx < 0 || xx >= buf_dim || yy < 0 || yy >= buf_dim) {
+            continue;
+          }
+          let d = (dx + dy * buf_dim) * 4;
+          for (let kk = 0; kk < 3; ++kk) {
+            tex_data[idx + d + kk] = max(tex_data[idx + d + kk], v2);
+          }
+        }
+      }
+    } else {
+      // // at reduced resolution, each star is a single, additive point
+      // let reduce = layer_res*layer_res / (max_res*max_res);
+      // for (let ii = 0; ii < stars.length; ++ii) {
+      //   let poi = stars[ii];
+      //   let { x, y, type, v } = poi;
+      //   x = floor((x - x0) / w * buf_dim);
+      //   y = floor((y - y0) / w * buf_dim);
+      //   let idx = (x + y * buf_dim) * 4;
+      //   let d = (dx + dy * buf_dim) * 4;
+      //   for (let kk = 0; kk < 3; ++kk) {
+      //     tex_data[idx + d + kk] += v * reduce * 255; // float!
+      //   }
+      // }
+    }
+  } else {
+    // Fill from density data
+    if (layer_idx === STAR_LAYER || layer_idx === STAR_LAYER+1) {
+      // blur
+      const blur_weights = [
+        1/16, 1/8, 1/16,
+        1/8, 1/4, 1/8,
+        1/16, 1/8, 1/16,
+      ];
+      let sample_buf = this.getSampleBuf(layer_idx, cx, cy);
+      if (!temp_data || temp_data.length !== tex_total_size) {
+        temp_data = new Float32Array(tex_total_size);
+      }
+      data = temp_data;
+
+      let sample_dim = buf_dim + SAMPLE_PAD * 2;
+      let idx_add = SAMPLE_PAD * sample_dim + SAMPLE_PAD;
+      for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
+        for (let in_idx=yy*sample_dim + idx_add, xx = 0; xx < buf_dim; ++xx, ++idx, ++in_idx) {
+          let sum = 0;
+          for (let ii = -1, widx=0; ii <= 1; ++ii) {
+            for (let jj = -1; jj <= 1; ++jj, ++widx) {
+              sum += sample_buf[in_idx + ii + jj * sample_dim] * blur_weights[widx];
+            }
+          }
+          data[idx] = sum;
+        }
+      }
+    }
+    for (let ii = 0; ii < tex_total_size; ++ii) {
+      let d = data[ii];
+      for (let jj = 0; jj < 3; ++jj) {
+        tex_data[ii * 4 + jj] = clamp(floor(d * 255), 0, 255);
+      }
+      tex_data[ii * 4 + 3] = 255;
+    }
   }
 
   // Render in POIs

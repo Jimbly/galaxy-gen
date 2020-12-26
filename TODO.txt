@@ -1,6 +1,7 @@
-At some level, generate individual stars (all become POIs?)
+Instead of blurring layers 6/7, rendering stars into the buffer using an appropriate kernel (sub-texel offsets)
 Add option to zoom smoothly
-Try strict pixely - do blend in shader and posterize after that?
+Try strict pixely
+  Need to do a dual-texture blend in the pixel shader and posterize after that
 
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots
@@ -19,6 +20,7 @@ Scale
 
   Milky Way is 105Kly in diameter
   1 LY = 63K au
+  Pluto = 1/1000 ly away from the sun (63au)
 
   Elite Dangerous:
     galactic core: 3LY (parsec) cubed holds 10 million stars

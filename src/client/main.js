@@ -1,6 +1,6 @@
 /*eslint global-require:off*/
-const glov_local_storage = require('./glov/local_storage.js');
-glov_local_storage.storage_prefix = 'glovjs-playground'; // Before requiring anything else that might load from this
+const local_storage = require('./glov/local_storage.js');
+local_storage.storage_prefix = 'galaxy-gen'; // Before requiring anything else that might load from this
 
 const assert = require('assert');
 const camera2d = require('./glov/camera2d.js');
@@ -148,8 +148,8 @@ export function main() {
 
 
   let view = 1;
-  let zoom_level = 0;
-  let zoom_offs = vec2(0,0);
+  let zoom_level = local_storage.getJSON('zoom', 0);
+  let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let fade_color = vec4(1,1,1,1);
@@ -171,6 +171,9 @@ export function main() {
       // recenter
       zoom_offs[0] = zoom_offs[1] = 0;
     }
+    local_storage.setJSON('offsx', zoom_offs[0]);
+    local_storage.setJSON('offsy', zoom_offs[1]);
+    local_storage.setJSON('zoom', zoom_level);
   }
   function test(dt) {
 
@@ -304,6 +307,8 @@ export function main() {
       let { delta } = drag;
       zoom_offs[0] -= delta[0] / w / zoom;
       zoom_offs[1] -= delta[1] / w / zoom;
+      local_storage.setJSON('offsx', zoom_offs[0]);
+      local_storage.setJSON('offsy', zoom_offs[1]);
     }
     zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
     zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
@@ -333,6 +338,10 @@ export function main() {
       overlayText(`Layer ${cell.layer_idx}, Cell ${cell.cell_idx} (${cell.cx},${cell.cy})`);
       overlayText(`Stars: ${format(cell.star_count)}`);
       overlayText(`POIs: ${cell.pois.length}`);
+      let dx = floor((mouse_pos[0] - cell.x0) / cell.w * galaxy.buf_dim);
+      let dy = floor((mouse_pos[1] - cell.y0) / cell.w * galaxy.buf_dim);
+      let dd = cell.data[dy * galaxy.buf_dim + dx];
+      overlayText(`Value: ${dd.toFixed(5)}`);
     }
 
     cells_drawn = 0;
@@ -382,9 +391,10 @@ export function main() {
       }
     }
     let base_z = Z.UI - 10;
-    let draw_level = max(0, (zoom_level - 1) / (LAYER_STEP/2));
+    const blend_range = 1;
+    let draw_level = max(0, (zoom_level - 1) / (LAYER_STEP/2) + blend_range/2);
     let level0 = floor(draw_level);
-    let extra = (draw_level - level0) * 10; // fade for 10% of range
+    let extra = (draw_level - level0) / blend_range;
     if (extra >= 1) {
       level0++;
       draw_level = level0;
