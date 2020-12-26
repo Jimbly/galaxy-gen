@@ -1,7 +1,6 @@
-Try strict pixely
-  Need to do a dual-texture blend in the pixel shader and posterize after that
-  Can also have variably-loaded cell textures and only blend if we have both loaded!
+Have variably-loaded cell textures and only blend if we have both loaded! (one cell gen per frame)
 Fix star count rounding error by parent assigning star counts (and pois) to children, not the other way around
+Drag not working well because of precision
 
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots

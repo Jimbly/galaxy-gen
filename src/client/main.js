@@ -36,10 +36,12 @@ export function main() {
     net.init({ engine });
   }
 
+  let view = local_storage.getJSON('view', 1);
+
   const font_info_04b03x2 = require('./img/font/04b03_8x2.json');
   const font_info_04b03x1 = require('./img/font/04b03_8x1.json');
   const font_info_palanquin32 = require('./img/font/palanquin32.json');
-  let pixely = 'on';
+  let pixely = view === 1 ? 'strict' : 'on';
   let font;
   if (pixely === 'strict') {
     font = { info: font_info_04b03x1, texture: 'font/04b03_8x1' };
@@ -73,8 +75,8 @@ export function main() {
     wrap_t: gl.CLAMP_TO_EDGE,
   });
 
-  let shader_galaxy = shaders.create('shaders/galaxy.fp');
-
+  let shader_galaxy_pixel = shaders.create('shaders/galaxy_blend_pixel.fp');
+  let shader_galaxy_blend = shaders.create('shaders/galaxy_blend.fp');
 
   const MAX_ZOOM = 16;
   const buf_dim = 256;
@@ -100,7 +102,7 @@ export function main() {
     if (!debug_sprite) {
       let tex = galaxy.getCellTextured(0, 0).tex;
       debug_sprite = createSprite({
-        texs: [tex, tex_palette],
+        texs: [tex, tex, tex],
       });
     }
   }
@@ -147,13 +149,11 @@ export function main() {
   });
 
 
-  let view = local_storage.getJSON('view', 1);
   let zoom_level = local_storage.getJSON('zoom', 0);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
-  let fade_color = vec4(1,1,1,1);
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
   function doZoomActual(x, y, delta) {
@@ -222,6 +222,7 @@ export function main() {
     if (ui.buttonText({ x, y, text: `View: ${view}`, w: ui.button_width * 0.5 }) || input.keyDownEdge(KEYS.V)) {
       view = (view + 1) % 2;
       local_storage.setJSON('view', view);
+      engine.reloadSafe();
     }
     y += button_spacing;
 
@@ -301,7 +302,7 @@ export function main() {
 
     zoomTick();
     let zoom = pow(2, zoom_level);
-    let zoom_text_y = y + (ui.button_height - ui.font_height)/2;
+    let zoom_text_y = floor(y + (ui.button_height - ui.font_height)/2);
     let zoom_text_w = ui.print(null, x, zoom_text_y, z,
       `${zoom.toFixed(0)}X`);
     ui.drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + ui.font_height, z - 1, color_text_backdrop);
@@ -314,9 +315,9 @@ export function main() {
     let legend_x0 = game_width - w*legend_scale - 2;
     let legend_x1 = game_width - 4;
     y = w;
-    ui.drawLine(legend_x0, y - 4, legend_x1, y - 4, z, 1, 1, unit_vec);
-    ui.drawLine(legend_x0, y - 6, legend_x0, y - 2, z, 1, 1, unit_vec);
-    ui.drawLine(legend_x1, y - 6, legend_x1, y - 2, z, 1, 1, unit_vec);
+    ui.drawLine(legend_x0 - 0.5, y - 4.5, legend_x1 + 0.5, y - 4.5, z, 1, 1, unit_vec);
+    ui.drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, unit_vec);
+    ui.drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, unit_vec);
     let ly = legend_scale * params.width_ly / zoom;
     let legend_y = y - 6 - ui.font_height;
     font.drawSizedAligned(null, legend_x0, legend_y, z, ui.font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
@@ -350,14 +351,15 @@ export function main() {
       overlay_y += ui.font_height;
     }
     overlayText(`Mouse: ${round4(mouse_pos[0])},${round4(mouse_pos[1])}`);
-    function highlightCell(draw_param, cell) {
-      draw_param.color = color_highlight;
-      draw_param.z += 2;
-      draw_param.x -= 0.5;
-      draw_param.y -= 0.5;
-      draw_param.w += 1;
-      draw_param.h += 1;
-      ui.drawHollowRect2(draw_param);
+    function highlightCell(cell) {
+      ui.drawHollowRect2({
+        x: floor(x + (cell.x0 - zoom_offs[0]) * zoom * w) - 0.5,
+        y: floor(y + (cell.y0 - zoom_offs[1]) * zoom * w) - 0.5,
+        w: w * zoom * cell.w + 1,
+        h: w * zoom * cell.h + 1,
+        z: Z.UI - 8,
+        color: color_highlight,
+      });
 
       overlayText(`Layer ${cell.layer_idx}, Cell ${cell.cell_idx} (${cell.cx},${cell.cy})`);
       overlayText(`Stars: ${format(cell.star_count)}`);
@@ -368,65 +370,73 @@ export function main() {
       overlayText(`Value: ${dd.toFixed(5)}`);
     }
 
+    let did_highlight = false;
+    function checkCellHighlight(cell) {
+      if (!did_highlight && mouse_pos[0] >= cell.x0 && mouse_pos[0] < cell.x0 + cell.w &&
+        mouse_pos[1] >= cell.y0 && mouse_pos[1] < cell.y0 + cell.h
+      ) {
+        did_highlight = true;
+        highlightCell(cell);
+      }
+    }
+
     cells_drawn = 0;
-    function drawCell(cell, alpha, zv, do_highlight) {
+    function drawCell(alpha, parent, cell) {
       ++cells_drawn;
-      fade_color[3] = alpha;
+      let qx = cell.cx - parent.cx * LAYER_STEP;
+      let qy = cell.cy - parent.cy * LAYER_STEP;
       let draw_param = {
         x: x + (cell.x0 - zoom_offs[0]) * zoom * w,
         y: y + (cell.y0 - zoom_offs[1]) * zoom * w,
         w: w * zoom * cell.w,
         h: w * zoom * cell.h,
-        z: zv,
-        color: fade_color,
+        z: Z.UI - 10,
+        nozoom: true,
       };
-      if (view === 1) {
-        draw_param.shader = shader_galaxy;
-      }
+      draw_param.shader = view === 1 ? shader_galaxy_pixel : shader_galaxy_blend;
       draw_param.shader_params = {
-        params: [buf_dim, params.dither],
+        params: [alpha ? buf_dim : buf_dim / LAYER_STEP, params.dither],
+        scale: [qx/LAYER_STEP, qy/LAYER_STEP, 1/LAYER_STEP, alpha],
       };
       if (!cell.texs) {
-        cell.texs = [cell.tex, tex_palette];
+        cell.texs = [cell.tex, parent.tex, tex_palette];
       }
       debug_sprite.texs = cell.texs;
       debug_sprite.draw(draw_param);
-      if (do_highlight && mouse_pos[0] >= cell.x0 && mouse_pos[0] < cell.x0 + cell.w &&
-        mouse_pos[1] >= cell.y0 && mouse_pos[1] < cell.y0 + cell.h
-      ) {
-        highlightCell(draw_param, cell);
-      }
     }
-    function drawLevel(level, alpha, zv, do_highlight) {
+    function drawLevel(layer_idx, alpha, do_highlight) {
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_y0 = (camera2d.y0Real() - map_y0) / w / zoom + zoom_offs[1];
       let gal_y1 = (camera2d.y1Real() - map_y0) / w / zoom + zoom_offs[1];
-      let layer_res = pow(LAYER_STEP, level);
+      let layer_res = pow(LAYER_STEP, layer_idx);
       let layer_x0 = max(0, floor(gal_x0 * layer_res));
       let layer_x1 = min(layer_res - 1, floor(gal_x1 * layer_res));
       let layer_y0 = max(0, floor(gal_y0 * layer_res));
       let layer_y1 = min(layer_res - 1, floor(gal_y1 * layer_res));
-      for (let yy = layer_y0; yy <= layer_y1; ++yy) {
-        for (let xx = layer_x0; xx <= layer_x1; ++xx) {
-          let cell = galaxy.getCellTextured(level, yy * layer_res + xx);
-          drawCell(cell, alpha, zv, do_highlight);
+      let pres = pow(LAYER_STEP, layer_idx - 1);
+      for (let cy = layer_y0; cy <= layer_y1; ++cy) {
+        for (let cx = layer_x0; cx <= layer_x1; ++cx) {
+          let cell = galaxy.getCellTextured(layer_idx, cy * layer_res + cx);
+          let px = floor(cx / LAYER_STEP);
+          let py = floor(cy / LAYER_STEP);
+          let parent = galaxy.getCellTextured(layer_idx - 1, py * pres + px);
+
+          drawCell(alpha, parent, cell);
+
+          if (do_highlight) {
+            checkCellHighlight(cell);
+          } else {
+            checkCellHighlight(parent);
+          }
         }
       }
     }
-    let base_z = Z.UI - 10;
     const blend_range = 1;
     let draw_level = max(0, (zoom_level - 1) / (LAYER_STEP/2) + blend_range/2);
     let level0 = floor(draw_level);
-    let extra = (draw_level - level0) / blend_range;
-    if (extra >= 1) {
-      level0++;
-      draw_level = level0;
-    }
-    drawLevel(level0, 1, base_z, true);
-    if (draw_level > level0) {
-      drawLevel(level0 + 1, extra, base_z + 1, false);
-    }
+    let extra = min((draw_level - level0) / blend_range, 1);
+    drawLevel(level0 + 1, extra, Boolean(extra));
 
     ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
   }
