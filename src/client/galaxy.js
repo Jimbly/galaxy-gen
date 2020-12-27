@@ -2,6 +2,7 @@ export const LAYER_STEP = 4;
 export const STAR_LAYER = 6;
 export const MAX_LAYER = 8;
 const assert = require('assert');
+const engine = require('./glov/engine.js');
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
 const { randCreate, mashString } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
@@ -126,8 +127,6 @@ function genGalaxy(params) {
     sum,
     star_count,
     pois,
-    // relative position and size to entire galaxy
-    x0: 0, y0: 0, w: 1, h: 1,
   };
 }
 
@@ -140,6 +139,7 @@ function Galaxy(params) {
   let tex_total_size = this.tex_total_size = buf_dim * buf_dim;
   this.tex_data = new Uint8Array(tex_total_size * 4);
   this.layers = [];
+  this.work_frame = 0;
 }
 
 const SAMPLE_PAD = 4;
@@ -249,10 +249,17 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
         buf = null;
       } else {
         let cell = this.getCell(layer_idx, px + py * layer_res);
+        if (!cell.ready) {
+          return null;
+        }
         buf = cell.data;
       }
       bufs[dy][dx] = buf;
     }
+  }
+
+  if (engine.frame_index === this.work_frame) {
+    return null;
   }
 
   for (let dy = -1; dy <= 1; ++dy) {
@@ -389,37 +396,63 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     layer = layers[layer_idx] = [];
   }
   let cell = layer[cell_idx];
-  if (cell) {
+  if (cell && cell.ready) {
     return cell;
+  }
+
+  let layer_res = pow(LAYER_STEP, layer_idx);
+  let cx = cell_idx % layer_res;
+  let cy = floor(cell_idx / layer_res);
+  let x0 = cx / layer_res;
+  let y0 = cy / layer_res;
+  let w = 1/layer_res;
+  if (!cell) {
+    cell = {
+      // relative position and size to entire galaxy
+      x0, y0, w, h: w,
+      layer_idx, cell_idx, cx, cy,
+      ready: false,
+    };
+    layer[cell_idx] = cell;
   }
 
   // Fill it
   if (layer_idx === 0) {
     assert(cell_idx === 0);
-    cell = genGalaxy(this.params);
-    cell.layer_idx = cell.cell_idx = cell.cx = cell.cy = 0;
+    let ret = genGalaxy(this.params);
+    cell.sum = ret.sum;
+    cell.data = ret.data;
+    cell.star_count = ret.star_count;
+    cell.pois = ret.pois;
   } else {
     // How many cells wide is this layer?
-    let layer_res = pow(LAYER_STEP, layer_idx);
-    let cx = cell_idx % layer_res;
-    let cy = floor(cell_idx / layer_res);
     let px = floor(cx / LAYER_STEP);
     let py = floor(cy / LAYER_STEP);
     let pres = pow(LAYER_STEP, layer_idx - 1);
     let parent = this.getCell(layer_idx - 1, py * pres + px);
+    if (!parent.ready) {
+      return cell;
+    }
+
+    if (engine.frame_index === this.work_frame) {
+      // Already did one this frame (presumably a parent)
+      return cell;
+    }
+
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
 
-    let x0 = cx / layer_res;
-    let y0 = cy / layer_res;
-    let w = 1/layer_res;
-    cell = {
-      // relative position and size to entire galaxy
-      x0, y0, w, h: w,
-      layer_idx, cell_idx, cx, cy,
-    };
     cell.pois = parent.pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
     let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
+
+    if (!sample_buf) {
+      // Already did one this frame
+      return cell;
+    }
+    // Going to do work, take the frame's allotment
+    this.work_frame = engine.frame_index;
+
+    // Have the parent sample buf, generate us
     let data = cell.data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
     let sum = 0;
     for (let ii = 0; ii < data.length; ++ii) {
@@ -450,8 +483,8 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
       }
     }
   }
+  cell.ready = true;
 
-  layer[cell_idx] = cell;
   return cell;
 };
 
@@ -463,7 +496,11 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     if (cell.tex) {
       return cell;
     }
-    let { data, pois, x0, y0, w, stars, cx, cy } = cell;
+    let { data, pois, x0, y0, w, stars, cx, cy, ready } = cell;
+    if (!ready) {
+      // still loading
+      return cell;
+    }
 
     let layer_res = pow(LAYER_STEP, layer_idx);
     let max_res = pow(2, this.params.max_zoom);
@@ -525,6 +562,10 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
           1/16, 1/8, 1/16,
         ];
         let sample_buf = this.getSampleBuf(layer_idx, cx, cy);
+        if (!sample_buf) {
+          // something still loading
+          return cell;
+        }
         if (!temp_data || temp_data.length !== tex_total_size) {
           temp_data = new Float32Array(tex_total_size);
         }

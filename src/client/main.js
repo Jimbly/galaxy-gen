@@ -77,6 +77,7 @@ export function main() {
 
   let shader_galaxy_pixel = shaders.create('shaders/galaxy_blend_pixel.fp');
   let shader_galaxy_blend = shaders.create('shaders/galaxy_blend.fp');
+  let white_tex = textures.textures.white;
 
   const MAX_ZOOM = 16;
   const buf_dim = 256;
@@ -372,7 +373,8 @@ export function main() {
 
     let did_highlight = false;
     function checkCellHighlight(cell) {
-      if (!did_highlight && mouse_pos[0] >= cell.x0 && mouse_pos[0] < cell.x0 + cell.w &&
+      if (cell.ready && !did_highlight &&
+        mouse_pos[0] >= cell.x0 && mouse_pos[0] < cell.x0 + cell.w &&
         mouse_pos[1] >= cell.y0 && mouse_pos[1] < cell.y0 + cell.h
       ) {
         did_highlight = true;
@@ -393,15 +395,30 @@ export function main() {
         z: Z.UI - 10,
         nozoom: true,
       };
+      let partial = false;
+      if (!parent.tex) {
+        if (!cell.tex) {
+          return;
+        }
+        alpha = 1;
+        partial = true;
+      } else if (!cell.tex) {
+        alpha = 0;
+        partial = true;
+      }
       draw_param.shader = view === 1 ? shader_galaxy_pixel : shader_galaxy_blend;
       draw_param.shader_params = {
         params: [alpha ? buf_dim : buf_dim / LAYER_STEP, params.dither],
         scale: [qx/LAYER_STEP, qy/LAYER_STEP, 1/LAYER_STEP, alpha],
       };
-      if (!cell.texs) {
-        cell.texs = [cell.tex, parent.tex, tex_palette];
+      let texs = cell.texs;
+      if (!texs) {
+        texs = [cell.tex || white_tex, parent.tex || white_tex, tex_palette];
+        if (!partial) {
+          cell.texs = texs;
+        }
       }
-      debug_sprite.texs = cell.texs;
+      debug_sprite.texs = texs;
       debug_sprite.draw(draw_param);
     }
     function drawLevel(layer_idx, alpha, do_highlight) {
