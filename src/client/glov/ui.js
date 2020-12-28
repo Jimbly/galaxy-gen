@@ -1243,19 +1243,19 @@ function spreadTechParams(spread) {
   return tech_params;
 }
 
-function drawElipseInternal(sprite, x0, y0, x1, y1, z, spread, tu0, tv0, tu1, tv1, color) {
+function drawElipseInternal(sprite, x0, y0, x1, y1, z, spread, tu0, tv0, tu1, tv1, color, blend) {
   glov_sprites.queueraw(sprite.texs,
     x0, y0, z, x1 - x0, y1 - y0,
     tu0, tv0, tu1, tv1,
-    color, glov_font.font_shaders.font_aa, spreadTechParams(spread));
+    color, glov_font.font_shaders.font_aa, spreadTechParams(spread), blend);
 }
 
-function drawCircleInternal(sprite, x, y, z, r, spread, tu0, tv0, tu1, tv1, color) {
+function drawCircleInternal(sprite, x, y, z, r, spread, tu0, tv0, tu1, tv1, color, blend) {
   let x0 = x - r * 2 + r * 4 * tu0;
   let x1 = x - r * 2 + r * 4 * tu1;
   let y0 = y - r * 2 + r * 4 * tv0;
   let y1 = y - r * 2 + r * 4 * tv1;
-  drawElipseInternal(sprite, x0, y0, x1, y1, z, spread, tu0, tv0, tu1, tv1, color);
+  drawElipseInternal(sprite, x0, y0, x1, y1, z, spread, tu0, tv0, tu1, tv1, color, blend);
 }
 
 function initCircleSprite() {
@@ -1282,21 +1282,21 @@ function initCircleSprite() {
   });
 }
 
-export function drawElipse(x0, y0, x1, y1, z, spread, color) {
+export function drawElipse(x0, y0, x1, y1, z, spread, color, blend) {
   if (!sprites.circle) {
     initCircleSprite();
   }
-  drawElipseInternal(sprites.circle, x0, y0, x1, y1, z, spread, 0, 0, 1, 1, color);
+  drawElipseInternal(sprites.circle, x0, y0, x1, y1, z, spread, 0, 0, 1, 1, color, blend);
 }
 
-export function drawCircle(x, y, z, r, spread, color) {
+export function drawCircle(x, y, z, r, spread, color, blend) {
   if (!sprites.circle) {
     initCircleSprite();
   }
-  drawCircleInternal(sprites.circle, x, y, z, r, spread, 0, 0, 1, 1, color);
+  drawCircleInternal(sprites.circle, x, y, z, r, spread, 0, 0, 1, 1, color, blend);
 }
 
-export function drawHollowCircle(x, y, z, r, spread, color) {
+export function drawHollowCircle(x, y, z, r, spread, color, blend) {
   if (!sprites.hollow_circle) {
     const CIRCLE_SIZE = 128;
     const LINE_W = 2;
@@ -1325,7 +1325,7 @@ export function drawHollowCircle(x, y, z, r, spread, color) {
       origin: vec2(0.5, 0.5),
     });
   }
-  drawCircleInternal(sprites.hollow_circle, x, y, z, r, spread, 0, 0, 1, 1, color);
+  drawCircleInternal(sprites.hollow_circle, x, y, z, r, spread, 0, 0, 1, 1, color, blend);
 }
 
 export function drawLine(x0, y0, x1, y1, z, w, spread, color) {

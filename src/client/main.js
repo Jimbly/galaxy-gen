@@ -18,6 +18,7 @@ const ui = require('./glov/ui.js');
 const { clamp, clone, deepEqual, easeOut } = require('../common/util.js');
 const { unit_vec, vec2, v2add, v2set, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
+const { BLEND_ADDITIVE } = sprites;
 
 window.Z = window.Z || {};
 Z.BACKGROUND = 1;
@@ -176,6 +177,7 @@ export function main() {
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
+  let use_mouse_pos = false;
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
   function doZoomActual(x, y, delta) {
@@ -328,6 +330,7 @@ export function main() {
     if (ui.buttonText({ x, y, z, w: ui.button_height, text: '-' }) ||
       input.keyDownEdge(KEYS.MINUS) || input.keyDownEdge(KEYS.Q)
     ) {
+      use_mouse_pos = false;
       doZoom(0.5, 0.5, -1);
     }
     x += ui.button_height + 2;
@@ -340,11 +343,13 @@ export function main() {
       input.keyDownEdge(KEYS.EQUALS) ||
       input.keyDownEdge(KEYS.E)
     ) {
+      use_mouse_pos = false;
       doZoom(0.5, 0.5, 1);
     }
     x += ui.button_height + 2;
     let mouse_wheel = input.mouseWheel();
     if (mouse_wheel) {
+      use_mouse_pos = true;
       input.mousePos(mouse_pos);
       doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
     }
@@ -377,15 +382,16 @@ export function main() {
     y = map_y0;
 
     v2set(drag_temp, 0, 0);
-    let drag = input.drag();
-    if (drag && drag.delta) {
-      v2add(drag_temp, drag_temp, drag.delta);
-    }
     let kb_scale = input.keyDown(KEYS.SHIFT) ? 0.5 : 0.125;
     drag_temp[0] += input.keyDown(KEYS.A) * kb_scale;
     drag_temp[0] -= input.keyDown(KEYS.D) * kb_scale;
     drag_temp[1] += input.keyDown(KEYS.W) * kb_scale;
     drag_temp[1] -= input.keyDown(KEYS.S) * kb_scale;
+    let drag = input.drag();
+    if (drag && drag.delta) {
+      v2add(drag_temp, drag_temp, drag.delta);
+      use_mouse_pos = true;
+    }
     if (drag_temp[0] || drag_temp[1]) {
       zoom_offs[0] -= drag_temp[0] / w / zoom;
       zoom_offs[1] -= drag_temp[1] / w / zoom;
@@ -395,7 +401,15 @@ export function main() {
     zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
     zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
 
-    input.mousePos(mouse_pos);
+    if (input.mouseMoved()) {
+      use_mouse_pos = true;
+    }
+    if (use_mouse_pos) {
+      input.mousePos(mouse_pos);
+    } else {
+      mouse_pos[0] = map_x0 + w/2;
+      mouse_pos[1] = map_y0 + w/2;
+    }
     mouse_pos[0] = zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
     mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
 
@@ -407,7 +421,7 @@ export function main() {
       overlay_w = max(overlay_w, textw);
       overlay_y += ui.font_height;
     }
-    overlayText(`Mouse: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
+    overlayText(`${use_mouse_pos?'Mouse':'Target'}: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
     function highlightCell(cell) {
       let xp = x + (cell.x0 - zoom_offs[0]) * zoom * w;
       let yp = y + (cell.y0 - zoom_offs[1]) * zoom * w;
@@ -519,7 +533,36 @@ export function main() {
     let draw_level = max(0, (zoom_level - 1) / (LAYER_STEP/2) + blend_range/2);
     let level0 = floor(draw_level);
     let extra = min((draw_level - level0) / blend_range, 1);
+    if (!extra && level0) {
+      level0--;
+      extra = 1;
+    }
     drawLevel(level0 + 1, extra, Boolean(extra));
+
+    if (zoom_level >= 12) {
+      let star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
+      star = star && star[0];
+      if (star) {
+        overlayText(`Star ${star.id}, seed=${star.seed}`);
+        let max_zoom = pow(2, MAX_ZOOM);
+        let xp = floor(star.x * max_zoom * buf_dim);
+        let yp = floor(star.y * max_zoom * buf_dim);
+        xp = x + (xp*zoom/max_zoom/buf_dim - zoom_offs[0] * zoom) * w;
+        yp = y + (yp*zoom/max_zoom/buf_dim - zoom_offs[1] * zoom) * w;
+        if (view === 1) {
+          xp = round(xp);
+          yp = round(yp);
+        }
+        let r = 4 / (1 + MAX_ZOOM - zoom_level);
+        ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 1, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
+
+        star = galaxy.getStar(star.id);
+        let solar_system = star && star.solar_system;
+        if (solar_system) {
+          overlayText(`  Type: ${solar_system.sun_label}`);
+        }
+      }
+    }
 
     ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
   }

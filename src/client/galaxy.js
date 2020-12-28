@@ -6,6 +6,8 @@ const engine = require('./glov/engine.js');
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
 const { randCreate, mashString } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
+const { starType } = require('./star_types.js');
+const { solarSystemCreate } = require('./solar_system.js');
 const textures = require('./glov/textures.js');
 const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
 
@@ -295,12 +297,16 @@ Galaxy.prototype.realizeStars = function (cell) {
   let stars = cell.stars = [];
   let scale = star_count / sum * 1.03;
   let value_scale = sum / star_count;
+  assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
   function addStar(xx, yy) {
     stars.push({
       type: rand.range(POI_TYPE_OFFS.length),
       x: x0 + xx/buf_dim * w,
       y: y0 + yy/buf_dim * w,
       v: (0.5 + rand.random()) * value_scale,
+      id: [cell_idx, stars.length], // 24bit cell_idx, <~18bit id
+      classif: starType(rand.random()), // TODO: correlate to `type`
+      seed: rand.uint32(),
     });
   }
   for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
@@ -464,6 +470,9 @@ Galaxy.prototype.perturb = function (cell, params) {
 };
 
 Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
+  if (layer_idx > MAX_LAYER) {
+    return {};
+  }
   let { layers, buf_dim, params } = this;
   let layer = layers[layer_idx];
   if (!layer) {
@@ -565,6 +574,71 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
 
 {
   let temp_data;
+  const debug_pix = [
+    [0,0,0,0,0,
+     0,0,1,0,0,
+     0,1,0,1,0,
+     0,1,0,1,0,
+     0,1,0,1,0,
+     0,0,1,0,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,0,1,0,0,
+     0,1,1,0,0,
+     0,0,1,0,0,
+     0,0,1,0,0,
+     0,1,1,1,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,0,1,0,0,
+     0,1,0,1,0,
+     0,0,0,1,0,
+     0,0,1,0,0,
+     0,1,1,1,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,1,1,0,0,
+     0,0,0,1,0,
+     0,1,1,0,0,
+     0,0,0,1,0,
+     0,1,1,0,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,1,0,1,0,
+     0,1,0,1,0,
+     0,1,1,1,0,
+     0,0,0,1,0,
+     0,0,0,1,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,1,1,1,0,
+     0,1,0,0,0,
+     0,1,1,0,0,
+     0,0,0,1,0,
+     0,1,1,0,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,0,1,1,0,
+     0,1,0,0,0,
+     0,1,1,1,0,
+     0,1,0,1,0,
+     0,1,1,1,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,1,1,1,0,
+     0,0,0,1,0,
+     0,0,0,1,0,
+     0,0,1,0,0,
+     0,0,1,0,0,
+     0,0,0,0,0],
+    [0,0,0,0,0,
+     0,1,1,1,0,
+     0,1,0,1,0,
+     0,1,1,1,0,
+     0,1,0,1,0,
+     0,1,1,1,0,
+     0,0,0,0,0],
+  ];
   Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
     let { buf_dim, tex_data, tex_total_size } = this;
     let cell = this.getCell(layer_idx, cell_idx);
@@ -693,6 +767,20 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
       }
     }
 
+    if (engine.DEBUG && false) {
+      let dbg = debug_pix[layer_idx];
+      if (dbg) {
+        for (let idx=0, yy = 0; yy < 7; ++yy) {
+          for (let xx = 0; xx < 5; ++xx,++idx) {
+            let idx2 = (yy * buf_dim + xx) * 4;
+            for (let ii = 0; ii < 3; ++ii) {
+              tex_data[idx2 + ii] = dbg[idx] ? 255 : 0;
+            }
+          }
+        }
+      }
+    }
+
     if (tex_pool.length) {
       cell.tex = tex_pool.pop();
       cell.tex.updateData(buf_dim, buf_dim, tex_data);
@@ -712,6 +800,72 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     return cell;
   };
 }
+
+function distSq(x1, y1, x2, y2) {
+  let dx = x2 - x1;
+  let dy = y2 - y1;
+  return dx*dx + dy*dy;
+}
+
+Galaxy.prototype.starsNear = function (x, y, num) {
+  let { layers } = this;
+  let layer_idx = MAX_LAYER - 1;
+  let layer = layers[layer_idx];
+  if (!layer) {
+    return [];
+  }
+  let layer_res = pow(LAYER_STEP, layer_idx);
+  let cx = floor(x * layer_res);
+  let cy = floor(y * layer_res);
+  let closest = new Array(num);
+  for (let yy = cy - 1; yy <= cy + 1; ++yy) {
+    if (yy < 0 || yy >= layer_res) {
+      continue;
+    }
+    for (let xx = cx - 1; xx <= cx + 1; ++xx) {
+      if (xx < 0 || xx >= layer_res) {
+        continue;
+      }
+      let cell_idx = yy * layer_res + xx;
+      let cell = layer[cell_idx];
+      if (!cell || !cell.stars) {
+        // incomplete data loaded, dynamic load here? just for stars?
+        continue;
+      }
+      let { stars } = cell;
+      for (let ii = 0; ii < stars.length; ++ii) {
+        let star = stars[ii];
+        star.dist_temp = distSq(x, y, star.x, star.y);
+        for (let jj = 0; jj < closest.length; ++jj) {
+          let other = closest[jj];
+          if (!other) {
+            closest[jj] = star;
+            break;
+          }
+          if (star.dist_temp < other.dist_temp) {
+            closest[jj] = star;
+            star = other;
+          }
+        }
+      }
+    }
+  }
+  return closest;
+};
+
+Galaxy.prototype.getStar = function (id) {
+  let { layers } = this;
+  let layer = layers[STAR_LAYER];
+  let [cell_idx, idx] = id;
+  let star = layer && layer[cell_idx] && layer[cell_idx].stars && layer[cell_idx].stars[idx];
+  if (!star) {
+    return null;
+  }
+  if (!star.solar_system) {
+    star.solar_system = solarSystemCreate(this.params.seed, star);
+  }
+  return star;
+};
 
 Galaxy.prototype.dispose = function () {
   let { layers } = this;

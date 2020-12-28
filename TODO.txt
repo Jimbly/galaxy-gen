@@ -1,3 +1,6 @@
+Planets!
+
+merge POIs into stars in layer 6
 
 More detail in the intermediate layers:
   Add some detail paths (twirled by 80-100%?) to some of the zoom in layers
