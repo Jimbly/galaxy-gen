@@ -16,7 +16,7 @@ const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
 const { clamp, clone, deepEqual, easeOut } = require('../common/util.js');
-const { unit_vec, vec2, vec4 } = require('./glov/vmath.js');
+const { unit_vec, vec2, v2add, v2set, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 
 window.Z = window.Z || {};
@@ -198,6 +198,7 @@ export function main() {
       progress: 0,
     });
   }
+  let drag_temp = vec2();
   function test(dt) {
 
     gl.clearColor(0, 0, 0, 1);
@@ -282,7 +283,9 @@ export function main() {
     x = game_width - w + 4;
     y = w - ui.button_height;
 
-    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '-' })) {
+    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '-' }) ||
+      input.keyDownEdge(KEYS.MINUS) || input.keyDownEdge(KEYS.Q)
+    ) {
       doZoom(0.5, 0.5, -1);
     }
     x += ui.button_height + 2;
@@ -291,7 +294,10 @@ export function main() {
       doZoom(0.5, 0.5, new_zoom - target_zoom_level);
     }
     x += ui.button_width + 2;
-    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '+' })) {
+    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '+' }) ||
+      input.keyDownEdge(KEYS.EQUALS) ||
+      input.keyDownEdge(KEYS.E)
+    ) {
       doZoom(0.5, 0.5, 1);
     }
     x += ui.button_height + 2;
@@ -329,10 +335,18 @@ export function main() {
     y = map_y0;
 
     let drag = input.drag();
-    if (drag) {
-      let { delta } = drag;
-      zoom_offs[0] -= delta[0] / w / zoom;
-      zoom_offs[1] -= delta[1] / w / zoom;
+    if (drag && drag.delta) {
+      v2add(drag_temp, drag_temp, drag.delta);
+    }
+    v2set(drag_temp, 0, 0);
+    let kb_scale = input.keyDown(KEYS.SHIFT) ? 0.5 : 0.125;
+    drag_temp[0] += input.keyDown(KEYS.A) * kb_scale;
+    drag_temp[0] -= input.keyDown(KEYS.D) * kb_scale;
+    drag_temp[1] += input.keyDown(KEYS.W) * kb_scale;
+    drag_temp[1] -= input.keyDown(KEYS.S) * kb_scale;
+    if (drag_temp[0] || drag_temp[1]) {
+      zoom_offs[0] -= drag_temp[0] / w / zoom;
+      zoom_offs[1] -= drag_temp[1] / w / zoom;
       local_storage.setJSON('offsx', zoom_offs[0]);
       local_storage.setJSON('offsy', zoom_offs[1]);
     }
