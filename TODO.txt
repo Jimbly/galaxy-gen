@@ -1,4 +1,3 @@
-Fix star count rounding error by parent assigning star counts (and pois) to children, not the other way around
 
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots

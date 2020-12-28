@@ -389,6 +389,62 @@ Galaxy.prototype.realizeStars = function (cell) {
   };
 }
 
+Galaxy.prototype.assignChildStars = function (cell) {
+  let { buf_dim } = this;
+  let { pois, star_count, stars, sum, data } = cell;
+  let child_data = [];
+  for (let ii = 0; ii < LAYER_STEP * LAYER_STEP; ++ii) {
+    child_data.push({ pois: [] });
+  }
+  if (!stars) {
+    let qs = buf_dim / LAYER_STEP;
+    let running_sum = 0;
+    let last_star_count = 0;
+    for (let idx=0, yy = 0; yy < LAYER_STEP; ++yy) {
+      for (let xx = 0; xx < LAYER_STEP; ++xx, ++idx) {
+        if (sum) {
+          for (let jj = 0; jj < qs; ++jj) {
+            for (let ii = 0; ii < qs; ++ii) {
+              running_sum += data[xx * qs + ii + (yy * qs + jj) * buf_dim];
+            }
+          }
+        }
+        let sc = sum ? round(running_sum / sum * star_count) : 0;
+        child_data[idx].star_count = sc - last_star_count;
+        last_star_count = sc;
+      }
+    }
+    if (last_star_count !== star_count) {
+      assert.equal(last_star_count, star_count);
+    }
+  }
+  let mul = LAYER_STEP / cell.w;
+  for (let ii = 0; ii < pois.length; ++ii) {
+    let poi = pois[ii];
+    let qx = floor((poi.x - cell.x0) * mul);
+    let qy = floor((poi.y - cell.y0) * mul);
+    assert(qx >= 0 && qx < LAYER_STEP);
+    assert(qy >= 0 && qy < LAYER_STEP);
+    let idx = qy * LAYER_STEP + qx;
+    child_data[idx].pois.push(poi);
+  }
+  if (stars) {
+    for (let ii = 0; ii < child_data.length; ++ii) {
+      child_data[ii].stars = [];
+    }
+    for (let ii = 0; ii < stars.length; ++ii) {
+      let poi = stars[ii];
+      let qx = floor((poi.x - cell.x0) * mul);
+      let qy = floor((poi.y - cell.y0) * mul);
+      assert(qx >= 0 && qx < LAYER_STEP);
+      assert(qy >= 0 && qy < LAYER_STEP);
+      let idx = qy * LAYER_STEP + qx;
+      child_data[idx].stars.push(poi);
+    }
+  }
+  cell.child_data = child_data;
+};
+
 Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   let { layers, buf_dim } = this;
   let layer = layers[layer_idx];
@@ -441,8 +497,10 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
 
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
+    let qidx = qx + qy * LAYER_STEP;
 
-    cell.pois = parent.pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
+    cell.pois = parent.child_data[qidx].pois;
+    // pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
     let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
 
     if (!sample_buf) {
@@ -462,27 +520,22 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
 
     if (parent.stars) {
       // filter existing stars
-      cell.stars = parent.stars.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
+      cell.stars = parent.child_data[qidx].stars;
+      // parent.stars.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
       cell.star_count = cell.stars.length;
       this.renderStars(cell);
     } else {
       // count or generate stars
 
-      // Calc sum of our quadrant/sector relative to parent's sum
-      let qs = buf_dim / LAYER_STEP;
-      let our_sum = 0;
-      for (let yy = 0; yy < buf_dim / LAYER_STEP; ++yy) {
-        for (let xx = 0; xx < buf_dim / LAYER_STEP; ++xx) {
-          our_sum += parent.data[qx * qs + xx + (qy * qs + yy) * buf_dim];
-        }
-      }
-      cell.star_count = parent.sum ? round(parent.star_count * our_sum / parent.sum) : 0;
+      cell.star_count = parent.child_data[qidx].star_count;
+
       if (layer_idx === STAR_LAYER) { // || cell.star_count < 100000) {
         // realize stars
         this.realizeStars(cell);
       }
     }
   }
+  this.assignChildStars(cell);
   cell.ready = true;
 
   return cell;
