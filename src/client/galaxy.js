@@ -476,7 +476,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
           our_sum += parent.data[qx * qs + xx + (qy * qs + yy) * buf_dim];
         }
       }
-      cell.star_count = round(parent.star_count * our_sum / parent.sum);
+      cell.star_count = parent.sum ? round(parent.star_count * our_sum / parent.sum) : 0;
       if (layer_idx === STAR_LAYER) { // || cell.star_count < 100000) {
         // realize stars
         this.realizeStars(cell);

@@ -351,13 +351,23 @@ export function main() {
       overlay_w = max(overlay_w, textw);
       overlay_y += ui.font_height;
     }
-    overlayText(`Mouse: ${round4(mouse_pos[0])},${round4(mouse_pos[1])}`);
+    overlayText(`Mouse: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
     function highlightCell(cell) {
+      let xp = x + (cell.x0 - zoom_offs[0]) * zoom * w;
+      let yp = y + (cell.y0 - zoom_offs[1]) * zoom * w;
+      let wp = w * zoom * cell.w;
+      let hp = w * zoom * cell.h;
+      if (view === 1) {
+        xp = round(xp);
+        yp = round(yp);
+        hp = round(hp);
+        wp = round(wp);
+      }
       ui.drawHollowRect2({
-        x: floor(x + (cell.x0 - zoom_offs[0]) * zoom * w) - 0.5,
-        y: floor(y + (cell.y0 - zoom_offs[1]) * zoom * w) - 0.5,
-        w: w * zoom * cell.w + 1,
-        h: w * zoom * cell.h + 1,
+        x: xp - 0.5,
+        y: yp - 0.5,
+        w: wp + 1,
+        h: hp + 1,
         z: Z.UI - 8,
         color: color_highlight,
       });

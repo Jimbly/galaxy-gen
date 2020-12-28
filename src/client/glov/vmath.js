@@ -10,11 +10,11 @@ exports.mat4 = require('gl-mat4/create');
 const { abs, max, min, floor, round, sqrt } = Math;
 
 export function vec1(v) {
-  return new Float32Array([v]);
+  return new Float64Array([v]);
 }
 
 export function vec2(a, b) {
-  let r = new Float32Array(2);
+  let r = new Float64Array(2);
   if (a || b) {
     r[0] = a;
     r[1] = b;
@@ -23,7 +23,7 @@ export function vec2(a, b) {
 }
 
 export function vec3(a, b, c) {
-  let r = new Float32Array(3);
+  let r = new Float64Array(3);
   if (a || b || c) {
     r[0] = a;
     r[1] = b;
@@ -33,7 +33,7 @@ export function vec3(a, b, c) {
 }
 
 export function vec4(a, b, c, d) {
-  let r = new Float32Array(4);
+  let r = new Float64Array(4);
   if (a || b || c || d) {
     r[0] = a;
     r[1] = b;
