@@ -21,7 +21,7 @@ const POI_TYPE_OFFS = [
 ];
 
 
-let noise = new Array(1);
+let noise = new Array(2);
 let rand = randCreate(0);
 function genGalaxy(params) {
   let {
@@ -94,7 +94,7 @@ function genGalaxy(params) {
       v += noise_v * noise_weight;
       // noise_v = max(0, 1 - (1 - noise_v) * d * noise_weight);
       // v *= noise_v;
-      data[idx] = clamp(v, 0, 1);
+      data[idx] = max(v, 0); // clamp(v, 0, 1);
     }
   }
 
@@ -445,8 +445,26 @@ Galaxy.prototype.assignChildStars = function (cell) {
   cell.child_data = child_data;
 };
 
+Galaxy.prototype.perturb = function (cell, params) {
+  let { buf_dim } = this;
+  let { noise_freq, noise_weight } = params;
+  let { data, x0, y0, w } = cell;
+  let mul = w / buf_dim;
+  for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
+    let world_y = y0 + yy * mul;
+    for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
+      let world_x = x0 + xx * mul;
+      let noisev = noise[1].noise2D(world_x * noise_freq, world_y * noise_freq);
+      //data[idx] *= 1 + noise_weight * noisev; // uniform scale around 1.0
+      // instead, only decrease, makes rendered maps look better, darken as you zoom in
+      data[idx] *= 1 + noise_weight * (noisev * 0.5 - 0.5);
+      assert(data[idx] >= 0);
+    }
+  }
+};
+
 Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
-  let { layers, buf_dim } = this;
+  let { layers, buf_dim, params } = this;
   let layer = layers[layer_idx];
   if (!layer) {
     layer = layers[layer_idx] = [];
@@ -475,7 +493,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   // Fill it
   if (layer_idx === 0) {
     assert(cell_idx === 0);
-    let ret = genGalaxy(this.params);
+    let ret = genGalaxy(params);
     cell.sum = ret.sum;
     cell.data = ret.data;
     cell.star_count = ret.star_count;
@@ -512,6 +530,10 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
 
     // Have the parent sample buf, generate us
     let data = cell.data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
+    let key = `layer${layer_idx}`;
+    if (params[key]) {
+      this.perturb(cell, params[key]);
+    }
     let sum = 0;
     for (let ii = 0; ii < data.length; ++ii) {
       sum += data[ii];

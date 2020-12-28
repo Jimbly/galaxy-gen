@@ -95,6 +95,27 @@ export function main() {
     width_ly: 128*1024,
     star_count: 100*1000*1000*1000,
     max_zoom: MAX_ZOOM,
+
+    layer1: {
+      noise_freq: 20,
+      noise_weight: 0.2,
+    },
+    layer2: {
+      noise_freq: 80,
+      noise_weight: 0.2,
+    },
+    layer3: {
+      noise_freq: 250,
+      noise_weight: 0.2,
+    },
+    layer4: {
+      noise_freq: 750,
+      noise_weight: 0.2,
+    },
+    layer5: {
+      noise_freq: 2500,
+      noise_weight: 0.2,
+    },
   };
   let gen_params;
   let debug_sprite;
@@ -221,7 +242,9 @@ export function main() {
       allocSprite();
     }
 
-    if (ui.buttonText({ x, y, text: `View: ${view}`, w: ui.button_width * 0.5 }) || input.keyDownEdge(KEYS.V)) {
+    if (ui.buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: ui.button_width * 0.75 }) ||
+      input.keyDownEdge(KEYS.V)
+    ) {
       view = (view + 1) % 2;
       local_storage.setJSON('view', view);
       engine.reloadSafe();
@@ -240,40 +263,59 @@ export function main() {
     params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
     y += button_spacing;
 
-    ui.print(style, x, y, z, `Arms: ${params.arms}`);
-    y += ui.font_height;
-    params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
-    y += button_spacing;
+    if (zoom_level < 1.9) { // Galaxy
+      ui.print(style, x, y, z, `Arms: ${params.arms}`);
+      y += ui.font_height;
+      params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
+      y += button_spacing;
 
-    ui.print(style, x, y, z, `Arm Length Mods: ${params.len_mods}`);
-    y += ui.font_height;
-    params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
-    y += button_spacing;
+      ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
+      y += ui.font_height;
+      params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
+      y += button_spacing;
 
-    ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
-    y += ui.font_height;
-    params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
-    y += button_spacing;
+      ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
+      y += ui.font_height;
+      params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
+      y += button_spacing;
 
-    ui.print(style, x, y, z, `Center: ${params.center}`);
-    y += ui.font_height;
-    params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
-    y += button_spacing;
+      ui.print(style, x, y, z, `Center: ${params.center}`);
+      y += ui.font_height;
+      params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
+      y += button_spacing;
 
-    ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
-    y += ui.font_height;
-    params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
-    y += button_spacing;
+      ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
+      y += ui.font_height;
+      params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
+      y += button_spacing;
 
-    ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
-    y += ui.font_height;
-    params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
-    y += button_spacing;
+      ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
+      y += ui.font_height;
+      params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
+      y += button_spacing;
 
-    ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
-    y += ui.font_height;
-    params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
-    y += button_spacing;
+      ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
+      y += ui.font_height;
+      params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
+      y += button_spacing;
+    } else {
+      let layer_idx = round(zoom_level / (LAYER_STEP / 2));
+      ui.print(style, x, y, z, `Layer #${layer_idx}:`);
+      y += ui.font_height + 2;
+      let key = `layer${layer_idx}`;
+      if (params[key]) {
+        ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
+        y += ui.font_height;
+        params[key].noise_freq = round4(ui.slider(params[key].noise_freq,
+          { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
+        y += ui.font_height;
+        params[key].noise_weight = round4(ui.slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
+        y += button_spacing;
+      }
+    }
 
     ui.panel({
       x: x - 4, y: 0, w: ui.button_width + 8, h: y, z: z - 1,
@@ -334,11 +376,11 @@ export function main() {
     x = map_x0;
     y = map_y0;
 
+    v2set(drag_temp, 0, 0);
     let drag = input.drag();
     if (drag && drag.delta) {
       v2add(drag_temp, drag_temp, drag.delta);
     }
-    v2set(drag_temp, 0, 0);
     let kb_scale = input.keyDown(KEYS.SHIFT) ? 0.5 : 0.125;
     drag_temp[0] += input.keyDown(KEYS.A) * kb_scale;
     drag_temp[0] -= input.keyDown(KEYS.D) * kb_scale;

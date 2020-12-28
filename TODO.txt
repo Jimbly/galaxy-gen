@@ -1,4 +1,7 @@
 
+More detail in the intermediate layers:
+  Add some detail paths (twirled by 80-100%?) to some of the zoom in layers
+
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots
 
@@ -29,3 +32,10 @@ Plan:
   layer is a 256 density map plus points of interest
   new density map always a 4x reduction?
   output is a texture and a density map and we just blend them
+
+Layers
+  0: Galaxy
+
+  6: Stars as points, 3x3 blurred
+  7: Stars rendered as gaussian
+  8: Stars rendered as minisprites
