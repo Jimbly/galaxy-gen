@@ -295,7 +295,7 @@ const STAR_LARGE_COUNT = 20000; // 20k = about 10ms
 const STAR_QUOTA = 14; // ms
 Galaxy.prototype.realizeStars = function (cell) {
   let start = Date.now();
-  let { layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois, stars, star_progress } = cell;
+  let { layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois, stars, star_progress, star_idx } = cell;
   let scale = star_count / lerp(SUMSQ, sum, sumsq) * 1.03;
   let value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
@@ -313,7 +313,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     yy0 = star_progress.y;
   }
   function fillStar(star) {
-    star.id = [cell_idx, 0]; // 24bit cell_idx, <~18bit id, filled later
+    star.id = [cell_idx, 0, 0]; // 24bit cell_idx, <~18bit index, ~37bit (at 100B stars) uid
     star.classif = starType(rand.random()); // TODO: correlate to `type`
     star.seed = rand.uint32();
   }
@@ -367,6 +367,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     }
     for (let ii = 0; ii < stars.length; ++ii) {
       stars[ii].id[1] = ii;
+      stars[ii].id[2] = star_idx + ii;
     }
   }
   // let end_place = Date.now();
@@ -452,7 +453,7 @@ Galaxy.prototype.realizeStars = function (cell) {
 
 Galaxy.prototype.assignChildStars = function (cell) {
   let { buf_dim } = this;
-  let { pois, star_count, stars, sum, sumsq, data } = cell;
+  let { pois, star_count, stars, sum, sumsq, data, star_idx } = cell;
   let child_data = [];
   for (let ii = 0; ii < LAYER_STEP * LAYER_STEP; ++ii) {
     child_data.push({ pois: [] });
@@ -477,12 +478,11 @@ Galaxy.prototype.assignChildStars = function (cell) {
         }
         let sc = sum ? round(lerp(SUMSQ, running_sum / sum, running_sumsq / sumsq) * star_count) : 0;
         child_data[idx].star_count = sc - last_star_count;
+        child_data[idx].star_idx = star_idx + last_star_count;
         last_star_count = sc;
       }
     }
-    if (last_star_count !== star_count) {
-      assert.equal(last_star_count, star_count);
-    }
+    assert.equal(last_star_count, star_count);
   }
   let mul = LAYER_STEP / cell.w;
   for (let ii = 0; ii < pois.length; ++ii) {
@@ -569,6 +569,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     cell.sumsq = ret.sumsq;
     cell.data = ret.data;
     cell.star_count = ret.star_count;
+    cell.star_idx = 0;
     cell.pois = ret.pois;
   } else {
     // How many cells wide is this layer?
@@ -630,6 +631,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
       // count or generate stars
 
       cell.star_count = parent.child_data[qidx].star_count;
+      cell.star_idx = parent.child_data[qidx].star_idx;
 
       // did or will do work this frame
       this.work_frame = engine.frame_index;

@@ -1,7 +1,5 @@
 Solar system view
   zoom levels: 1 past max zoom, try game-scale sizes (maybe view toggle for astronomical sizes, but would need dynamic zoom)
-  sun in center, scaled between reasonable sizes
-  planets animating, orbiting around, or just showing orbits?
 
 Stars in lower layers should get the colors of their type
   how to align this with pixel art style?  layer 6 gets color - does this fade look bad?

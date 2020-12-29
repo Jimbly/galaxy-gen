@@ -391,11 +391,12 @@ export function main() {
       doZoom(0.5, 0.5, -1);
     }
     x += ui.button_height + 2;
-    let new_zoom = ui.slider(target_zoom_level, { x, y, z, min: 0, max: MAX_ZOOM });
+    const SLIDER_W = 110;
+    let new_zoom = ui.slider(target_zoom_level, { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM });
     if (abs(new_zoom - target_zoom_level) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - target_zoom_level);
     }
-    x += ui.button_width + 2;
+    x += SLIDER_W + 2;
     if (ui.buttonText({ x, y, z, w: ui.button_height, text: '+' }) ||
       input.keyDownEdge(KEYS.EQUALS) ||
       input.keyDownEdge(KEYS.E)
@@ -611,7 +612,7 @@ export function main() {
         star = null;
       }
       if (star) {
-        overlayText(`Star ${star.id}, seed=${star.seed}`);
+        overlayText(`Star #${star.id[2]}, seed=${star.seed}`);
         let max_zoom = pow(2, MAX_ZOOM);
         let xp = floor(star.x * max_zoom * buf_dim);
         let yp = floor(star.y * max_zoom * buf_dim);
