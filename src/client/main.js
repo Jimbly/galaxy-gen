@@ -5,8 +5,8 @@ local_storage.storage_prefix = 'galaxy-gen'; // Before requiring anything else t
 const assert = require('assert');
 const camera2d = require('./glov/camera2d.js');
 const engine = require('./glov/engine.js');
-const { createGalaxy, LAYER_STEP } = require('./galaxy.js');
-const { abs, floor, max, min, pow, round } = Math;
+const { createGalaxy, distSq, LAYER_STEP } = require('./galaxy.js');
+const { abs, floor, max, min, pow, round, sqrt } = Math;
 const input = require('./glov/input.js');
 const { KEYS } = input;
 const net = require('./glov/net.js');
@@ -564,6 +564,9 @@ export function main() {
     if (zoom_level >= 12) {
       let star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
       star = star && star[0];
+      if (star && sqrt(distSq(star.x, star.y, mouse_pos[0], mouse_pos[1])) * zoom * w > 40) {
+        star = null;
+      }
       if (star) {
         overlayText(`Star ${star.id}, seed=${star.seed}`);
         let max_zoom = pow(2, MAX_ZOOM);

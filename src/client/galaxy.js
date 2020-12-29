@@ -11,6 +11,8 @@ const { solarSystemCreate } = require('./solar_system.js');
 const textures = require('./glov/textures.js');
 const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
 
+const SUMSQ = false;
+
 const POI_TYPE_OFFS = [
   [1, 0,0,
    0.5, 0,-1, 0.5, -1,0, 0.5, 0,1, 0.5, 1,0], // 4 neighbors
@@ -120,13 +122,17 @@ function genGalaxy(params) {
   }
 
   let sum = 0;
+  let sumsq = 0;
   for (let ii = 0; ii < data.length; ++ii) {
-    sum += data[ii];
+    let v = data[ii];
+    sum += v;
+    sumsq += v*v;
   }
 
   return {
     data,
     sum,
+    sumsq,
     star_count,
     pois,
   };
@@ -285,13 +291,18 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
 };
 
 Galaxy.prototype.realizeStars = function (cell) {
-  let { layer_idx, cell_idx, star_count, data, sum, x0, y0, w, pois } = cell;
+  let { layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois } = cell;
   let stars = cell.stars = [];
   let { buf_dim, params } = this;
   let { seed } = params;
   rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
-  let scale = star_count / sum * 1.03;
-  let value_scale = sum / star_count;
+  let scale;
+  if (SUMSQ) {
+    scale = star_count / sumsq * 1.03;
+  } else {
+    scale = star_count / sum * 1.03;
+  }
+  let value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
   function fillStar(star) {
     star.id = [cell_idx, 0]; // 24bit cell_idx, <~18bit id, filled later
@@ -312,6 +323,9 @@ Galaxy.prototype.realizeStars = function (cell) {
     for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
       for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
         let v = data[idx];
+        if (SUMSQ) {
+          v *= v;
+        }
         let expected_stars = v * scale;
         // assert(expected_stars < 10); // sometimes more than 65
         // assert(expected_stars < 50);
@@ -406,7 +420,7 @@ Galaxy.prototype.realizeStars = function (cell) {
 
 Galaxy.prototype.assignChildStars = function (cell) {
   let { buf_dim } = this;
-  let { pois, star_count, stars, sum, data } = cell;
+  let { pois, star_count, stars, sum, sumsq, data } = cell;
   let child_data = [];
   for (let ii = 0; ii < LAYER_STEP * LAYER_STEP; ++ii) {
     child_data.push({ pois: [] });
@@ -414,17 +428,27 @@ Galaxy.prototype.assignChildStars = function (cell) {
   if (!stars) {
     let qs = buf_dim / LAYER_STEP;
     let running_sum = 0;
+    let running_sumsq = 0;
     let last_star_count = 0;
     for (let idx=0, yy = 0; yy < LAYER_STEP; ++yy) {
       for (let xx = 0; xx < LAYER_STEP; ++xx, ++idx) {
         if (sum) {
+          let idxbase = xx * qs + yy * qs * buf_dim;
           for (let jj = 0; jj < qs; ++jj) {
-            for (let ii = 0; ii < qs; ++ii) {
-              running_sum += data[xx * qs + ii + (yy * qs + jj) * buf_dim];
+            let idx_in = idxbase + jj * buf_dim;
+            for (let ii = 0; ii < qs; ++ii, ++idx_in) {
+              let v = data[idx_in];
+              running_sum += v;
+              running_sumsq += v*v;
             }
           }
         }
-        let sc = sum ? round(running_sum / sum * star_count) : 0;
+        let sc;
+        if (SUMSQ) {
+          sc = sumsq ? round(running_sumsq / sumsq * star_count) : 0;
+        } else {
+          sc = sum ? round(running_sum / sum * star_count) : 0;
+        }
         child_data[idx].star_count = sc - last_star_count;
         last_star_count = sc;
       }
@@ -513,6 +537,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     assert(cell_idx === 0);
     let ret = genGalaxy(params);
     cell.sum = ret.sum;
+    cell.sumsq = ret.sumsq;
     cell.data = ret.data;
     cell.star_count = ret.star_count;
     cell.pois = ret.pois;
@@ -553,10 +578,14 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
       this.perturb(cell, params[key]);
     }
     let sum = 0;
+    let sumsq = 0;
     for (let ii = 0; ii < data.length; ++ii) {
-      sum += data[ii];
+      let v = data[ii];
+      sum += v;
+      sumsq += v*v;
     }
     cell.sum = sum;
+    cell.sumsq = sumsq;
 
     if (parent.stars) {
       // filter existing stars
@@ -810,7 +839,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
   };
 }
 
-function distSq(x1, y1, x2, y2) {
+export function distSq(x1, y1, x2, y2) {
   let dx = x2 - x1;
   let dy = y2 - y1;
   return dx*dx + dy*dy;
