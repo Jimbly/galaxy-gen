@@ -304,7 +304,7 @@ Galaxy.prototype.realizeStars = function (cell) {
       x: x0 + xx/buf_dim * w,
       y: y0 + yy/buf_dim * w,
       v: (0.5 + rand.random()) * value_scale,
-      id: [cell_idx, stars.length], // 24bit cell_idx, <~18bit id
+      id: [cell_idx, 0], // 24bit cell_idx, <~18bit id, filled later
       classif: starType(rand.random()), // TODO: correlate to `type`
       seed: rand.uint32(),
     });
@@ -328,6 +328,9 @@ Galaxy.prototype.realizeStars = function (cell) {
   }
   while (stars.length > star_count) {
     ridx(stars, rand.range(stars.length));
+  }
+  for (let ii = 0; ii < stars.length; ++ii) {
+    stars[ii].id[1] = ii;
   }
   // TODO: relaxation step to separate really close stars (1/1000 ly? <=2px in highest res buffer?)
   this.renderStars(cell);

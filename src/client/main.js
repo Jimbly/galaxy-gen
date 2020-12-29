@@ -221,6 +221,24 @@ export function main() {
       progress: 0,
     });
   }
+
+  const color_black = vec4(0,0,0,1);
+  function drawSolarSystem(solar_system, x0, y0, z, w, h) {
+    let { star_data, planets } = solar_system;
+    let ymid = y0 + h/2;
+    let sun_radius = max(2, star_data.radius * 80);
+    let sun_pad = w * 0.2;
+    ui.drawCircle(x0 + sun_pad - sun_radius, ymid, z, sun_radius, 0.9, star_data.color);
+    let xstep = (w - sun_pad) / (planets.length + 3);
+    let x = x0 + sun_pad + xstep * 2;
+    for (let ii = 0; ii < planets.length; ++ii) {
+      let planet = planets[ii];
+      ui.drawCircle(x, ymid, z + 1 + ii * 0.1, planet.size + 2, 0.99, color_black);
+      ui.drawCircle(x, ymid, z + 1.05 + ii * 0.1, planet.size, 0.99, planet.type.color);
+      x += xstep;
+    }
+  }
+
   let drag_temp = vec2();
   function test(dt) {
 
@@ -421,7 +439,9 @@ export function main() {
       overlay_w = max(overlay_w, textw);
       overlay_y += ui.font_height;
     }
-    overlayText(`${use_mouse_pos?'Mouse':'Target'}: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
+    if (0) {
+      overlayText(`${use_mouse_pos?'Mouse':'Target'}: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
+    }
     function highlightCell(cell) {
       let xp = x + (cell.x0 - zoom_offs[0]) * zoom * w;
       let yp = y + (cell.y0 - zoom_offs[1]) * zoom * w;
@@ -444,7 +464,9 @@ export function main() {
 
       overlayText(`Layer ${cell.layer_idx}, Cell ${cell.cell_idx} (${cell.cx},${cell.cy})`);
       overlayText(`Stars: ${format(cell.star_count)}`);
-      overlayText(`POIs: ${cell.pois.length}`);
+      if (cell.pois.length) {
+        overlayText(`POIs: ${cell.pois.length}`);
+      }
       let dx = floor((mouse_pos[0] - cell.x0) / cell.w * galaxy.buf_dim);
       let dy = floor((mouse_pos[1] - cell.y0) / cell.w * galaxy.buf_dim);
       let dd = cell.data[dy * galaxy.buf_dim + dx];
@@ -559,7 +581,15 @@ export function main() {
         star = galaxy.getStar(star.id);
         let solar_system = star && star.solar_system;
         if (solar_system) {
-          overlayText(`  Type: ${solar_system.sun_label}`);
+          let { planets, star_data } = solar_system;
+          overlayText(`  Star Type: ${star_data.label}`);
+          for (let ii = 0; ii < planets.length; ++ii) {
+            let planet = planets[ii];
+            overlayText(`    Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
+          }
+          if (zoom_level > 15.5) {
+            drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 5, w, w);
+          }
         }
       }
     }
