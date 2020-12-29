@@ -86,15 +86,15 @@ Alea.prototype.floatBetween = function (a, b) {
 };
 
 // Note: import/export probably needs more precision than F32 or JSON provide
-// Alea.prototype.exportState = function () {
-//   return [this.s0, this.s1, this.s2, this.c];
-// };
-// Alea.prototype.importState = function (i) {
-//   this.s0 = i[0];
-//   this.s1 = i[1];
-//   this.s2 = i[2];
-//   this.c = i[3];
-// };
+Alea.prototype.exportState = function () {
+  return [this.s0, this.s1, this.s2, this.c];
+};
+Alea.prototype.importState = function (i) {
+  this.s0 = i[0];
+  this.s1 = i[1];
+  this.s2 = i[2];
+  this.c = i[3];
+};
 
 export function randCreate(seed) {
   return new Alea(seed);

@@ -290,15 +290,27 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
   return sample_buf;
 };
 
+const STAR_LARGE_COUNT = 20000; // 20k = about 10ms
+const STAR_QUOTA = 14; // ms
 Galaxy.prototype.realizeStars = function (cell) {
-  let { layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois } = cell;
-  let stars = cell.stars = [];
-  let { buf_dim, params } = this;
-  let { seed } = params;
-  rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
+  let start = Date.now();
+  let { layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois, stars, star_progress } = cell;
   let scale = star_count / lerp(SUMSQ, sum, sumsq) * 1.03;
   let value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
+  let { buf_dim, params } = this;
+  let { seed } = params;
+  let yy0;
+  if (!star_progress) {
+    stars = cell.stars = [];
+    rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
+    yy0 = 0;
+  } else {
+    if (star_progress.state) {
+      rand.importState(star_progress.state);
+    }
+    yy0 = star_progress.y;
+  }
   function fillStar(star) {
     star.id = [cell_idx, 0]; // 24bit cell_idx, <~18bit id, filled later
     star.classif = starType(rand.random()); // TODO: correlate to `type`
@@ -314,8 +326,10 @@ Galaxy.prototype.realizeStars = function (cell) {
     fillStar(star);
     stars.push(star);
   }
-  if (star_count) {
-    for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
+  let do_stars = (star_count || pois.length) && yy0 !== buf_dim;
+  if (do_stars) {
+    let expire = start + STAR_QUOTA;
+    for (let idx=yy0*buf_dim, yy = yy0; yy < buf_dim; ++yy) {
       for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
         let v = data[idx];
         v *= 1 + SUMSQ * (v - 1); // v = lerp(SUMSQ, v, v*v);
@@ -328,25 +342,49 @@ Galaxy.prototype.realizeStars = function (cell) {
           addStar(xx + rand.random(), yy + rand.random());
         }
       }
+      if (Date.now() > expire && yy !== buf_dim - 1) {
+        cell.star_progress = {
+          y: yy + 1,
+          state: rand.exportState(),
+        };
+        //let end = Date.now();
+        //console.log(`realizeStars(${star_count}): ${end - start}ms place (partial ${yy - yy0 + 1})`);
+        return false;
+      }
+    }
+    // console.log((stars.length-star_count)/star_count, stars.length, star_count); // about 5% under to 30% over
+    while (stars.length < star_count) {
+      addStar(rand.floatBetween(0, buf_dim), rand.floatBetween(0, buf_dim));
+    }
+    while (stars.length > star_count) {
+      ridx(stars, rand.range(stars.length));
+    }
+    for (let ii = 0; ii < pois.length; ++ii) {
+      let poi = pois[ii];
+      fillStar(poi);
+      stars.push(poi);
+    }
+    for (let ii = 0; ii < stars.length; ++ii) {
+      stars[ii].id[1] = ii;
     }
   }
-  // console.log((stars.length-star_count)/star_count, stars.length, star_count); // about 5% under to 30% over
-  while (stars.length < star_count) {
-    addStar(rand.floatBetween(0, buf_dim), rand.floatBetween(0, buf_dim));
-  }
-  while (stars.length > star_count) {
-    ridx(stars, rand.range(stars.length));
-  }
-  for (let ii = 0; ii < pois.length; ++ii) {
-    let poi = pois[ii];
-    fillStar(poi);
-    stars.push(poi);
-  }
-  for (let ii = 0; ii < stars.length; ++ii) {
-    stars[ii].id[1] = ii;
-  }
+  // let end_place = Date.now();
   // TODO: relaxation step to separate really close stars (1/1000 ly? <=2px in highest res buffer?)
+  if (do_stars && star_count > STAR_LARGE_COUNT) {
+    // spend considerable time
+    cell.star_progress = {
+      y: buf_dim,
+      state: null, // no random after this!
+    };
+    // let end = Date.now();
+    // console.log(`realizeStars(${star_count}): ${end - start}ms place (finished)`);
+    return false;
+  }
   this.renderStars(cell);
+  delete cell.star_progress;
+  // let end = Date.now();
+  // console.log(`realizeStars(${star_count}): ${end_place - start}ms place, ${end - end_place}ms render`);
+  return true;
 };
 
 // render into `data` appropriately for the current zoom
@@ -550,32 +588,36 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
     let qy = cy - py * LAYER_STEP;
     let qidx = qx + qy * LAYER_STEP;
 
-    cell.pois = parent.child_data[qidx].pois;
-    // pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
-    let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
+    if (!cell.pois) {
+      cell.pois = parent.child_data[qidx].pois;
+      // pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
+    }
 
-    if (!sample_buf) {
-      // Already did one this frame
-      return cell;
-    }
-    // Going to do work, take the frame's allotment
-    this.work_frame = engine.frame_index;
+    if (!cell.data) {
+      let sample_buf = this.getSampleBuf(layer_idx - 1, px, py);
+      if (!sample_buf) {
+        // Already did one this frame
+        return cell;
+      }
+      // Going to do work, take the frame's allotment
+      this.work_frame = engine.frame_index;
 
-    // Have the parent sample buf, generate us
-    let data = cell.data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
-    let key = `layer${layer_idx}`;
-    if (params[key]) {
-      this.perturb(cell, params[key]);
+      // Have the parent sample buf, generate us
+      let data = cell.data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
+      let key = `layer${layer_idx}`;
+      if (params[key]) {
+        this.perturb(cell, params[key]);
+      }
+      let sum = 0;
+      let sumsq = 0;
+      for (let ii = 0; ii < data.length; ++ii) {
+        let v = data[ii];
+        sum += v;
+        sumsq += v*v;
+      }
+      cell.sum = sum;
+      cell.sumsq = sumsq;
     }
-    let sum = 0;
-    let sumsq = 0;
-    for (let ii = 0; ii < data.length; ++ii) {
-      let v = data[ii];
-      sum += v;
-      sumsq += v*v;
-    }
-    cell.sum = sum;
-    cell.sumsq = sumsq;
 
     if (parent.stars) {
       // filter existing stars
@@ -588,9 +630,15 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
 
       cell.star_count = parent.child_data[qidx].star_count;
 
+      // did or will do work this frame
+      this.work_frame = engine.frame_index;
+
       if (layer_idx === STAR_LAYER) { // || cell.star_count < 100000) {
         // realize stars
-        this.realizeStars(cell);
+        if (!this.realizeStars(cell)) {
+          // didn't complete
+          return cell;
+        }
       }
     }
   }
@@ -835,51 +883,57 @@ export function distSq(x1, y1, x2, y2) {
   return dx*dx + dy*dy;
 }
 
-Galaxy.prototype.starsNear = function (x, y, num) {
-  let { layers } = this;
-  let layer_idx = MAX_LAYER - 1;
-  let layer = layers[layer_idx];
-  if (!layer) {
-    return [];
-  }
-  let layer_res = pow(LAYER_STEP, layer_idx);
-  let cx = floor(x * layer_res);
-  let cy = floor(y * layer_res);
-  let closest = new Array(num);
-  for (let yy = cy - 1; yy <= cy + 1; ++yy) {
-    if (yy < 0 || yy >= layer_res) {
-      continue;
+{
+  const dy = [0, 1, -1];
+  const dx = [0, 1, -1];
+  Galaxy.prototype.starsNear = function (x, y, num) {
+    let { layers } = this;
+    let layer_idx = MAX_LAYER - 1;
+    let layer = layers[layer_idx];
+    if (!layer) {
+      return [];
     }
-    for (let xx = cx - 1; xx <= cx + 1; ++xx) {
-      if (xx < 0 || xx >= layer_res) {
+    let layer_res = pow(LAYER_STEP, layer_idx);
+    let cx = floor(x * layer_res);
+    let cy = floor(y * layer_res);
+    let closest = new Array(num);
+    for (let ddy = 0; ddy <= 3; ++ddy) {
+      let yy = cy + dy[ddy];
+      if (yy < 0 || yy >= layer_res) {
         continue;
       }
-      let cell_idx = yy * layer_res + xx;
-      let cell = layer[cell_idx];
-      if (!cell || !cell.stars) {
-        // incomplete data loaded, dynamic load here? just for stars?
-        continue;
-      }
-      let { stars } = cell;
-      for (let ii = 0; ii < stars.length; ++ii) {
-        let star = stars[ii];
-        star.dist_temp = distSq(x, y, star.x, star.y);
-        for (let jj = 0; jj < closest.length; ++jj) {
-          let other = closest[jj];
-          if (!other) {
-            closest[jj] = star;
-            break;
-          }
-          if (star.dist_temp < other.dist_temp) {
-            closest[jj] = star;
-            star = other;
+      for (let ddx = 0; ddx <= 3; ++ddx) {
+        let xx = cx + dx[ddx];
+        if (xx < 0 || xx >= layer_res) {
+          continue;
+        }
+        let cell_idx = yy * layer_res + xx;
+        let cell = layer[cell_idx];
+        if (!cell || !cell.stars) {
+          // incomplete data loaded, dynamic load here? just for stars?
+          continue;
+        }
+        let { stars } = cell;
+        for (let ii = 0; ii < stars.length; ++ii) {
+          let star = stars[ii];
+          star.dist_temp = distSq(x, y, star.x, star.y);
+          for (let jj = 0; jj < closest.length; ++jj) {
+            let other = closest[jj];
+            if (!other) {
+              closest[jj] = star;
+              break;
+            }
+            if (star.dist_temp < other.dist_temp) {
+              closest[jj] = star;
+              star = other;
+            }
           }
         }
       }
     }
-  }
-  return closest;
-};
+    return closest;
+  };
+}
 
 Galaxy.prototype.getStar = function (id) {
   let { layers } = this;
