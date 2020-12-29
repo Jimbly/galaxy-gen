@@ -253,12 +253,19 @@ export function main() {
     let map_x0 = game_width - w;
     let map_y0 = 0;
 
+    if (galaxy) {
+      galaxy.loading = false;
+    }
+
     if (!deepEqual(params, gen_params)) {
       gen_params = clone(params);
+      let first = true;
       if (galaxy) {
+        first = false;
         galaxy.dispose();
       }
       galaxy = createGalaxy(params);
+      galaxy.loading = first;
       allocSprite();
     }
 

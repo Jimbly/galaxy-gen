@@ -148,6 +148,7 @@ function Galaxy(params) {
   this.tex_data = new Uint8Array(tex_total_size * 4);
   this.layers = [];
   this.work_frame = 0;
+  this.loading = false;
 }
 
 const SAMPLE_PAD = 4;
@@ -266,7 +267,7 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
     }
   }
 
-  if (engine.frame_index === this.work_frame) {
+  if (engine.frame_index === this.work_frame && !this.loading) {
     return null;
   }
 
@@ -342,7 +343,7 @@ Galaxy.prototype.realizeStars = function (cell) {
           addStar(xx + rand.random(), yy + rand.random());
         }
       }
-      if (Date.now() > expire && yy !== buf_dim - 1) {
+      if (Date.now() > expire && yy !== buf_dim - 1 && !this.loading) {
         cell.star_progress = {
           y: yy + 1,
           state: rand.exportState(),
@@ -370,7 +371,7 @@ Galaxy.prototype.realizeStars = function (cell) {
   }
   // let end_place = Date.now();
   // TODO: relaxation step to separate really close stars (1/1000 ly? <=2px in highest res buffer?)
-  if (do_stars && star_count > STAR_LARGE_COUNT) {
+  if (do_stars && star_count > STAR_LARGE_COUNT && !this.loading) {
     // spend considerable time
     cell.star_progress = {
       y: buf_dim,
@@ -579,7 +580,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx) {
       return cell;
     }
 
-    if (engine.frame_index === this.work_frame) {
+    if (engine.frame_index === this.work_frame && !this.loading) {
       // Already did one this frame (presumably a parent)
       return cell;
     }
