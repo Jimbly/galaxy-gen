@@ -821,6 +821,17 @@ function periodiclyRequestFrame() {
   setTimeout(periodiclyRequestFrame, 5000);
 }
 
+// Must be called out-of-frame (use setTimeout) if not at startup
+export function setPixelyStrict(on) {
+  if (on) {
+    render_width = game_width;
+    render_height = game_height;
+  } else {
+    render_width = undefined;
+    render_height = undefined;
+  }
+}
+
 export function startup(params) {
   fixNatives(true);
 
@@ -905,15 +916,9 @@ export function startup(params) {
   setGameDims(params.game_width || 1280, params.game_height || 960);
   ZNEAR = params.znear || 0.7;
   ZFAR = params.zfar || 10000;
-  if (params.pixely === 'strict') {
-    render_width = game_width;
-    render_height = game_height;
-    if (params.viewport_postprocess) {
-      do_viewport_postprocess = true;
-    }
-  } else {
-    render_width = undefined;
-    render_height = undefined;
+  setPixelyStrict(params.pixely === 'strict');
+  if (params.viewport_postprocess && params.pixely === 'strict') {
+    do_viewport_postprocess = true;
   }
   pixel_aspect = params.pixel_aspect || 1;
   setFOV(settings.fov * PI / 180);

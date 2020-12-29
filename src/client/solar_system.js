@@ -1,5 +1,6 @@
-const { starTypeData } = require('./star_types.js');
+const { PI } = Math;
 const { randCreate, mashString } = require('./glov/rand_alea.js');
+const { starTypeData } = require('./star_types.js');
 const { vec4 } = require('./glov/vmath.js');
 
 let rand = [
@@ -23,7 +24,7 @@ let planet_types = [
   // Class M (terrestrial)
   { name: 'M', color: vec4(0,1,0,1) },
   // Class N (sulfuric)
-  { name: 'N', color: vec4(1,1,0,1) },
+  { name: 'N', color: vec4(0.6,0.6,0,1) },
   // Class P (glacial)
   { name: 'P', color: vec4(0.5,0.7,1,1) },
   // Class R (a rogue planet, not as habitable as a terrestrial planet)
@@ -44,6 +45,8 @@ function genPlanet() {
   return {
     type: planet_types[rand[2].range(planet_types.length)],
     size: randExp(3, 4, 20),
+    orbit: rand[0].floatBetween(0, PI*2),
+    orbit_speed: randExp(1, 0.1, 1),
   };
 }
 

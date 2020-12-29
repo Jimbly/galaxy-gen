@@ -6,7 +6,7 @@ const assert = require('assert');
 const camera2d = require('./glov/camera2d.js');
 const engine = require('./glov/engine.js');
 const { createGalaxy, distSq, LAYER_STEP } = require('./galaxy.js');
-const { abs, floor, max, min, pow, round, sqrt } = Math;
+const { abs, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
 const input = require('./glov/input.js');
 const { KEYS } = input;
 const net = require('./glov/net.js');
@@ -16,7 +16,7 @@ const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
 const { clamp, clone, deepEqual, easeOut } = require('../common/util.js');
-const { unit_vec, vec2, v2add, v2set, vec4 } = require('./glov/vmath.js');
+const { unit_vec, vec2, v2add, v2addScale, v2copy, v2floor, v2set, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 const { BLEND_ADDITIVE } = sprites;
 
@@ -44,7 +44,7 @@ export function main() {
   const font_info_palanquin32 = require('./img/font/palanquin32.json');
   let pixely = view === 1 ? 'strict' : 'on';
   let font;
-  if (pixely === 'strict') {
+  if (pixely === 'strict' || true) {
     font = { info: font_info_04b03x1, texture: 'font/04b03_8x1' };
   } else if (pixely && pixely !== 'off') {
     font = { info: font_info_04b03x2, texture: 'font/04b03_8x2' };
@@ -223,20 +223,51 @@ export function main() {
   }
 
   const color_black = vec4(0,0,0,1);
+  const color_orbit = vec4(0.5, 0.5, 0, 1);
+  const VSCALE = 0.5;
+  function drawElipse(x, y, z, r0, r1, color) {
+    let segments = max(20, r0 - 10);
+    let last_pos = [0,0];
+    let cur_pos = [0,0];
+    for (let ii = 0; ii <= segments + 1; ++ii) {
+      v2copy(last_pos, cur_pos);
+      let theta = ii / segments * PI * 2 + 0.1;
+      v2set(cur_pos, x + cos(theta) * r0, y + sin(theta) * r1);
+      if (view === 1) {
+        v2floor(cur_pos, cur_pos);
+        v2addScale(cur_pos, cur_pos, unit_vec, 0.5);
+      }
+      if (ii) {
+        ui.drawLine(last_pos[0], last_pos[1], cur_pos[0], cur_pos[1], z, 1, 0.9, color);
+      }
+    }
+  }
+  const ORBIT_RATE = 0.0002;
   function drawSolarSystem(solar_system, x0, y0, z, w, h) {
     let { star_data, planets } = solar_system;
+    let xmid = x0 + w/2;
     let ymid = y0 + h/2;
-    let sun_radius = max(2, star_data.radius * 80);
-    let sun_pad = w * 0.2;
-    ui.drawCircle(x0 + sun_pad - sun_radius, ymid, z, sun_radius, 0.9, star_data.color);
-    let xstep = (w - sun_pad) / (planets.length + 3);
-    let x = x0 + sun_pad + xstep * 2;
+    let sun_radius = star_data.game_radius;
+    let sun_pad = w * 0.1;
+    ui.drawCircle(xmid, ymid, z, sun_radius + 2, 0.25, star_data.color, BLEND_ADDITIVE);
+    ui.drawCircle(xmid, ymid, z + 0.005, sun_radius, 0.95, star_data.color);
+    let rstep = (w/2 - sun_pad) / (planets.length + 2);
+    let r0 = sun_pad + rstep;
     for (let ii = 0; ii < planets.length; ++ii) {
+      let r = r0 + rstep * ii;
       let planet = planets[ii];
-      ui.drawCircle(x, ymid, z + 1 + ii * 0.1, planet.size + 2, 0.99, color_black);
-      ui.drawCircle(x, ymid, z + 1.05 + ii * 0.1, planet.size, 0.99, planet.type.color);
-      x += xstep;
+      let x = xmid + cos(planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE) * r;
+      let y = ymid + sin(planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE) * r * VSCALE;
+      let zz = z + (y - ymid)/h;
+      ui.drawCircle(x, y, zz, planet.size + 2, 0.99, color_black);
+      ui.drawCircle(x, y, zz + 0.005, planet.size, 0.99, planet.type.color);
+      drawElipse(xmid, ymid, z - 2, r, r * VSCALE, color_orbit);
     }
+
+    // draw backdrop
+    let br0 = w/2;
+    let br1 = h/2*VSCALE;
+    ui.drawElipse(xmid - br0, ymid - br1, xmid + br0, ymid + br1, z - 2.1, 0, color_black);
   }
 
   let drag_temp = vec2();
@@ -274,7 +305,8 @@ export function main() {
     ) {
       view = (view + 1) % 2;
       local_storage.setJSON('view', view);
-      engine.reloadSafe();
+      setTimeout(() => engine.setPixelyStrict(view === 1), 0);
+      //engine.reloadSafe();
     }
     y += button_spacing;
 
@@ -460,24 +492,28 @@ export function main() {
         hp = round(hp);
         wp = round(wp);
       }
-      ui.drawHollowRect2({
-        x: xp - 0.5,
-        y: yp - 0.5,
-        w: wp + 1,
-        h: hp + 1,
-        z: Z.UI - 8,
-        color: color_highlight,
-      });
-
-      overlayText(`Layer ${cell.layer_idx}, Cell ${cell.cell_idx} (${cell.cx},${cell.cy})`);
-      overlayText(`Stars: ${format(cell.star_count)}`);
-      if (cell.pois.length) {
-        overlayText(`POIs: ${cell.pois.length}`);
+      if (engine.defines.CELL) {
+        ui.drawHollowRect2({
+          x: xp - 0.5,
+          y: yp - 0.5,
+          w: wp + 1,
+          h: hp + 1,
+          z: Z.UI - 8,
+          color: color_highlight,
+        });
+        overlayText(`Layer ${cell.layer_idx}, Cell ${cell.cell_idx} (${cell.cx},${cell.cy})`);
+        overlayText(`Stars: ${format(cell.star_count)}`);
+        if (cell.pois.length) {
+          overlayText(`POIs: ${cell.pois.length}`);
+        }
       }
-      let dx = floor((mouse_pos[0] - cell.x0) / cell.w * galaxy.buf_dim);
-      let dy = floor((mouse_pos[1] - cell.y0) / cell.w * galaxy.buf_dim);
-      let dd = cell.data[dy * galaxy.buf_dim + dx];
-      overlayText(`Value: ${dd.toFixed(5)}`);
+
+      if (engine.defines.CURSOR) {
+        let dx = floor((mouse_pos[0] - cell.x0) / cell.w * galaxy.buf_dim);
+        let dy = floor((mouse_pos[1] - cell.y0) / cell.w * galaxy.buf_dim);
+        let dd = cell.data[dy * galaxy.buf_dim + dx];
+        overlayText(`Value: ${dd.toFixed(5)}`);
+      }
     }
 
     let did_highlight = false;
@@ -586,7 +622,7 @@ export function main() {
           yp = round(yp);
         }
         let r = 4 / (1 + MAX_ZOOM - zoom_level);
-        ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 1, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
+        ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
 
         star = galaxy.getStar(star.id);
         let solar_system = star && star.solar_system;
@@ -598,7 +634,7 @@ export function main() {
             overlayText(`    Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
           }
           if (zoom_level > 15.5) {
-            drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 5, w, w);
+            drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w);
           }
         }
       }
