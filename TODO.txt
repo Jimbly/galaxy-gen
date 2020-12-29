@@ -8,6 +8,8 @@ Stars in lower layers should get the colors of their type
 
 More detail in the intermediate layers:
   Add some detail paths (twirled by 80-100%?) to some of the zoom in layers
+  More, stronger noise in layers 4/5 cause the visible (thresholded) details to better align with the star placements
+    but, really messes up the core
 
 Try completely different approach:
   Generate (thousands of) clusters of stars and draw them as additive glowing dots

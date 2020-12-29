@@ -11,7 +11,7 @@ const { solarSystemCreate } = require('./solar_system.js');
 const textures = require('./glov/textures.js');
 const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
 
-const SUMSQ = false;
+const SUMSQ = 0.75;
 
 const POI_TYPE_OFFS = [
   [1, 0,0,
@@ -296,12 +296,7 @@ Galaxy.prototype.realizeStars = function (cell) {
   let { buf_dim, params } = this;
   let { seed } = params;
   rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
-  let scale;
-  if (SUMSQ) {
-    scale = star_count / sumsq * 1.03;
-  } else {
-    scale = star_count / sum * 1.03;
-  }
+  let scale = star_count / lerp(SUMSQ, sum, sumsq) * 1.03;
   let value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
   function fillStar(star) {
@@ -323,9 +318,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
       for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
         let v = data[idx];
-        if (SUMSQ) {
-          v *= v;
-        }
+        v *= 1 + SUMSQ * (v - 1); // v = lerp(SUMSQ, v, v*v);
         let expected_stars = v * scale;
         // assert(expected_stars < 10); // sometimes more than 65
         // assert(expected_stars < 50);
@@ -443,12 +436,7 @@ Galaxy.prototype.assignChildStars = function (cell) {
             }
           }
         }
-        let sc;
-        if (SUMSQ) {
-          sc = sumsq ? round(running_sumsq / sumsq * star_count) : 0;
-        } else {
-          sc = sum ? round(running_sum / sum * star_count) : 0;
-        }
+        let sc = sum ? round(lerp(SUMSQ, running_sum / sum, running_sumsq / sumsq) * star_count) : 0;
         child_data[idx].star_count = sc - last_star_count;
         last_star_count = sc;
       }

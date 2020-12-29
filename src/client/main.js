@@ -111,11 +111,11 @@ export function main() {
     },
     layer4: {
       noise_freq: 750,
-      noise_weight: 0.2,
+      noise_weight: 0.25,
     },
     layer5: {
       noise_freq: 2500,
-      noise_weight: 0.2,
+      noise_weight: 0.3,
     },
   };
   let gen_params;
