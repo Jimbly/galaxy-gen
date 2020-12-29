@@ -285,40 +285,41 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
 };
 
 Galaxy.prototype.realizeStars = function (cell) {
-  let { layer_idx, cell_idx, star_count, data, sum, x0, y0, w } = cell;
-  if (!star_count) {
-    data.fill(0);
-    cell.stars = [];
-    return;
-  }
+  let { layer_idx, cell_idx, star_count, data, sum, x0, y0, w, pois } = cell;
+  let stars = cell.stars = [];
   let { buf_dim, params } = this;
   let { seed } = params;
   rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
-  let stars = cell.stars = [];
   let scale = star_count / sum * 1.03;
   let value_scale = sum / star_count;
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
+  function fillStar(star) {
+    star.id = [cell_idx, 0]; // 24bit cell_idx, <~18bit id, filled later
+    star.classif = starType(rand.random()); // TODO: correlate to `type`
+    star.seed = rand.uint32();
+  }
   function addStar(xx, yy) {
-    stars.push({
+    let star = {
       type: rand.range(POI_TYPE_OFFS.length),
       x: x0 + xx/buf_dim * w,
       y: y0 + yy/buf_dim * w,
       v: (0.5 + rand.random()) * value_scale,
-      id: [cell_idx, 0], // 24bit cell_idx, <~18bit id, filled later
-      classif: starType(rand.random()), // TODO: correlate to `type`
-      seed: rand.uint32(),
-    });
+    };
+    fillStar(star);
+    stars.push(star);
   }
-  for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
-    for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
-      let v = data[idx];
-      let expected_stars = v * scale;
-      // assert(expected_stars < 10); // sometimes more than 65
-      // assert(expected_stars < 50);
-      let actual_stars = floor(rand.random() * (expected_stars + 1) + expected_stars * 0.5);
-      for (let ii = 0; ii < actual_stars; ++ii) {
-        // uniform within sub-cell
-        addStar(xx + rand.random(), yy + rand.random());
+  if (star_count) {
+    for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
+      for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
+        let v = data[idx];
+        let expected_stars = v * scale;
+        // assert(expected_stars < 10); // sometimes more than 65
+        // assert(expected_stars < 50);
+        let actual_stars = floor(rand.random() * (expected_stars + 1) + expected_stars * 0.5);
+        for (let ii = 0; ii < actual_stars; ++ii) {
+          // uniform within sub-cell
+          addStar(xx + rand.random(), yy + rand.random());
+        }
       }
     }
   }
@@ -328,6 +329,11 @@ Galaxy.prototype.realizeStars = function (cell) {
   }
   while (stars.length > star_count) {
     ridx(stars, rand.range(stars.length));
+  }
+  for (let ii = 0; ii < pois.length; ++ii) {
+    let poi = pois[ii];
+    fillStar(poi);
+    stars.push(poi);
   }
   for (let ii = 0; ii < stars.length; ++ii) {
     stars[ii].id[1] = ii;

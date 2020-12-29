@@ -1,5 +1,3 @@
-merge POIs into stars in layer 6
-
 Stars in lower layers should get the colors of their type
   how to align this with pixel art style?  layer 6 gets color - does this fade look bad?
     how would we even fade this?
