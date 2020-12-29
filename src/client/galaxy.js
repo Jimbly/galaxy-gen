@@ -496,8 +496,10 @@ Galaxy.prototype.perturb = function (cell, params) {
       let noisev = noise[1].noise2D(world_x * noise_freq, world_y * noise_freq);
       //data[idx] *= 1 + noise_weight * noisev; // uniform scale around 1.0
       // instead, only decrease, makes rendered maps look better, darken as you zoom in
-      data[idx] *= 1 + noise_weight * (noisev * 0.5 - 0.5);
-      assert(data[idx] >= 0);
+      let v = data[idx] * (1 + noise_weight * (noisev * 0.5 - 0.5));
+      // assert(v >= 0); // not if noise_weight > 1
+      v = max(0, v);
+      data[idx] = v;
     }
   }
 };
