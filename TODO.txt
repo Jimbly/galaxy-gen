@@ -1,7 +1,8 @@
 Solar system view
   zoom levels: 1 past max zoom, try game-scale sizes (maybe view toggle for astronomical sizes, but would need dynamic zoom)
 
-Pause zooming in until the current layer (next layer?) is entirely ready
+renderStars takes too long - split into multiple passes too
+stars still taking a lot of memory, simplify them or put them in Float64/32/Int16 buffers or something
 
 
 More detail in the intermediate layers:

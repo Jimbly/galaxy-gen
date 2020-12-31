@@ -7,7 +7,7 @@ const camera2d = require('./glov/camera2d.js');
 const engine = require('./glov/engine.js');
 const { copyCanvasToClipboard } = require('./glov/framebuffer.js');
 const { createGalaxy, distSq, LAYER_STEP } = require('./galaxy.js');
-const { abs, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
+const { abs, ceil, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
 const input = require('./glov/input.js');
 const { KEYS } = input;
 const net = require('./glov/net.js');
@@ -203,12 +203,17 @@ export function main() {
     local_storage.setJSON('zoom', zoom_level);
   }
   let queued_zooms = [];
-  function zoomTick() {
+  function zoomTick(max_okay_zoom) {
     let dt = engine.frame_dt;
     for (let ii = 0; ii < queued_zooms.length; ++ii) {
       let zm = queued_zooms[ii];
       let new_progress = min(1, zm.progress + dt/500);
       let dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
+      let new_zoom_level = min(zoom_level + zm.delta * dp, MAX_ZOOM);
+      // not limiting zoom, just feels worse?
+      if (zm.delta > 0 && new_zoom_level > max_okay_zoom && false) {
+        continue;
+      }
       zm.progress = new_progress;
       doZoomActual(zm.x, zm.y, zm.delta * dp);
       if (new_progress === 1) {
@@ -285,6 +290,44 @@ export function main() {
     let w = min(game_width, game_height);
     let map_x0 = show_panel ? game_width - w : (game_width - w)/2;
     let map_y0 = 0;
+
+    function checkLevel(check_zoom_level) {
+      let zoom = pow(2, zoom_level);
+      let layer_idx = floor(check_zoom_level / (LAYER_STEP/ 2));
+      let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
+      let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
+      let gal_y0 = (camera2d.y0Real() - map_y0) / w / zoom + zoom_offs[1];
+      let gal_y1 = (camera2d.y1Real() - map_y0) / w / zoom + zoom_offs[1];
+      let layer_res = pow(LAYER_STEP, layer_idx);
+      let layer_x0 = max(0, floor(gal_x0 * layer_res));
+      let layer_x1 = min(layer_res - 1, floor(gal_x1 * layer_res));
+      let layer_y0 = max(0, floor(gal_y0 * layer_res));
+      let layer_y1 = min(layer_res - 1, floor(gal_y1 * layer_res));
+      for (let cy = layer_y0; cy <= layer_y1; ++cy) {
+        for (let cx = layer_x0; cx <= layer_x1; ++cx) {
+          let cell = galaxy.getCellTextured(layer_idx, cy * layer_res + cx);
+          if (!cell.tex) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+    let max_okay_zoom = zoom_level;
+    if (galaxy) {
+      let zlis = [
+        (LAYER_STEP/2) * ceil(zoom_level / (LAYER_STEP/2)),
+        (LAYER_STEP/2) * ceil((zoom_level + 1) / (LAYER_STEP/2)),
+      ];
+      // ui.print(font.styleColored(null, 0x808080ff), 10, 20, 1000, `${zlis[0]} (${zoom_level})`);
+      for (let ii = 0; ii < zlis.length; ++ii) {
+        let r = checkLevel(zlis[ii]);
+        if (r) {
+          max_okay_zoom = zlis[ii];
+        }
+        // ui.print(font.styleColored(null, 0x808080ff), 10, 30 + ii * ui.font_height, 1000, `${zlis[ii]}: ${r}`);
+      }
+    }
 
     if (galaxy) {
       galaxy.loading = false;
@@ -435,7 +478,7 @@ export function main() {
       doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
     }
 
-    zoomTick();
+    zoomTick(max_okay_zoom);
     let zoom = pow(2, zoom_level);
     let zoom_text_y = floor(y + (ui.button_height - ui.font_height)/2);
     let zoom_text_w = ui.print(null, x, zoom_text_y, z,
