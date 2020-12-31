@@ -41,6 +41,9 @@ let counts = {
   renderStars: 0,
 };
 
+let star_buf_pool = [];
+let hue_buf_pool = [];
+
 let noise = new Array(2);
 let rand = randCreate(0);
 function genGalaxy(params) {
@@ -437,13 +440,23 @@ Galaxy.prototype.realizeStars = function (cell) {
         }
         assert(!n.tex); // just for debug, make sure this neighbor we're writing into hasn't already made a texture
         if (!n.star_buf) {
-          n.star_buf = new Float32Array(buf_dim * buf_dim);
-          ++counts.star_buf;
+          if (star_buf_pool.length) {
+            n.star_buf = star_buf_pool.pop();
+            n.star_buf.fill(0);
+          } else {
+            n.star_buf = new Float32Array(buf_dim * buf_dim);
+            ++counts.star_buf;
+          }
         }
         ndata.push(n.star_buf);
         if (!n.hue_buf) {
-          n.hue_buf = new Uint8Array(buf_dim * buf_dim);
-          ++counts.hue_buf;
+          if (hue_buf_pool.length) {
+            n.hue_buf = hue_buf_pool.pop();
+            n.hue_buf.fill(0);
+          } else {
+            n.hue_buf = new Uint8Array(buf_dim * buf_dim);
+            ++counts.hue_buf;
+          }
         }
         nhue.push(n.hue_buf);
       }
@@ -962,6 +975,15 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
         wrap_s: gl.CLAMP_TO_EDGE,
         wrap_t: gl.CLAMP_TO_EDGE,
       });
+    }
+
+    if (cell.star_buf) {
+      star_buf_pool.push(cell.star_buf);
+      cell.star_buf = null;
+    }
+    if (cell.hue_buf) {
+      hue_buf_pool.push(cell.hue_buf);
+      cell.hue_buf = null;
     }
     return cell;
   };
