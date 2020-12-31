@@ -63,7 +63,7 @@ const star_types_total = (function () {
   return ret;
 }());
 
-export function starType(choice) {
+function starType(choice) {
   choice *= star_types_total;
   for (let key in star_types) {
     choice -= star_types[key].odds;
@@ -77,6 +77,10 @@ export function starType(choice) {
 
 export function starTypeFromID(id) {
   return starType(mashI53(id));
+}
+
+export function hueFromID(id) {
+  return star_types[starType(mashI53(id))].hue
 }
 
 export function starTypeData(key) {

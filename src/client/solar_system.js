@@ -1,6 +1,6 @@
 const { PI } = Math;
 const { randCreate, mashString } = require('./glov/rand_alea.js');
-const { starTypeData } = require('./star_types.js');
+const { starTypeData, starTypeFromID } = require('./star_types.js');
 const { vec4 } = require('./glov/vmath.js');
 
 let rand = [
@@ -55,7 +55,8 @@ function cmpSize(a, b) {
 }
 
 function SolarSystem(global_seed, star) {
-  let { /*x, y,*/ id, classif } = star;
+  let { /*x, y,*/ id } = star;
+  let classif = starTypeFromID(id);
   let star_data = starTypeData(classif);
   this.star_data = star_data;
   for (let ii = 0; ii < rand.length; ++ii) {

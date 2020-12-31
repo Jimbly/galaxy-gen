@@ -6,7 +6,7 @@ const engine = require('./glov/engine.js');
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
 const { randCreate, mashString } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
-const { hueFromType, starTypeFromID } = require('./star_types.js');
+const { hueFromID } = require('./star_types.js');
 const { solarSystemCreate } = require('./solar_system.js');
 const textures = require('./glov/textures.js');
 const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
@@ -335,18 +335,14 @@ Galaxy.prototype.realizeStars = function (cell) {
     }
     yy0 = star_progress.y;
   }
-  function fillStar(star) {
-    star.id = 0; // ~37bit (at 100B stars) uid; also used to generate a seed
-  }
   function addStar(xx, yy) {
     ++counts.star;
     let star = {
-      type: rand.range(POI_TYPE_OFFS.length),
+      type: rand.range(POI_TYPE_OFFS.length),  // TODO: make this choice implicit from per-cell a seed or the ID
       x: x0 + xx/buf_dim * w,
       y: y0 + yy/buf_dim * w,
-      v: (0.5 + rand.random()) * value_scale,
+      v: (0.5 + rand.random()) * value_scale, // TODO: make this choice implicit from per-cell a seed or the ID
     };
-    fillStar(star);
     stars.push(star);
   }
   let do_stars = (star_count || pois.length) && yy0 !== buf_dim;
@@ -384,13 +380,12 @@ Galaxy.prototype.realizeStars = function (cell) {
     }
     for (let ii = 0; ii < pois.length; ++ii) {
       let poi = pois[ii];
-      fillStar(poi);
       stars.push(poi);
     }
     for (let ii = 0; ii < stars.length; ++ii) {
       let star = stars[ii];
+      // id = ~37bit (at 100B stars) uid; also used to generate a seed
       star.id = star_idx + ii;
-      star.classif = starTypeFromID(star.id); // TODO: correlate to `type`?
     }
   }
   // let end_place = Date.now();
@@ -471,11 +466,11 @@ Galaxy.prototype.realizeStars = function (cell) {
     // let max_res = pow(2, max_zoom);
     for (let ii = 0; ii < stars.length; ++ii) {
       let star = stars[ii];
-      let { x, y, v, classif } = star;
+      let { x, y, v, id } = star;
       x = (x - x0) * scale;
       y = (y - y0) * scale;
       if (layer_idx === 7 || layer_idx === 6) {
-        let hue = hueFromType(classif);
+        let hue = hueFromID(id);
         const r = layer_idx === 7 ? 2 : 1.5;
         const vscale = layer_idx === 7 ? 4 : 2;
         const rsq = r * r;
@@ -890,8 +885,8 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       // Render in stars
       for (let ii = 0; ii < stars.length; ++ii) {
         let star = stars[ii];
-        let { x, y, type, v, classif } = star;
-        let hue = hueFromType(classif);
+        let { x, y, type, v, id } = star;
+        let hue = hueFromID(id);
         x = floor((x - x0) / w * buf_dim);
         y = floor((y - y0) / w * buf_dim);
         x = max(2, min(buf_dim - 2 - 1, x));
