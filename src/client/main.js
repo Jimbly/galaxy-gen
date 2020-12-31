@@ -576,7 +576,7 @@ export function main() {
         partial = true;
       }
       draw_param.shader = view === 1 ? shader_galaxy_pixel : shader_galaxy_blend;
-      let dither = lerp(clamp(zoom_level - 10, 0, 1), params.dither, 0);
+      let dither = lerp(clamp(zoom_level - 12.5, 0, 1), params.dither, 0);
       draw_param.shader_params = {
         params: [alpha ? buf_dim : buf_dim / LAYER_STEP, dither],
         scale: [qx/LAYER_STEP, qy/LAYER_STEP, 1/LAYER_STEP, alpha],

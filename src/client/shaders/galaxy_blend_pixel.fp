@@ -36,7 +36,7 @@ void main(void) {
   // vec2 int_coord = floor(interp_texcoord * params.x);
   vec2 int_coord = gl_FragCoord.xy;
   float odd = floor(fract((int_coord.r + int_coord.g) / 2.0) + 0.5);
-  if (palettized.a < params.y && odd > 0.5) {
+  if (palettized_bg.a < params.y && odd > 0.5) {
     // offset color by 16px
     palettized = texture2D(tex2, vec2(value + 0.0625, hue_bg));
   }

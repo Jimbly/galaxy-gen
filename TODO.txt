@@ -1,12 +1,7 @@
-star colorations
-  red stars need to be brighter; more saturated
-  middle range darkest needs to be darker
-  smoothly blend palette texture in V coords to reduce snapping while zooming? Or, two palette fetches and blend by scale?
-
 Solar system view
   zoom levels: 1 past max zoom, try game-scale sizes (maybe view toggle for astronomical sizes, but would need dynamic zoom)
 
-Pause zooming in until the current layer is entirely ready
+Pause zooming in until the current layer (next layer?) is entirely ready
 
 
 More detail in the intermediate layers:
