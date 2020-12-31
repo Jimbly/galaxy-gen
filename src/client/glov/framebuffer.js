@@ -273,6 +273,7 @@ export function copyCanvasToClipboard() {
       }
     }, 'image/png');
   });
+  // Also needs to add a postprocessing function to trigger offscreen rendering this frame
 }
 
 settings.register({
