@@ -1,16 +1,17 @@
 /* eslint no-multi-spaces:off, key-spacing:off */
 const assert = require('assert');
 const engine = require('./glov/engine.js');
+const { mashI53 } = require('./glov/rand_alea.js');
 const { vec4 } = require('./glov/vmath.js');
 
 const colors = [
   vec4(0.816,1,1,1),
   vec4(0.98,0.204,0,1),
-  vec4(0.99,0.30,0,1),
   vec4(1,0.467,0,1),
-  vec4(1,1,0.408,1),
+  vec4(1,1,0.408,1), // G
   vec4(1,1,0.8,1),
   vec4(0.922,1,1,1),
+  vec4(0.875,1,1,1),
   vec4(0.816,1,1,1),
 ];
 
@@ -72,6 +73,10 @@ export function starType(choice) {
   }
   assert(!engine.DEBUG);
   return 'M';
+}
+
+export function starTypeFromID(id) {
+  return starType(mashI53(id));
 }
 
 export function starTypeData(key) {

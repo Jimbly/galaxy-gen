@@ -22,6 +22,24 @@ export function mashString(data) {
   // return (n >>> 0) * 2.3283064365386963e-10; // 2^-32
 }
 
+// Takes an integer (up to 53bits) and returns a 0-1 float
+export function mashI53(data) {
+  let n = 0xefc8249d;
+  while (data) {
+    let byte = data % 256;
+    data = (data - byte) / 256;
+    n += byte;
+    let h = 0.02519603282416938 * n;
+    n = h >>> 0;
+    h -= n;
+    h *= n;
+    n = h >>> 0;
+    h -= n;
+    n += h * 0x100000000; // 2^32
+  }
+  return (n >>> 0) * 2.3283064365386963e-10; // 2^-32
+}
+
 function Mash() {
   this.n = 0xc06c5fc8; // 0xefc8249d;
 }

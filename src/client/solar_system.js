@@ -55,11 +55,11 @@ function cmpSize(a, b) {
 }
 
 function SolarSystem(global_seed, star) {
-  let { /*x, y, id,*/ seed, classif } = star;
+  let { /*x, y,*/ id, classif } = star;
   let star_data = starTypeData(classif);
   this.star_data = star_data;
   for (let ii = 0; ii < rand.length; ++ii) {
-    rand[ii].reseed(mashString(`${seed}_${global_seed}_${ii}`));
+    rand[ii].reseed(mashString(`${id}_${global_seed}_${ii}`));
   }
   let num_planets = rand[0].range(4);
   let chance = 0.5;

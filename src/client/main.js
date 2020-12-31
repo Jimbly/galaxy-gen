@@ -260,7 +260,7 @@ export function main() {
       let y = ymid + sin(planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE) * r * VSCALE;
       let zz = z + (y - ymid)/h;
       ui.drawCircle(x, y, zz, planet.size + 2, 0.99, color_black);
-      ui.drawCircle(x, y, zz + 0.005, planet.size, 0.99, planet.type.color);
+      ui.drawCircle(x, y, zz + 0.00001, planet.size, 0.99, planet.type.color);
       drawElipse(xmid, ymid, z - 2, r, r * VSCALE, color_orbit);
     }
 

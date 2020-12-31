@@ -6,7 +6,7 @@ const engine = require('./glov/engine.js');
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
 const { randCreate, mashString } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
-const { hueFromType, starType } = require('./star_types.js');
+const { hueFromType, starTypeFromID } = require('./star_types.js');
 const { solarSystemCreate } = require('./solar_system.js');
 const textures = require('./glov/textures.js');
 const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
@@ -336,9 +336,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     yy0 = star_progress.y;
   }
   function fillStar(star) {
-    star.id = 0; // ~37bit (at 100B stars) uid
-    star.classif = starType(rand.random()); // TODO: correlate to `type`
-    star.seed = rand.uint32();
+    star.id = 0; // ~37bit (at 100B stars) uid; also used to generate a seed
   }
   function addStar(xx, yy) {
     ++counts.star;
@@ -390,7 +388,9 @@ Galaxy.prototype.realizeStars = function (cell) {
       stars.push(poi);
     }
     for (let ii = 0; ii < stars.length; ++ii) {
-      stars[ii].id = star_idx + ii;
+      let star = stars[ii];
+      star.id = star_idx + ii;
+      star.classif = starTypeFromID(star.id); // TODO: correlate to `type`?
     }
   }
   // let end_place = Date.now();
