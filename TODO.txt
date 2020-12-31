@@ -3,7 +3,6 @@ star colorations
   middle range darkest needs to be darker
   smoothly blend palette texture in V coords to reduce snapping while zooming? Or, two palette fetches and blend by scale?
 
-
 Solar system view
   zoom levels: 1 past max zoom, try game-scale sizes (maybe view toggle for astronomical sizes, but would need dynamic zoom)
 

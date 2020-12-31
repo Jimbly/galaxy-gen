@@ -38,6 +38,7 @@ export function main() {
   }
 
   let view = local_storage.getJSON('view', 1);
+  let show_panel = local_storage.getJSON('panel', 0);
 
   const font_info_04b03x2 = require('./img/font/04b03_8x2.json');
   const font_info_04b03x1 = require('./img/font/04b03_8x1.json');
@@ -89,7 +90,7 @@ export function main() {
     len_mods: 4,
     twirl: 4,
     center: 0.09,
-    seed: 1,
+    seed: 1349,
     noise_freq: 5,
     noise_weight: 0.22,
     poi_count: 200,
@@ -165,7 +166,7 @@ export function main() {
   let cells_drawn = 0;
   perf.addMetric({
     name: 'cells',
-    show_stat: 'true',
+    show_stat: 'false',
     labels: {
       'cells: ': () => cells_drawn.toString(),
     },
@@ -281,7 +282,7 @@ export function main() {
     let y = 4;
 
     let w = min(game_width, game_height);
-    let map_x0 = game_width - w;
+    let map_x0 = show_panel ? game_width - w : (game_width - w)/2;
     let map_y0 = 0;
 
     if (galaxy) {
@@ -300,86 +301,103 @@ export function main() {
       allocSprite();
     }
 
-    if (ui.buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: ui.button_width * 0.75 }) ||
-      input.keyDownEdge(KEYS.V)
-    ) {
-      view = (view + 1) % 2;
-      local_storage.setJSON('view', view);
-      setTimeout(() => engine.setPixelyStrict(view === 1), 0);
-      //engine.reloadSafe();
-    }
-    y += button_spacing;
-
-    // if (view === 1) {
-    //   ui.print(style, x, y, z, `Dither: ${params.dither}`);
-    //   y += ui.font_height;
-    //   params.dither = round4(ui.slider(params.dither, { x, y, z, min: 0, max: 1 }));
-    //   y += button_spacing;
-    // }
-
-    ui.print(style, x, y, z, `Seed: ${params.seed}`);
-    y += ui.font_height;
-    params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
-    y += button_spacing;
-
-    if (zoom_level < 1.9) { // Galaxy
-      ui.print(style, x, y, z, `Arms: ${params.arms}`);
-      y += ui.font_height;
-      params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
-      y += button_spacing;
-
-      ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
-      y += ui.font_height;
-      params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
-      y += button_spacing;
-
-      ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
-      y += ui.font_height;
-      params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
-      y += button_spacing;
-
-      ui.print(style, x, y, z, `Center: ${params.center}`);
-      y += ui.font_height;
-      params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
-      y += button_spacing;
-
-      ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
-      y += ui.font_height;
-      params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
-      y += button_spacing;
-
-      ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
-      y += ui.font_height;
-      params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
-      y += button_spacing;
-
-      ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
-      y += ui.font_height;
-      params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
-      y += button_spacing;
-    } else {
-      let layer_idx = round(zoom_level / (LAYER_STEP / 2));
-      ui.print(style, x, y, z, `Layer #${layer_idx}:`);
-      y += ui.font_height + 2;
-      let key = `layer${layer_idx}`;
-      if (params[key]) {
-        ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
-        y += ui.font_height;
-        params[key].noise_freq = round4(ui.slider(params[key].noise_freq,
-          { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
-        y += button_spacing;
-
-        ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
-        y += ui.font_height;
-        params[key].noise_weight = round4(ui.slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
-        y += button_spacing;
+    if (show_panel) {
+      if (ui.buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: ui.button_width * 0.75 }) ||
+        input.keyDownEdge(KEYS.V)
+      ) {
+        view = (view + 1) % 2;
+        local_storage.setJSON('view', view);
+        setTimeout(() => engine.setPixelyStrict(view === 1), 0);
+        //engine.reloadSafe();
       }
+
+      if (ui.buttonText({ x: x + ui.button_width - ui.button_height, y, text: '<<', w: ui.button_height }) ||
+        input.keyDownEdge(KEYS.ESC)
+      ) {
+        show_panel = !show_panel;
+        local_storage.setJSON('panel', show_panel);
+      }
+
+      y += button_spacing;
+
+      // if (view === 1) {
+      //   ui.print(style, x, y, z, `Dither: ${params.dither}`);
+      //   y += ui.font_height;
+      //   params.dither = round4(ui.slider(params.dither, { x, y, z, min: 0, max: 1 }));
+      //   y += button_spacing;
+      // }
+
+      ui.print(style, x, y, z, `Seed: ${params.seed}`);
+      y += ui.font_height;
+      params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
+      y += button_spacing;
+
+      if (zoom_level < 1.9) { // Galaxy
+        ui.print(style, x, y, z, `Arms: ${params.arms}`);
+        y += ui.font_height;
+        params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
+        y += ui.font_height;
+        params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
+        y += ui.font_height;
+        params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Center: ${params.center}`);
+        y += ui.font_height;
+        params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
+        y += ui.font_height;
+        params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
+        y += ui.font_height;
+        params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
+        y += button_spacing;
+
+        ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
+        y += ui.font_height;
+        params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
+        y += button_spacing;
+      } else {
+        let layer_idx = round(zoom_level / (LAYER_STEP / 2));
+        ui.print(style, x, y, z, `Layer #${layer_idx}:`);
+        y += ui.font_height + 2;
+        let key = `layer${layer_idx}`;
+        if (params[key]) {
+          ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
+          y += ui.font_height;
+          params[key].noise_freq = round4(ui.slider(params[key].noise_freq,
+            { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
+          y += button_spacing;
+
+          ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
+          y += ui.font_height;
+          params[key].noise_weight = round4(ui.slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
+          y += button_spacing;
+        }
+      }
+
+      ui.panel({
+        x: x - 4, y: 0, w: ui.button_width + 8, h: y, z: z - 1,
+      });
+    } else {
+      if (ui.buttonText({ x, y, text: '>>', w: ui.button_height }) ||
+        input.keyDownEdge(KEYS.ESC)
+      ) {
+        show_panel = !show_panel;
+        local_storage.setJSON('panel', show_panel);
+      }
+      y += button_spacing;
     }
-
-    ui.panel({
-      x: x - 4, y: 0, w: ui.button_width + 8, h: y, z: z - 1,
-    });
-
 
     x = game_width - w + 4;
     y = w - ui.button_height;
@@ -472,7 +490,7 @@ export function main() {
     mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
 
     let overlay_y = 0;
-    let overlay_x = map_x0 + 2;
+    let overlay_x = show_panel ? map_x0 + 2 : ui.button_height * 2;
     let overlay_w = 0;
     function overlayText(line) {
       let textw = ui.print(null, overlay_x, overlay_y, z, line);
@@ -612,7 +630,6 @@ export function main() {
         star = null;
       }
       if (star) {
-        overlayText(`Star #${star.id}, seed=${star.seed}`);
         let max_zoom = pow(2, MAX_ZOOM);
         let xp = floor(star.x * max_zoom * buf_dim);
         let yp = floor(star.y * max_zoom * buf_dim);
@@ -629,14 +646,16 @@ export function main() {
         let solar_system = star.solar_system;
         if (solar_system) {
           let { planets, star_data } = solar_system;
-          overlayText(`  Star Type: ${star_data.label}`);
+          overlayText(`Star #${star.id}, Type: ${star_data.label}`);
           for (let ii = 0; ii < planets.length; ++ii) {
             let planet = planets[ii];
-            overlayText(`    Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
+            overlayText(`  Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
           }
           if (zoom_level > 15.5) {
             drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w);
           }
+        } else {
+          overlayText(`Star #${star.id}`);
         }
       }
     }

@@ -633,7 +633,7 @@ export function buttonTextDraw(param, state, focused) {
   let hpad = min(param.font_height * 0.25, param.w * 0.1);
   font.drawSizedAligned(
     focused ? font_style_focused : font_style_normal,
-    param.x + hpad, param.y, param.z + 0.1,
+    param.x + hpad + 1, param.y + 1, param.z + 0.1,
     // eslint-disable-next-line no-bitwise
     param.font_height, glov_font.ALIGN.HCENTERFIT | glov_font.ALIGN.VCENTER, param.w - hpad * 2, param.h, param.text);
 }
