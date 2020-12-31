@@ -38,7 +38,7 @@ const { texturesTick } = textures;
 const glov_transition = require('./transition.js');
 const glov_ui = require('./ui.js');
 const urlhash = require('./urlhash.js');
-const { clamp, defaults, nearSame, ridx } = require('../../common/util.js');
+const { callEach, clamp, defaults, nearSame, ridx } = require('../../common/util.js');
 const { mat3, mat4, vec3, vec4, v3mulMat4, v3iNormalize, v4copy, v4same, v4set } = require('./vmath.js');
 
 export let canvas;
@@ -333,6 +333,14 @@ export function postTick(opts) {
   opts.inactive = opts.inactive || false; // run even if inactive?
   assert.equal(typeof opts.fn, 'function');
   post_tick.push(opts);
+}
+
+let post_render = null;
+export function postRender(fn) {
+  if (!post_render) {
+    post_render = [];
+  }
+  post_render.push(fn);
 }
 
 function resetEffects() {
@@ -779,6 +787,10 @@ function tick(timestamp) {
   sprites.draw();
 
   glov_ui.endFrame();
+
+  if (post_render) {
+    callEach(post_render, post_render = null);
+  }
 
   if (render_width) {
     effectsPassConsume();

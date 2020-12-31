@@ -240,6 +240,41 @@ export function framebufferUpdateCanvasForCapture() {
   }
 }
 
+let clipboard_copy_supported;
+export function copyCanvasToClipboard() {
+  if (clipboard_copy_supported === false) {
+    return;
+  }
+  engine.postRender(function () {
+    let dims = framebufferUpdateCanvasForCapture();
+    let canvas = engine.canvas;
+    if (dims.width !== canvas.width) {
+      canvas = document.createElement('canvas');
+      canvas.width = dims.width;
+      canvas.height = dims.height;
+      let ctx = canvas.getContext('2d');
+      ctx.drawImage(engine.canvas, 0, engine.canvas.height - dims.height, dims.width, dims.height,
+        0, 0, dims.width, dims.height);
+    }
+    canvas.toBlob((blob) => {
+      try {
+        /* globals navigator, ClipboardItem */
+        navigator.clipboard.write([
+          new ClipboardItem({
+            'image/png': blob
+          })
+        ]);
+        clipboard_copy_supported = true;
+      } catch (err) {
+        if (clipboard_copy_supported === undefined) {
+          clipboard_copy_supported = false;
+        }
+        console.error('Error copying to clipboard:', err);
+      }
+    }, 'image/png');
+  });
+}
+
 settings.register({
   show_passes: {
     label: 'Show Postprocessing Passes',

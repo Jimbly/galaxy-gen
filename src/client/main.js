@@ -5,6 +5,7 @@ local_storage.storage_prefix = 'galaxy-gen'; // Before requiring anything else t
 const assert = require('assert');
 const camera2d = require('./glov/camera2d.js');
 const engine = require('./glov/engine.js');
+const { copyCanvasToClipboard } = require('./glov/framebuffer.js');
 const { createGalaxy, distSq, LAYER_STEP } = require('./galaxy.js');
 const { abs, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
 const input = require('./glov/input.js');
@@ -15,7 +16,7 @@ const shaders = require('./glov/shaders.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
-const { clamp, clone, deepEqual, easeOut } = require('../common/util.js');
+const { clamp, clone, deepEqual, easeOut, lerp } = require('../common/util.js');
 const { unit_vec, vec2, v2add, v2addScale, v2copy, v2floor, v2set, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 const { BLEND_ADDITIVE } = sprites;
@@ -301,6 +302,10 @@ export function main() {
       allocSprite();
     }
 
+    if (input.keyDown(KEYS.CTRL) && input.keyDownEdge(KEYS.C)) {
+      copyCanvasToClipboard();
+    }
+
     if (show_panel) {
       if (ui.buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: ui.button_width * 0.75 }) ||
         input.keyDownEdge(KEYS.V)
@@ -571,8 +576,9 @@ export function main() {
         partial = true;
       }
       draw_param.shader = view === 1 ? shader_galaxy_pixel : shader_galaxy_blend;
+      let dither = lerp(clamp(zoom_level - 10, 0, 1), params.dither, 0);
       draw_param.shader_params = {
-        params: [alpha ? buf_dim : buf_dim / LAYER_STEP, params.dither],
+        params: [alpha ? buf_dim : buf_dim / LAYER_STEP, dither],
         scale: [qx/LAYER_STEP, qy/LAYER_STEP, 1/LAYER_STEP, alpha],
       };
       let texs = cell.texs;
