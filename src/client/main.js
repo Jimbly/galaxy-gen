@@ -280,9 +280,9 @@ export function main() {
     }
   }
   const ORBIT_RATE = 0.0002;
-  function drawSolarSystem(solar_system, x0, y0, z, w, h, fade) {
-    x0 += (1-fade) * w/2;
-    y0 += (1-fade) * h/2;
+  function drawSolarSystem(solar_system, x0, y0, z, w, h, star_xp, star_yp, fade) {
+    x0 = lerp(fade, star_xp, x0);
+    y0 = lerp(fade, star_yp, y0);
     w *= fade;
     h *= fade;
     let { star_data, planets } = solar_system;
@@ -315,10 +315,6 @@ export function main() {
     let br0 = w/2 * 1.5;
     let br1 = h/2*VSCALE * 1.5;
     ui.drawElipse(xmid - br0, ymid - br1, xmid + br0, ymid + br1, z - 2.1, 0, [0,0,0,fade]);
-
-    if (input.click({ button: 2 })) {
-      solarZoom(-1);
-    }
   }
 
   let drag_temp = vec2();
@@ -516,6 +512,9 @@ export function main() {
     }
     x += ui.button_height + 2;
     let mouse_wheel = input.mouseWheel();
+    if (input.click({ button: 2 })) {
+      mouse_wheel-=4;
+    }
     if (mouse_wheel) {
       use_mouse_pos = true;
       input.mousePos(mouse_pos);
@@ -756,6 +755,9 @@ export function main() {
             w: SELECT_DIST * 2,
             h: SELECT_DIST * 2,
           })) {
+            if (zoom_level < MAX_ZOOM) {
+              doZoom((xp - map_x0) / w, (yp - map_y0) / w, MAX_ZOOM - zoom_level);
+            }
             solarZoom(1);
           }
         }
@@ -771,7 +773,7 @@ export function main() {
           }
           let do_view = eff_solar_view ? eff_solar_view : engine.defines.AUTOSOLAR && zoom_level > 15.5 ? 1 : 0;
           if (do_view) {
-            drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w, do_view);
+            drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w, xp, yp, do_view);
           }
         } else {
           overlayText(`Star #${star.id}`);
