@@ -69,7 +69,7 @@ export function main() {
   ui.setFontHeight(8);
 
   let tex_palette = textures.load({
-    url: 'palette/pal1.png',
+    url: 'palette/pal2.png',
     filter_min: gl.NEAREST,
     filter_mag: gl.NEAREST,
     wrap_s: gl.CLAMP_TO_EDGE,
@@ -612,7 +612,7 @@ export function main() {
         star = null;
       }
       if (star) {
-        overlayText(`Star #${star.id[2]}, seed=${star.seed}`);
+        overlayText(`Star #${star.id}, seed=${star.seed}`);
         let max_zoom = pow(2, MAX_ZOOM);
         let xp = floor(star.x * max_zoom * buf_dim);
         let yp = floor(star.y * max_zoom * buf_dim);
@@ -625,8 +625,8 @@ export function main() {
         let r = 4 / (1 + MAX_ZOOM - zoom_level);
         ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
 
-        star = galaxy.getStar(star.id);
-        let solar_system = star && star.solar_system;
+        galaxy.getStarData(star);
+        let solar_system = star.solar_system;
         if (solar_system) {
           let { planets, star_data } = solar_system;
           overlayText(`  Star Type: ${star_data.label}`);
