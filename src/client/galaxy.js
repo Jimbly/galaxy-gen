@@ -1042,6 +1042,43 @@ export function distSq(x1, y1, x2, y2) {
   };
 }
 
+Galaxy.prototype.getStar = function (star_id) {
+  let { layers } = this;
+  function search(layer_idx, cx, cy) {
+    let layer = layers[layer_idx];
+    let layer_res = pow(LAYER_STEP, layer_idx);
+    let cell_idx = cx + cy * layer_res;
+    let cell = layer[cell_idx];
+    if (!cell) {
+      return null;
+    }
+    assert(star_id >= cell.star_idx);
+    if (layer_idx === STAR_LAYER) {
+      if (!cell.stars) {
+        return null;
+      }
+      let idx = star_id - cell.star_idx;
+      assert(idx < cell.stars.length);
+      return cell.stars[idx];
+    }
+    // not this layer, drill down
+    if (!cell.child_data) {
+      return null;
+    }
+    for (let qidx = 0; qidx < cell.child_data.length; ++qidx) {
+      let cd = cell.child_data[qidx];
+      if (star_id < cd.star_idx + cd.star_count) {
+        let qx = qidx % LAYER_STEP;
+        let qy = (qidx - qx) / LAYER_STEP;
+        return search(layer_idx + 1, cx * LAYER_STEP + qx, cy * LAYER_STEP + qy);
+      }
+    }
+    assert(false);
+    return null;
+  }
+  return search(0, 0, 0);
+};
+
 Galaxy.prototype.getStarData = function (star) {
   if (!star.solar_system) {
     star.solar_system = solarSystemCreate(this.params.seed, star);

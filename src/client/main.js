@@ -83,6 +83,7 @@ export function main() {
   let white_tex = textures.textures.white;
 
   const MAX_ZOOM = 16;
+  const MAX_SOLAR_VIEW = 1;
   const buf_dim = 256;
   let params = {
     buf_dim,
@@ -175,6 +176,8 @@ export function main() {
 
 
   let zoom_level = local_storage.getJSON('zoom', 0);
+  let solar_view = local_storage.getJSON('solar_view', 0);
+  let selected_star_id = local_storage.getJSON('selected_star', null);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
@@ -220,8 +223,25 @@ export function main() {
         queued_zooms.splice(ii, 1);
       }
     }
+    if (!queued_zooms.length) {
+      // recover from floating point issues
+      zoom_level = target_zoom_level;
+    }
   }
   function doZoom(x, y, delta) {
+    if (target_zoom_level === MAX_ZOOM && delta > 0) {
+      if (selected_star_id !== null) {
+        solar_view = min(solar_view + 1, MAX_SOLAR_VIEW);
+        local_storage.setJSON('solar_view', solar_view);
+        local_storage.setJSON('selected_star', selected_star_id);
+      }
+      return;
+    }
+    if (solar_view && delta < 0) {
+      solar_view--;
+      local_storage.setJSON('solar_view', solar_view);
+      return;
+    }
     target_zoom_level = max(0, min(target_zoom_level + delta, MAX_ZOOM));
     queued_zooms.push({
       x, y, delta,
@@ -275,6 +295,10 @@ export function main() {
     let br0 = w/2;
     let br1 = h/2*VSCALE;
     ui.drawElipse(xmid - br0, ymid - br1, xmid + br0, ymid + br1, z - 2.1, 0, color_black);
+
+    if (input.click({ button: 2 })) {
+      solar_view--;
+    }
   }
 
   let drag_temp = vec2();
@@ -458,7 +482,7 @@ export function main() {
     }
     x += ui.button_height + 2;
     const SLIDER_W = 110;
-    let new_zoom = ui.slider(target_zoom_level, { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM });
+    let new_zoom = ui.slider(target_zoom_level + solar_view, { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 1 });
     if (abs(new_zoom - target_zoom_level) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - target_zoom_level);
     }
@@ -482,7 +506,7 @@ export function main() {
     let zoom = pow(2, zoom_level);
     let zoom_text_y = floor(y + (ui.button_height - ui.font_height)/2);
     let zoom_text_w = ui.print(null, x, zoom_text_y, z,
-      `${zoom.toFixed(0)}X`);
+      solar_view ? 'Solar' : `${zoom.toFixed(0)}X`);
     ui.drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + ui.font_height, z - 1, color_text_backdrop);
 
     x = game_width - w;
@@ -515,6 +539,9 @@ export function main() {
     if (drag && drag.delta) {
       v2add(drag_temp, drag_temp, drag.delta);
       use_mouse_pos = true;
+    }
+    if (solar_view) {
+      v2set(drag_temp, 0, 0);
     }
     if (drag_temp[0] || drag_temp[1]) {
       zoom_offs[0] -= drag_temp[0] / w / zoom;
@@ -673,10 +700,22 @@ export function main() {
     drawLevel(level0 + 1, extra, Boolean(extra));
 
     if (zoom_level >= 12) {
-      let star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
-      star = star && star[0];
-      if (star && sqrt(distSq(star.x, star.y, mouse_pos[0], mouse_pos[1])) * zoom * w > 40) {
-        star = null;
+      let star;
+      const SELECT_DIST = 40;
+      if (solar_view && selected_star_id !== null) {
+        // keep it
+        star = galaxy.getStar(selected_star_id);
+      } else {
+        star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
+        star = star && star[0];
+        if (star && sqrt(distSq(star.x, star.y, mouse_pos[0], mouse_pos[1])) * zoom * w > SELECT_DIST) {
+          star = null;
+        }
+        if (star) {
+          selected_star_id = star.id;
+        } else {
+          selected_star_id = null;
+        }
       }
       if (star) {
         let max_zoom = pow(2, MAX_ZOOM);
@@ -689,7 +728,18 @@ export function main() {
           yp = round(yp);
         }
         let r = 4 / (1 + MAX_ZOOM - zoom_level);
-        ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
+        if (!solar_view) {
+          ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
+          if (input.click({
+            x: xp - SELECT_DIST,
+            y: yp - SELECT_DIST,
+            w: SELECT_DIST * 2,
+            h: SELECT_DIST * 2,
+          })) {
+            solar_view++;
+            local_storage.setJSON('solar_view', solar_view);
+          }
+        }
 
         galaxy.getStarData(star);
         let solar_system = star.solar_system;
@@ -700,7 +750,7 @@ export function main() {
             let planet = planets[ii];
             overlayText(`  Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
           }
-          if (zoom_level > 15.5) {
+          if (solar_view || engine.defines.AUTOSOLAR && zoom_level > 15.5) {
             drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w);
           }
         } else {
