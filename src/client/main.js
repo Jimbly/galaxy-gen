@@ -13,6 +13,7 @@ const { KEYS } = input;
 const net = require('./glov/net.js');
 const perf = require('./glov/perf.js');
 const shaders = require('./glov/shaders.js');
+const { solarSystemCreate } = require('./solar_system.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
@@ -121,7 +122,12 @@ export function main() {
       noise_weight: 0.3,
     },
   };
+  let solar_params = {
+    seed: 30,
+    star_id: 18,
+  };
   let gen_params;
+  let gen_solar_params;
   let debug_sprite;
   let galaxy;
   function allocSprite() {
@@ -177,6 +183,8 @@ export function main() {
 
   let zoom_level = local_storage.getJSON('zoom', 0);
   let solar_view = local_storage.getJSON('solar_view', 0);
+  let solar_override = local_storage.getJSON('solar_override', false);
+  let solar_override_system = null;
   let selected_star_id = local_storage.getJSON('selected_star', null);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
@@ -415,62 +423,90 @@ export function main() {
       //   y += button_spacing;
       // }
 
-      ui.print(style, x, y, z, `Seed: ${params.seed}`);
-      y += ui.font_height;
-      params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
-      y += button_spacing;
-
-      if (zoom_level < 1.9) { // Galaxy
-        ui.print(style, x, y, z, `Arms: ${params.arms}`);
-        y += ui.font_height;
-        params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
+      if (solar_view) {
+        if (ui.buttonText({ x, y, z, text: solar_override ? 'Override' : 'Generated' })) {
+          solar_override = !solar_override;
+          local_storage.setJSON('solar_override', solar_override);
+          solar_override_system = null;
+        }
         y += button_spacing;
+        if (solar_override) {
+          ui.print(style, x, y, z, `StarID: ${solar_params.star_id}`);
+          y += ui.font_height;
+          solar_params.star_id = round(ui.slider(solar_params.star_id, { x, y, z, min: 1, max: 99 }));
+          y += button_spacing;
 
-        ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
-        y += ui.font_height;
-        params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
-        y += button_spacing;
+          ui.print(style, x, y, z, `Seed: ${solar_params.seed}`);
+          y += ui.font_height;
+          solar_params.seed = round(ui.slider(solar_params.seed, { x, y, z, min: 1, max: 99 }));
+          y += button_spacing;
 
-        ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
-        y += ui.font_height;
-        params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
-        y += button_spacing;
-
-        ui.print(style, x, y, z, `Center: ${params.center}`);
-        y += ui.font_height;
-        params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
-        y += button_spacing;
-
-        ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
-        y += ui.font_height;
-        params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
-        y += button_spacing;
-
-        ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
-        y += ui.font_height;
-        params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
-        y += button_spacing;
-
-        ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
-        y += ui.font_height;
-        params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
-        y += button_spacing;
+          if (!solar_override_system || !deepEqual(solar_params, gen_solar_params)) {
+            gen_solar_params = clone(solar_params);
+            solar_override_system = solarSystemCreate(solar_params.seed, {
+              // Fake Star structure
+              id: solar_params.star_id,
+            });
+          }
+        }
       } else {
-        let layer_idx = round(zoom_level / (LAYER_STEP / 2));
-        ui.print(style, x, y, z, `Layer #${layer_idx}:`);
-        y += ui.font_height + 2;
-        let key = `layer${layer_idx}`;
-        if (params[key]) {
-          ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
+        ui.print(style, x, y, z, `Seed: ${params.seed}`);
+        y += ui.font_height;
+        params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
+        y += button_spacing;
+
+        if (zoom_level < 1.9) { // Galaxy
+          ui.print(style, x, y, z, `Arms: ${params.arms}`);
           y += ui.font_height;
-          params[key].noise_freq = round4(ui.slider(params[key].noise_freq,
-            { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
+          params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
+          ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
           y += ui.font_height;
-          params[key].noise_weight = round4(ui.slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
+          params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
           y += button_spacing;
+
+          ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
+          y += ui.font_height;
+          params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
+          y += button_spacing;
+
+          ui.print(style, x, y, z, `Center: ${params.center}`);
+          y += ui.font_height;
+          params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
+          y += button_spacing;
+
+          ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
+          y += ui.font_height;
+          params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
+          y += button_spacing;
+
+          ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
+          y += ui.font_height;
+          params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
+          y += button_spacing;
+
+          ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
+          y += ui.font_height;
+          params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
+          y += button_spacing;
+        } else {
+          let layer_idx = round(zoom_level / (LAYER_STEP / 2));
+          ui.print(style, x, y, z, `Layer #${layer_idx}:`);
+          y += ui.font_height + 2;
+          let key = `layer${layer_idx}`;
+          if (params[key]) {
+            ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
+            y += ui.font_height;
+            params[key].noise_freq = round4(ui.slider(params[key].noise_freq,
+              { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
+            y += button_spacing;
+
+            ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
+            y += ui.font_height;
+            params[key].noise_weight = round4(ui.slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
+            y += button_spacing;
+          }
         }
       }
 
@@ -721,25 +757,29 @@ export function main() {
     if (zoom_level >= 12) {
       let star;
       const SELECT_DIST = 40;
-      if ((solar_view || eff_solar_view) && selected_star_id !== null) {
-        // keep it
-        star = galaxy.getStar(selected_star_id);
-      } else {
-        star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
-        star = star && star[0];
-        if (star && sqrt(distSq(star.x, star.y, mouse_pos[0], mouse_pos[1])) * zoom * w > SELECT_DIST) {
-          star = null;
-        }
-        if (star) {
-          selected_star_id = star.id;
+      if (!solar_override_system) {
+        if ((solar_view || eff_solar_view) && selected_star_id !== null) {
+          // keep it
+          star = galaxy.getStar(selected_star_id);
         } else {
-          selected_star_id = null;
+          star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
+          star = star && star[0];
+          if (star && sqrt(distSq(star.x, star.y, mouse_pos[0], mouse_pos[1])) * zoom * w > SELECT_DIST) {
+            star = null;
+          }
+          if (star) {
+            selected_star_id = star.id;
+          } else {
+            selected_star_id = null;
+          }
         }
       }
+      let xp = x + w/2;
+      let yp = y + w/2;
       if (star) {
         let max_zoom = pow(2, MAX_ZOOM);
-        let xp = floor(star.x * max_zoom * buf_dim);
-        let yp = floor(star.y * max_zoom * buf_dim);
+        xp = floor(star.x * max_zoom * buf_dim);
+        yp = floor(star.y * max_zoom * buf_dim);
         xp = x + (xp*zoom/max_zoom/buf_dim - zoom_offs[0] * zoom) * w;
         yp = y + (yp*zoom/max_zoom/buf_dim - zoom_offs[1] * zoom) * w;
         if (view === 1) {
@@ -763,21 +803,21 @@ export function main() {
         }
 
         galaxy.getStarData(star);
-        let solar_system = star.solar_system;
-        if (solar_system) {
-          let { planets, star_data } = solar_system;
-          overlayText(`Star #${star.id}, Type: ${star_data.label}`);
-          for (let ii = 0; ii < planets.length; ++ii) {
-            let planet = planets[ii];
-            overlayText(`  Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
-          }
-          let do_view = eff_solar_view ? eff_solar_view : engine.defines.AUTOSOLAR && zoom_level > 15.5 ? 1 : 0;
-          if (do_view) {
-            drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w, xp, yp, do_view);
-          }
-        } else {
-          overlayText(`Star #${star.id}`);
+      }
+      let solar_system = solar_override_system || star && star.solar_system;
+      if (solar_system) {
+        let { planets, star_data } = solar_system;
+        overlayText(`Star #${star && star.id || 'override'}, Type: ${star_data.label}`);
+        for (let ii = 0; ii < planets.length; ++ii) {
+          let planet = planets[ii];
+          overlayText(`  Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
         }
+        let do_view = eff_solar_view ? eff_solar_view : engine.defines.AUTOSOLAR && zoom_level > 15.5 ? 1 : 0;
+        if (do_view) {
+          drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w, xp, yp, do_view);
+        }
+      } else if (star) {
+        overlayText(`Star #${star.id}`);
       }
     }
 
