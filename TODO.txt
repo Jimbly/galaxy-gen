@@ -1,4 +1,6 @@
 visually distinct planets
+  different generator params for gas giants, etc
+  how to make this wrap well?
 
 renderStars takes too long - split into multiple passes too
 stars still taking a lot of memory, simplify them or put them in Float64/32/Int16 buffers or something

@@ -13,7 +13,7 @@ const { KEYS } = input;
 const net = require('./glov/net.js');
 const perf = require('./glov/perf.js');
 const shaders = require('./glov/shaders.js');
-const { solarSystemCreate } = require('./solar_system.js');
+const { planetMapTexture, solarSystemCreate } = require('./solar_system.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
@@ -79,8 +79,17 @@ export function main() {
     wrap_t: gl.CLAMP_TO_EDGE,
   });
 
+  let tex_palette_planets = textures.load({
+    url: 'palette/pal_planets.png',
+    filter_min: gl.NEAREST,
+    filter_mag: gl.NEAREST,
+    wrap_s: gl.CLAMP_TO_EDGE,
+    wrap_t: gl.CLAMP_TO_EDGE,
+  });
+
   let shader_galaxy_pixel = shaders.create('shaders/galaxy_blend_pixel.fp');
   let shader_galaxy_blend = shaders.create('shaders/galaxy_blend.fp');
+  let shader_planet_pixel = shaders.create('shaders/planet_pixel.fp');
   let white_tex = textures.textures.white;
 
   const MAX_ZOOM = 16;
@@ -289,6 +298,7 @@ export function main() {
   }
   const ORBIT_RATE = 0.0002;
   function drawSolarSystem(solar_system, x0, y0, z, w, h, star_xp, star_yp, fade) {
+    let pmtex = planetMapTexture();
     x0 = lerp(fade, star_xp, x0);
     y0 = lerp(fade, star_yp, y0);
     w *= fade;
@@ -306,17 +316,28 @@ export function main() {
     for (let ii = 0; ii < planets.length; ++ii) {
       let r = r0 + rstep * ii;
       let planet = planets[ii];
-      let x = xmid + cos(planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE) * r;
-      let y = ymid + sin(planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE) * r * VSCALE;
+      let theta = planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE;
+      theta %= 2 * PI;
+      let x = xmid + cos(theta) * r;
+      let y = ymid + sin(theta) * r * VSCALE;
       // if (view === 1) {
       //   x = round(x);
       //   y = round(y);
       // }
+
       let zz = z + (y - ymid)/h;
-      ui.drawCircle(x, y, zz, planet.size + 2, 0.99, [0,0,0,fade]);
-      c = planet.type.color;
-      ui.drawCircle(x, y, zz + 0.00001, planet.size, 0.99, [c[0], c[1], c[2], fade]);
+      // ui.drawCircle(x, y, zz, planet.size + 2, 0.99, [0,0,0,fade]);
+      // c = planet.type.color;
+      // ui.drawCircle(x, y, zz + 0.00001, planet.size, 0.99, [c[0], c[1], c[2], fade]);
       drawElipse(xmid, ymid, z - 2, r, r * VSCALE, [0.5, 0.5, 0, fade]);
+
+      let sprite_size = planet.size;
+      let planet_params = {
+        params: [engine.frame_timestamp * 0.0003, pmtex.width / (sprite_size - 1)*1.5 / 255, 2 - theta / PI, 0],
+      };
+      sprites.queueraw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
+        x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
+        [1,1,1,fade], shader_planet_pixel, planet_params);
     }
 
     // draw backdrop
