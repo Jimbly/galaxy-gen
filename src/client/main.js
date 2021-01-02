@@ -404,7 +404,7 @@ export function main() {
       }
     }
 
-    if (galaxy) {
+    if (galaxy && !engine.defines.ATTRACT) {
       galaxy.loading = false;
     }
 
@@ -416,7 +416,7 @@ export function main() {
         galaxy.dispose();
       }
       galaxy = createGalaxy(params);
-      galaxy.loading = first;
+      galaxy.loading = first || engine.defines.ATTRACT;
       allocSprite();
     }
 
