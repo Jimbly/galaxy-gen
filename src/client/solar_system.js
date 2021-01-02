@@ -4,7 +4,7 @@ const { randCreate, mashString } = require('./glov/rand_alea.js');
 const SimplexNoise = require('simplex-noise');
 const { starTypeData, starTypeFromID } = require('./star_types.js');
 const textures = require('./glov/textures.js');
-const { clamp, nextHighestPowerOfTwo } = require('../common/util.js');
+const { clamp, defaults, nextHighestPowerOfTwo } = require('../common/util.js');
 const { vec2, vec4 } = require('./glov/vmath.js');
 
 let rand = [
@@ -14,55 +14,80 @@ let rand = [
   randCreate(0),
 ];
 
-let color_table_earthlike = [
+const color_table_earthlike = [
   0.5, 0,
   0.6, 1,
   1, 2,
 ];
 
-let color_table_earthlike2 = [
+const color_table_earthlike_islands = [
+  0.7, 0,
+  0.8, 1,
+  1, 2,
+];
+
+const color_table_earthlike_pangea = [
   0.3, 0,
   0.7, 1,
   1, 2,
 ];
 
-let color_table_molten = [
-  0.25, 5,
+const color_table_water_world = [
+  0.5, 22,
+  0.8, 0,
+  1, 22,
+];
+
+const color_table_low_life = [
+  0.3, 0,
+  0.7, 14,
+  1, 1,
+];
+
+const color_table_molten = [
+  0.25, 4,
+  0.46, 3,
+  0.54, 5,
   0.75, 3,
   1, 4,
 ];
 
-let color_table_gray = [
+const color_table_molten_small = [
+  0.4, 3,
+  0.6, 5,
+  1, 4,
+];
+
+const color_table_gray = [
   0.25, 6,
   0.5, 7,
   0.75, 8,
   1, 9,
 ];
 
-let color_table_frozen = [
+const color_table_frozen = [
   0.23, 11,
   0.77, 10,
   1, 9,
 ];
 
-let color_table_gasgiant1 = [
+// saturn-like, greys and oranges
+const color_table_gasgiant1 = [
   0.2, 12,
-  0.3, 13,
-  0.4, 12,
+  0.35, 13,
   0.5, 9,
-  0.6, 13,
-  0.7, 12,
-  0.8, 9,
-  0.9, 13,
+  0.65, 12,
+  0.8, 13,
   1, 9,
 ];
 
-let color_table_dirt = [
+const color_table_dirt = [
   0.5, 14,
   1, 15,
 ];
 
-let color_table_gasgiant2 = [
+// purples
+const color_table_gasgiant2 = [
   0.2, 16,
   0.4, 17,
   0.6, 16,
@@ -70,29 +95,115 @@ let color_table_gasgiant2 = [
   1, 16,
 ];
 
-let planet_types = [
+// reds
+const color_table_gasgiant3 = [
+  0.2, 18,
+  0.4, 5,
+  0.6, 18,
+  0.8, 5,
+  1, 18,
+];
+
+// blues
+const color_table_gasgiant4 = [
+  0.2, 19,
+  0.35, 20,
+  0.5, 21,
+  0.65, 19,
+  0.8, 20,
+  1, 21,
+];
+
+// yellows
+const color_table_gasgiant5 = [
+  0.2, 23,
+  0.35, 5,
+  0.5, 12,
+  0.65, 23,
+  0.8, 5,
+  1, 12,
+];
+
+const noise_base = {
+  frequency: 2,
+  amplitude: 1,
+  persistence: 0.5,
+  lacunarity: { min: 1.6, max: 2.8, freq: 0.3 },
+  octaves: 6,
+  cutoff: 0.5,
+  domain_warp: 0,
+  warp_freq: 1,
+  warp_amp: 0.1,
+  skew_x: 1,
+  skew_y: 1,
+};
+
+function noiseMod(opts, base) {
+  base = base || noise_base;
+  return defaults(opts, base || noise_base);
+}
+
+const noise_gasgiant = noiseMod({
+  skew_x: 0.2,
+  domain_warp: 1,
+  warp_amp: 0.1,
+});
+
+const noise_molten = noiseMod({
+  domain_warp: 0,
+  warp_amp: 0.1,
+});
+
+const noise_dirt = noiseMod({
+  domain_warp: 1,
+  warp_amp: 0.3,
+});
+
+const noise_waterworld = noiseMod({
+  skew_x: 0.5,
+  domain_warp: 1,
+  warp_amp: 0.3,
+});
+
+const planet_types = [
   // Class D (planetoid or moon with little to no atmosphere)
-  { name: 'D', color: vec4(0.7,0.7,0.7,1), color_table: color_table_gray },
+  { name: 'D', size: [4,8], color: vec4(0.7,0.7,0.7,1), color_table: color_table_gray, noise: noise_base },
   // Class H (generally uninhabitable)
-  { name: 'H', color: vec4(0.3,0.4,0.5,1), color_table: color_table_gray },
+  { name: 'H', size: [6,10], color: vec4(0.3,0.4,0.5,1), color_table: color_table_gray, noise: noise_base },
   // Class J (gas giant)
-  { name: 'J', color: vec4(0.9,0.6,0,1), color_table: color_table_gasgiant1 },
+  { name: 'J', size: [12,20], color: vec4(0.9,0.6,0,1),
+    color_table: [color_table_gasgiant1, color_table_gasgiant4],
+    noise: noise_gasgiant },
   // Class K (habitable, as long as pressure domes are used)
-  { name: 'K', color: vec4(0.5,0.3,0.2,1), color_table: color_table_dirt },
+  { name: 'K', size: [8,12], color: vec4(0.5,0.3,0.2,1), color_table: color_table_dirt, noise: noise_dirt },
   // Class L (marginally habitable, with vegetation but no animal life)
-  { name: 'L', color: vec4(0.3,0.7,0.3,1), color_table: color_table_frozen },
+  { name: 'L', size: [6,10], bias: 1, color: vec4(0.3,0.7,0.3,1),
+    color_table: color_table_frozen,
+    noise: noise_base },
   // Class M (terrestrial)
-  { name: 'M', color: vec4(0,1,0,1), color_table: color_table_earthlike },
+  { name: 'M', size: [9,12], color: vec4(0,1,0,1),
+    color_table: [color_table_earthlike, color_table_earthlike_islands, color_table_earthlike_pangea],
+    noise: noise_base },
   // Class N (sulfuric)
-  { name: 'N', color: vec4(0.6,0.6,0,1), color_table: color_table_molten },
+  { name: 'N', size: [4,8], bias: -1, color: vec4(0.6,0.6,0,1),
+    color_table: color_table_molten_small,
+    noise: noise_molten },
   // Class P (glacial)
-  { name: 'P', color: vec4(0.5,0.7,1,1), color_table: color_table_frozen },
+  { name: 'P', size: [4,14], bias: 1, color: vec4(0.5,0.7,1,1),
+    color_table: color_table_frozen,
+    noise: noise_base },
   // Class R (a rogue planet, not as habitable as a terrestrial planet)
-  { name: 'R', color: vec4(0.2,0.3,0.2,1), color_table: color_table_earthlike2 },
+  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), color_table: color_table_low_life, noise: noise_base },
   // Class T (gas giant)
-  { name: 'T', color: vec4(0.6,0.9,0,1), color_table: color_table_gasgiant2 },
+  { name: 'T', size: [12,20], color: vec4(0.6,0.9,0,1),
+    color_table: [color_table_gasgiant2, color_table_gasgiant3, color_table_gasgiant5],
+    noise: noise_gasgiant },
+  // Class W (water world)
+  { name: 'W', size: [8,18], color: vec4(0.3,0.3,1.0,1),
+    color_table: color_table_water_world,
+    noise: noise_waterworld },
   // Class Y (toxic atmosphere, high temperatures)
-  { name: 'Y', color: vec4(1,0.3,0,1), color_table: color_table_molten },
+  { name: 'Y', size: [8,18], color: vec4(1,0.3,0,1), color_table: color_table_molten, noise: noise_base },
 ];
 
 function randExp(idx, min, mx) {
@@ -103,15 +214,16 @@ function randExp(idx, min, mx) {
 
 function Planet(solar_system) {
   this.type = planet_types[rand[2].range(planet_types.length)];
-  this.size = randExp(3, 4, 20);
+  this.size = randExp(3, this.type.size[0], this.type.size[1]);
   this.orbit = rand[0].floatBetween(0, PI*2);
   this.orbit_speed = randExp(1, 0.1, 1);
   this.seed = rand[2].uint32();
-  //this.parent = solar_system;
+  // this.parent = solar_system;
 }
 
 let noise;
 let noise_warp;
+let noise_skew = vec2();
 let total_amplitude;
 let noise_field;
 let subopts;
@@ -119,11 +231,11 @@ function initNoise(seed, subopts_in) {
   subopts = subopts_in;
   noise = new Array(subopts.octaves);
   for (let ii = 0; ii < noise.length; ++ii) {
-    noise[ii] = new SimplexNoise(`${seed}n${subopts.key}${ii}`);
+    noise[ii] = new SimplexNoise(`${seed}n${ii}`);
   }
   noise_warp = new Array(subopts.domain_warp);
   for (let ii = 0; ii < noise_warp.length; ++ii) {
-    noise_warp[ii] = new SimplexNoise(`${seed}w${subopts.key}${ii}`);
+    noise_warp[ii] = new SimplexNoise(`${seed}w${ii}`);
   }
   total_amplitude = 0;  // Used for normalizing result to 0.0 - 1.0
   let amp = subopts.amplitude;
@@ -141,6 +253,8 @@ function initNoise(seed, subopts_in) {
       v.add = v.min + v.mul;
     }
   }
+  noise_skew[0] = subopts.skew_x;
+  noise_skew[1] = subopts.skew_y;
 }
 
 
@@ -150,7 +264,7 @@ function initNoise(seed, subopts_in) {
   let tex_idx = 0;
   let planet_tex_id = 0;
 
-  const PLANET_MIN_RES = 16;
+  const PLANET_MIN_RES = 8;
   const PLANET_MAX_RES = 128;
   let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES);
 
@@ -163,8 +277,8 @@ function initNoise(seed, subopts_in) {
     return v.add + v.mul * noise_field[field].noise2D(sample_pos[0] * v.freq, sample_pos[1] * v.freq);
   }
   function sample(x, y) {
-    sample_pos[0] = x;
-    sample_pos[1] = y;
+    sample_pos[0] = x * noise_skew[0];
+    sample_pos[1] = y * noise_skew[1];
     let warp_freq = subopts.warp_freq;
     let warp_amp = subopts.warp_amp;
     for (let ii = 0; ii < subopts.domain_warp; ++ii) {
@@ -200,23 +314,28 @@ function initNoise(seed, subopts_in) {
     if (this.tex && this.tex.planet_tex_id === this.tex_id) {
       return this.tex;
     }
+
+    for (let ii = 0; ii < rand.length; ++ii) {
+      rand[ii].reseed(mashString(`${this.seed}_${ii}`));
+    }
+
     let color_table = this.type.color_table;
-    let planet_res = clamp(nextHighestPowerOfTwo(onscreen_size), PLANET_MIN_RES, PLANET_MAX_RES);
-    initNoise(this.seed, {
-      key: '',
-      frequency: 2,
-      amplitude: 1,
-      persistence: 0.5,
-      lacunarity: { min: 1.6, max: 2.8, freq: 0.3 },
-      octaves: 6,
-      cutoff: 0.5,
-      domain_warp: 0,
-      warp_freq: 1,
-      warp_amp: 0.1,
-    });
+    if (Array.isArray(color_table[0])) {
+      color_table = color_table[rand[0].range(color_table.length)];
+    }
+    // with pixely view, looks a lot better with a /2 on the texture resolution
+    let planet_res = clamp(nextHighestPowerOfTwo(onscreen_size)/2, PLANET_MIN_RES, PLANET_MAX_RES);
+    initNoise(this.seed, this.type.noise);
     for (let idx=0, jj = 0; jj < planet_res; ++jj) {
+      let last_wrap = false;
       for (let ii = 0; ii < planet_res; ++ii, ++idx) {
         let v = sample(ii/planet_res, jj/planet_res);
+        if (last_wrap || ii === planet_res - 1 && rand[1].range(2)) { // blend around to other side by 1 texel
+          v = sample(-1/planet_res, jj/planet_res);
+        } else if (ii === planet_res - 2 && !rand[1].range(4)) {
+          v = sample(-2/planet_res, jj/planet_res);
+          last_wrap = true;
+        }
         let b = colorIndex(color_table, v);
         tex_data[idx] = b;
       }
@@ -245,7 +364,7 @@ function initNoise(seed, subopts_in) {
 }
 
 const PMRES = 128;
-const PMBORDER = 8;
+const PMBORDER = 16;
 let pmtex;
 export function planetMapTexture() {
   if (pmtex) {
@@ -305,6 +424,7 @@ function SolarSystem(global_seed, star) {
   let classif = starTypeFromID(id);
   let star_data = starTypeData(classif);
   this.star_data = star_data;
+  // this.star_id = id;
   for (let ii = 0; ii < rand.length; ++ii) {
     rand[ii].reseed(mashString(`${id}_${global_seed}_${ii}`));
   }
@@ -325,15 +445,19 @@ function SolarSystem(global_seed, star) {
   let p1 = [];
   let p2 = [];
   for (let ii = 0; ii < planets.length; ++ii) {
-    if (rand[0].range(2)) {
-      p1.push(planets[ii]);
+    let planet = planets[ii];
+    if (!planet.type.bias && rand[0].range(2) || planet.type.bias < 0) {
+      p1.push(planet);
     } else {
-      p2.push(planets[ii]);
+      p2.push(planet);
     }
   }
   p1.sort(cmpSize);
   p2.sort(cmpSize).reverse();
-  this.planets = p1.concat(p2);
+  this.planets = planets = p1.concat(p2);
+  // for (let ii = 0; ii < planets.length; ++ii) {
+  //   planets[ii].ord = ii;
+  // }
 }
 
 export function solarSystemCreate(global_seed, star) {

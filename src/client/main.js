@@ -132,8 +132,8 @@ export function main() {
     },
   };
   let solar_params = {
-    seed: 30,
-    star_id: 18,
+    seed: 80,
+    star_id: 55,
   };
   let gen_params;
   let gen_solar_params;
@@ -150,6 +150,9 @@ export function main() {
 
   function round4(v) {
     return round(v * 1000)/1000;
+  }
+  function roundZoom(v) {
+    return view === 1 ? round(v) : v;
   }
 
   function format(v) {
@@ -225,11 +228,14 @@ export function main() {
   let queued_zooms = [];
   let eff_solar_view = solar_view;
   let eff_solar_view_unsmooth = solar_view;
+  function zoomTime(amount) {
+    return abs(amount) * 500;
+  }
   function zoomTick(max_okay_zoom) {
     let dt = engine.frame_dt;
     for (let ii = 0; ii < queued_zooms.length; ++ii) {
       let zm = queued_zooms[ii];
-      let new_progress = min(1, zm.progress + dt/500);
+      let new_progress = min(1, zm.progress + dt/zoomTime(zm.delta));
       let dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
       let new_zoom_level = min(zoom_level + zm.delta * dp, MAX_ZOOM);
       // not limiting zoom, just feels worse?
@@ -333,7 +339,7 @@ export function main() {
 
       let sprite_size = planet.size;
       let planet_params = {
-        params: [engine.frame_timestamp * 0.0003, pmtex.width / (sprite_size - 1)*1.5 / 255, 2 - theta / PI, 0],
+        params: [engine.frame_timestamp * 0.0003, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
       sprites.queueraw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
         x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
@@ -555,7 +561,8 @@ export function main() {
     }
     x += ui.button_height + 2;
     const SLIDER_W = 110;
-    let new_zoom = ui.slider(target_zoom_level + solar_view, { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 1 });
+    let new_zoom = roundZoom(ui.slider(target_zoom_level + solar_view,
+      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 1 }));
     if (abs(new_zoom - target_zoom_level) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - target_zoom_level);
     }
@@ -570,12 +577,16 @@ export function main() {
     x += ui.button_height + 2;
     let mouse_wheel = input.mouseWheel();
     if (input.click({ button: 2 })) {
-      mouse_wheel-=4;
+      mouse_wheel-=1;
     }
     if (mouse_wheel) {
       use_mouse_pos = true;
       input.mousePos(mouse_pos);
-      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel*0.25);
+      if (mouse_wheel < 0 && eff_solar_view_unsmooth && !solar_view) {
+        // ignore
+      } else {
+        doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel);
+      }
     }
 
     zoomTick(max_okay_zoom);
@@ -831,7 +842,7 @@ export function main() {
         overlayText(`Star #${star && star.id || 'override'}, Type: ${star_data.label}`);
         for (let ii = 0; ii < planets.length; ++ii) {
           let planet = planets[ii];
-          overlayText(`  Planet #${ii+1}: Class ${planet.type.name}, R=${round(planet.size)}`);
+          overlayText(`  Planet #${ii+1}: Class ${planet.type.name}`);
         }
         let do_view = eff_solar_view ? eff_solar_view : engine.defines.AUTOSOLAR && zoom_level > 15.5 ? 1 : 0;
         if (do_view) {
@@ -840,6 +851,12 @@ export function main() {
       } else if (star) {
         overlayText(`Star #${star.id}`);
       }
+    }
+
+    if (input.click()) {
+      use_mouse_pos = true;
+      input.mousePos(mouse_pos);
+      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, 1);
     }
 
     ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);

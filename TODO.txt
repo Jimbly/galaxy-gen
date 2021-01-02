@@ -1,10 +1,8 @@
-visually distinct planets
-  different generator params for gas giants, etc
-  how to make this wrap well?
 
 renderStars takes too long - split into multiple passes too
 stars still taking a lot of memory, simplify them or put them in Float64/32/Int16 buffers or something
 
+artifact around horizontal borders in layer 6
 
 More detail in the intermediate layers:
   Add some detail paths (twirled by 80-100%?) to some of the zoom in layers
