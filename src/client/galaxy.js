@@ -680,6 +680,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
     cell.data = ret.data;
     cell.star_count = ret.star_count;
     cell.star_idx = 0;
+    cell.stars_ready = true;
     cell.pois = ret.pois;
   } else {
     // How many cells wide is this layer?
@@ -1049,7 +1050,7 @@ Galaxy.prototype.getStar = function (star_id) {
     let layer_res = pow(LAYER_STEP, layer_idx);
     let cell_idx = cx + cy * layer_res;
     let cell = layer[cell_idx];
-    if (!cell) {
+    if (!cell || !cell.stars_ready) {
       return null;
     }
     assert(star_id >= cell.star_idx);
