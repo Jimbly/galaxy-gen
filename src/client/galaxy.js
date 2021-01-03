@@ -9,7 +9,7 @@ const SimplexNoise = require('simplex-noise');
 const { hueFromID } = require('./star_types.js');
 const { solarSystemCreate } = require('./solar_system.js');
 const textures = require('./glov/textures.js');
-const { clamp, lerp, easeOut, easeInOut, ridx } = require('../common/util.js');
+const { clamp, lerp, easeOut, easeInOut } = require('../common/util.js');
 
 const SUMSQ = 0.75;
 
@@ -317,8 +317,8 @@ const STAR_QUOTA = 14; // ms
 Galaxy.prototype.realizeStars = function (cell) {
   let start = Date.now();
   let {
-    layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois, stars,
-    star_progress, star_idx,
+    layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois,
+    star_progress, star_storage,
   } = cell;
   let scale = star_count / lerp(SUMSQ, sum, sumsq) * 1.03;
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
@@ -329,7 +329,8 @@ Galaxy.prototype.realizeStars = function (cell) {
   ++counts.realizeStars;
   if (!star_progress) {
     assert(star_count >= pois.length);
-    stars = cell.stars = new Array(star_count);
+    star_storage = cell.star_storage = new Float64Array(star_count * 3);
+    cell.star_storage_start = 0;
     rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
     yy0 = 0;
     out_idx = 0;
@@ -341,27 +342,31 @@ Galaxy.prototype.realizeStars = function (cell) {
     out_idx = star_progress.out;
   }
   // const value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
-  function addStar(xx, yy) {
+  function addStarSub(x, y) {
     ++counts.star;
-    let star = {
-      // type: rand.range(POI_TYPE_OFFS.length),  // this choice now implicit from the ID
-      x: x0 + xx/buf_dim * w,
-      y: y0 + yy/buf_dim * w,
-      // v: (0.5 + rand.random()) * value_scale, // this choice now implicit from the ID
-    };
+    let idx;
     if (out_idx === star_count) {
-      let idx = rand.range(star_count - pois.length) + pois.length;
-      stars[idx] = star;
+      idx = rand.range(star_count - pois.length) + pois.length;
     } else {
-      stars[out_idx++] = star;
+      idx = out_idx++;
     }
+    star_storage[idx*3+1] = x;
+    star_storage[idx*3+2] = y;
+  }
+  function addStar(xx, yy) {
+    // type: rand.range(POI_TYPE_OFFS.length),  // this choice now implicit from the ID
+    // v: (0.5 + rand.random()) * value_scale, // this choice now implicit from the ID
+    let x = x0 + xx/buf_dim * w;
+    let y = y0 + yy/buf_dim * w;
+    addStarSub(x, y);
   }
   if (star_count) {
     let expire = start + STAR_QUOTA;
     if (out_idx === 0) {
       for (let ii = 0; ii < pois.length; ++ii) {
         let poi = pois[ii];
-        stars[out_idx++] = poi; // Losing ID / changing shape here!
+        addStarSub(poi.x, poi.y);  // Losing ID / changing shape here!
+        // stars[out_idx++] = poi; // Losing ID / changing shape here!
       }
     }
     for (let idx=yy0*buf_dim, yy = yy0; yy < buf_dim; ++yy) {
@@ -389,14 +394,52 @@ Galaxy.prototype.realizeStars = function (cell) {
       }
     }
     // console.log((stars.length-star_count)/star_count, stars.length, star_count); // about 5% under to 30% over
+    // eslint-disable-next-line no-unmodified-loop-condition
     while (out_idx < star_count) {
       addStar(rand.floatBetween(0, buf_dim), rand.floatBetween(0, buf_dim));
     }
     assert.equal(out_idx, star_count);
-    for (let ii = 0; ii < stars.length; ++ii) {
-      let star = stars[ii];
-      // id = ~37bit (at 100B stars) uid; also used to generate a seed
-      star.id = star_idx + ii;
+
+    // sort by xy into octants
+    let temp = new Array(star_count);
+    for (let ii = 0; ii < star_count; ++ii) {
+      temp[ii] = ii*3 + 1;
+    }
+    let mod0 = w/LAYER_STEP;
+    temp.sort((ai, bi) => {
+      let ax = star_storage[ai];
+      let ay = star_storage[ai+1];
+      let bx = star_storage[bi];
+      let by = star_storage[bi+1];
+      let mod = mod0;
+      let layer = layer_idx;
+      while (true) {
+        if (layer === MAX_LAYER+1) {
+          return 0;
+        }
+        let ayi = floor(ay / mod);
+        let byi = floor(by / mod);
+        if (ayi !== byi) {
+          return ayi - byi;
+        }
+        let axi = floor(ax / mod);
+        let bxi = floor(bx / mod);
+        if (axi !== bxi) {
+          return axi - bxi;
+        }
+        mod /= LAYER_STEP;
+        ++layer;
+      }
+    });
+    // remap x into first slot in new order
+    for (let ii = 0; ii < star_count; ++ii) {
+      let idx = temp[ii];
+      star_storage[ii*3] = star_storage[idx];
+    }
+    // remap y into second slot in new order
+    for (let ii = 0; ii < star_count; ++ii) {
+      let idx = temp[ii];
+      star_storage[ii*3+1] = star_storage[idx+1];
     }
   }
   // TODO: relaxation step to separate really close stars (1/1000 ly? <=2px in highest res buffer?)
@@ -433,7 +476,7 @@ function starVisTypeFromID(id) {
   ];
   // Note: this function gets called recursively
   Galaxy.prototype.renderStars = function (cell) {
-    let { layer_idx, x0, y0, w, stars, cx, cy } = cell;
+    let { layer_idx, x0, y0, w, cx, cy } = cell;
     let { buf_dim } = this;
     let scale = buf_dim / w;
 
@@ -481,9 +524,13 @@ function starVisTypeFromID(id) {
     let ypos = [];
     // let { max_zoom } = this.params;
     // let max_res = pow(2, max_zoom);
-    for (let ii = 0; ii < stars.length; ++ii) {
-      let star = stars[ii];
-      let { x, y, id } = star;
+    let { star_count, star_storage, star_storage_start, star_idx } = cell;
+    let store_idx = star_storage_start*3;
+    for (let ii = 0; ii < star_count; ++ii) {
+      let x = star_storage[store_idx++];
+      let y = star_storage[store_idx++];
+      let id = star_idx + ii;
+      store_idx++;
       let v = starValueFromID(id);
       x = (x - x0) * scale;
       y = (y - y0) * scale;
@@ -574,12 +621,12 @@ function starVisTypeFromID(id) {
 
 Galaxy.prototype.assignChildStars = function (cell) {
   let { buf_dim } = this;
-  let { pois, star_count, stars, sum, sumsq, data, star_idx } = cell;
+  let { pois, star_count, sum, sumsq, data, star_idx, star_storage, star_storage_start } = cell;
   let child_data = [];
   for (let ii = 0; ii < LAYER_STEP * LAYER_STEP; ++ii) {
     child_data.push({ pois: [] });
   }
-  if (!stars) {
+  if (!star_storage) {
     let qs = buf_dim / LAYER_STEP;
     let running_sum = 0;
     let running_sumsq = 0;
@@ -615,18 +662,29 @@ Galaxy.prototype.assignChildStars = function (cell) {
     let idx = qy * LAYER_STEP + qx;
     child_data[idx].pois.push(poi);
   }
-  if (stars) {
-    for (let ii = 0; ii < child_data.length; ++ii) {
-      child_data[ii].stars = [];
-    }
-    for (let ii = 0; ii < stars.length; ++ii) {
-      let poi = stars[ii];
-      let qx = floor((poi.x - cell.x0) * mul);
-      let qy = floor((poi.y - cell.y0) * mul);
+  if (star_storage) {
+    let child_idx = 0;
+    let last_start = star_storage_start;
+    let end = star_storage_start + star_count;
+    for (let ii = star_storage_start; ii < end; ++ii) {
+      let x = star_storage[ii*3];
+      let y = star_storage[ii*3+1];
+      let qx = floor((x - cell.x0) * mul);
+      let qy = floor((y - cell.y0) * mul);
       assert(qx >= 0 && qx < LAYER_STEP);
       assert(qy >= 0 && qy < LAYER_STEP);
       let idx = qy * LAYER_STEP + qx;
-      child_data[idx].stars.push(poi);
+      assert(idx >= child_idx);
+      while (child_idx < idx) {
+        child_data[child_idx].store_start = last_start;
+        child_data[child_idx++].store_count = ii - last_start;
+        last_start = ii;
+      }
+    }
+    while (child_idx < LAYER_STEP * LAYER_STEP) {
+      child_data[child_idx].store_start = last_start;
+      child_data[child_idx++].store_count = end - last_start;
+      last_start = end;
     }
   }
   cell.child_data = child_data;
@@ -758,11 +816,12 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
     }
 
     if (!cell.stars_ready) {
-      if (parent.stars) {
+      if (parent.star_storage) {
         // filter existing stars
-        cell.stars = parent.child_data[qidx].stars;
-        // parent.stars.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
-        cell.star_count = cell.stars.length;
+        cell.star_storage = parent.star_storage;
+        cell.star_storage_start = parent.child_data[qidx].store_start;
+        cell.star_count = parent.child_data[qidx].store_count;
+        cell.star_idx = parent.star_idx + (cell.star_storage_start - parent.star_storage_start);
       } else {
         // count or generate stars
         cell.star_count = parent.child_data[qidx].star_count;
@@ -865,7 +924,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
     if (cell.tex) {
       return cell;
     }
-    let { data, pois, x0, y0, w, stars, ready, cx, cy } = cell;
+    let { data, pois, x0, y0, w, ready, cx, cy } = cell;
     if (!ready) {
       // still loading
       return cell;
@@ -902,9 +961,13 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
         tex_data[ii * 4 + 3] = 255; // ignored
       }
       // Render in stars
-      for (let ii = 0; ii < stars.length; ++ii) {
-        let star = stars[ii];
-        let { x, y, id } = star;
+      let { star_storage, star_count, star_storage_start, star_idx } = cell;
+      let store_idx = star_storage_start*3;
+      for (let ii = 0; ii < star_count; ++ii) {
+        let x = star_storage[store_idx++];
+        let y = star_storage[store_idx++];
+        let id = star_idx + ii;
+        store_idx++;
         let type = starVisTypeFromID(id);
         let v = starValueFromID(id);
         let hue = hueFromID(id);
@@ -1024,7 +1087,7 @@ export function distSq(x1, y1, x2, y2) {
     let layer_res = pow(LAYER_STEP, layer_idx);
     let cx = floor(x * layer_res);
     let cy = floor(y * layer_res);
-    let closest = new Array(num);
+    let closest = new Array(num * 2); // dist, id
     for (let ddy = 0; ddy <= 3; ++ddy) {
       let yy = cy + dy[ddy];
       if (yy < 0 || yy >= layer_res) {
@@ -1037,34 +1100,56 @@ export function distSq(x1, y1, x2, y2) {
         }
         let cell_idx = yy * layer_res + xx;
         let cell = layer[cell_idx];
-        if (!cell || !cell.stars) {
+        if (!cell || !cell.star_storage) {
           // incomplete data loaded, dynamic load here? just for stars?
           continue;
         }
-        let { stars } = cell;
-        for (let ii = 0; ii < stars.length; ++ii) {
-          let star = stars[ii];
-          star.dist_temp = distSq(x, y, star.x, star.y);
-          for (let jj = 0; jj < closest.length; ++jj) {
-            let other = closest[jj];
-            if (!other) {
-              closest[jj] = star;
+        let { star_storage, star_storage_start, star_count, star_idx } = cell;
+        let store_idx = star_storage_start*3;
+        for (let ii = 0; ii < star_count; ++ii) {
+          let star_x = star_storage[store_idx++];
+          let star_y = star_storage[store_idx++];
+          let star_id = star_idx + ii;
+          store_idx++;
+          let star_dist = distSq(x, y, star_x, star_y);
+          for (let jj = 0; jj < closest.length; jj+=2) {
+            let other_id = closest[jj+1];
+            if (other_id === undefined) {
+              closest[jj] = star_dist;
+              closest[jj+1] = star_id;
               break;
             }
-            if (star.dist_temp < other.dist_temp) {
-              closest[jj] = star;
-              star = other;
+
+            let other_dist = closest[jj];
+            if (star_dist < other_dist) {
+              closest[jj] = star_dist;
+              closest[jj+1] = star_id;
+              star_dist = other_dist;
+              star_id = other_id;
             }
           }
         }
       }
     }
-    return closest;
+    let ret = [];
+    for (let ii = 1; ii < closest.length; ii+=2) {
+      let id = closest[ii];
+      if (id !== undefined) {
+        ret.push(id);
+      }
+    }
+    return ret;
   };
 }
 
 Galaxy.prototype.getStar = function (star_id) {
-  let { layers } = this;
+  let { layers, stars } = this;
+  if (!stars) {
+    this.stars = stars = {};
+  }
+  if (stars[star_id]) {
+    return stars[star_id];
+  }
   function search(layer_idx, cx, cy) {
     let layer = layers[layer_idx];
     let layer_res = pow(LAYER_STEP, layer_idx);
@@ -1075,12 +1160,20 @@ Galaxy.prototype.getStar = function (star_id) {
     }
     assert(star_id >= cell.star_idx);
     if (layer_idx === STAR_LAYER) {
-      if (!cell.stars) {
+      let { star_storage, star_storage_start } = cell;
+      if (!star_storage) {
         return null;
       }
       let idx = star_id - cell.star_idx;
-      assert(idx < cell.stars.length);
-      return cell.stars[idx];
+      assert(idx < cell.star_count);
+      let store_idx = (star_storage_start + idx) * 3;
+      let x = star_storage[store_idx++];
+      let y = star_storage[store_idx++];
+      store_idx++;
+      // Create and cache star
+      let star = { x, y, id: star_id };
+      stars[star_id] = star;
+      return star;
     }
     // not this layer, drill down
     if (!cell.child_data) {

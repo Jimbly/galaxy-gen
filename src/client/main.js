@@ -798,13 +798,14 @@ export function main() {
           // keep it
           star = galaxy.getStar(selected_star_id);
         } else {
-          star = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
-          star = star && star[0];
+          let closest = galaxy.starsNear(mouse_pos[0], mouse_pos[1], 1);
+          let star_id = closest.length ? closest[0] : null;
+          star = star_id !== null && galaxy.getStar(star_id);
           if (star && sqrt(distSq(star.x, star.y, mouse_pos[0], mouse_pos[1])) * zoom * w > SELECT_DIST) {
             star = null;
           }
           if (star) {
-            selected_star_id = star.id;
+            selected_star_id = star_id;
           } else {
             selected_star_id = null;
           }
