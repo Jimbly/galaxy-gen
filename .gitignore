@@ -13,3 +13,4 @@ Bfxr
 src/client/autogen/
 config/*.json
 .DS_Store
+img/

@@ -8,7 +8,7 @@ More detail in the intermediate layers:
   More, stronger noise in layers 4/5 cause the visible (thresholded) details to better align with the star placements
     but, really messes up the core
 
-Try completely different approach:
+Try completely different approach for layer 0
   Generate (thousands of) clusters of stars and draw them as additive glowing dots
 
 Scale

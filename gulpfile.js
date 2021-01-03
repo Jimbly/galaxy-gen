@@ -105,6 +105,7 @@ const config = {
     'src/client/**/*.jpg',
     'src/client/**/*.glb',
     'src/client/**/*.ico',
+    'src/client/**/*.gif',
     '!**/unused/**',
     '!src/client/sounds/Bfxr/**',
     // 'src/client/**/vendor/**',

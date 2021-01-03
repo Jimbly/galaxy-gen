@@ -212,12 +212,25 @@ function randExp(idx, min, mx) {
   return min + (mx - min) * v;
 }
 
-function Planet(solar_system) {
-  this.type = planet_types[rand[2].range(planet_types.length)];
-  this.size = randExp(3, this.type.size[0], this.type.size[1]);
-  this.orbit = rand[0].floatBetween(0, PI*2);
+function typeFromName(name) {
+  for (let ii = 0; ii < planet_types.length; ++ii) {
+    if (planet_types[ii].name === name) {
+      return planet_types[ii];
+    }
+  }
+  assert(false);
+  return null;
+}
+
+function Planet(solar_system, override_data) {
+  override_data = override_data || {};
+  this.type = override_data.name ?
+    typeFromName(override_data.name) :
+    planet_types[rand[2].range(planet_types.length)];
+  this.size = override_data.size || randExp(3, this.type.size[0], this.type.size[1]);
+  this.orbit = rand[0].floatBetween(0, PI*2) * 11;
   this.orbit_speed = randExp(1, 0.1, 1);
-  this.seed = rand[2].uint32();
+  this.seed = override_data.seed || rand[2].uint32();
   // this.parent = solar_system;
 }
 
@@ -428,33 +441,48 @@ function SolarSystem(global_seed, star) {
   for (let ii = 0; ii < rand.length; ++ii) {
     rand[ii].reseed(mashString(`${id}_${global_seed}_${ii}`));
   }
-  let num_planets = rand[0].range(4);
-  let chance = 0.5;
   let planets = [];
-  while (num_planets) {
-    planets.push(new Planet(this));
-    --num_planets;
-    if (!num_planets) {
-      if (rand[1].random() < chance) {
-        ++num_planets;
-        chance *= 0.9;
+  if (id === 98897686813) { // Sol
+    this.name = 'Sol';
+    planets.push(new Planet(this, { name: 'D', size: 4 })); // Mercury
+    planets.push(new Planet(this, { name: 'K', size: 6 })); // Venus
+    planets.push(new Planet(this, { name: 'M', size: 8, seed: 5 })); // Earth
+    planets.push(new Planet(this, { name: 'Y', size: 5 })); // Mars
+
+    planets.push(new Planet(this, { name: 'T', size: 16, seed: 1 })); // Jupiter
+    planets.push(new Planet(this, { name: 'J', size: 12, seed: 1 })); // Saturn
+
+    planets.push(new Planet(this, { name: 'P', size: 9 })); // Uranus
+    planets.push(new Planet(this, { name: 'W', size: 8 })); // Neptune
+  } else {
+    let num_planets = rand[0].range(4);
+    let chance = 0.5;
+    while (num_planets) {
+      planets.push(new Planet(this));
+      --num_planets;
+      if (!num_planets) {
+        if (rand[1].random() < chance) {
+          ++num_planets;
+          chance *= 0.9;
+        }
       }
     }
-  }
-  // split in two, sort by size, put bigger in the middle
-  let p1 = [];
-  let p2 = [];
-  for (let ii = 0; ii < planets.length; ++ii) {
-    let planet = planets[ii];
-    if (!planet.type.bias && rand[0].range(2) || planet.type.bias < 0) {
-      p1.push(planet);
-    } else {
-      p2.push(planet);
+    // split in two, sort by size, put bigger in the middle
+    let p1 = [];
+    let p2 = [];
+    for (let ii = 0; ii < planets.length; ++ii) {
+      let planet = planets[ii];
+      if (!planet.type.bias && rand[0].range(2) || planet.type.bias < 0) {
+        p1.push(planet);
+      } else {
+        p2.push(planet);
+      }
     }
+    p1.sort(cmpSize);
+    p2.sort(cmpSize).reverse();
+    planets = p1.concat(p2);
   }
-  p1.sort(cmpSize);
-  p2.sort(cmpSize).reverse();
-  this.planets = planets = p1.concat(p2);
+  this.planets = planets;
   // for (let ii = 0; ii < planets.length; ++ii) {
   //   planets[ii].ord = ii;
   // }

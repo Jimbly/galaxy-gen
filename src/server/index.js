@@ -1,4 +1,5 @@
 const argv = require('minimist')(process.argv.slice(2));
+const assert = require('assert');
 const express = require('express');
 const express_static_gzip = require('express-static-gzip');
 const fs = require('fs');
@@ -39,6 +40,25 @@ app.use(express_static_gzip('data_store/public', {
 }));
 
 glov_server.startup({ server, server_https });
+glov_server.ws_server.onMsg('img', function (client, pak, resp_func) {
+  let id = pak.readInt();
+  let str = pak.readString();
+  assert(str.startsWith('data:image/png;base64,'));
+  let buf = Buffer.from(str.slice('data:image/png;base64,'.length), 'base64');
+  try {
+    fs.mkdirSync('img');
+  } catch (e) {
+    // ignored
+  }
+  let fn = `img/${client.id}_${id}.png`;
+  fs.writeFile(fn, buf, function (err) {
+    if (err) {
+      throw err;
+    }
+    console.log(`Wrote ${fn} (${buf.length} bytes)`);
+    resp_func(err);
+  });
+});
 
 test_worker.init(glov_server.channel_server);
 

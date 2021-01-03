@@ -5,7 +5,7 @@ local_storage.storage_prefix = 'galaxy-gen'; // Before requiring anything else t
 const assert = require('assert');
 const camera2d = require('./glov/camera2d.js');
 const engine = require('./glov/engine.js');
-const { copyCanvasToClipboard } = require('./glov/framebuffer.js');
+const { copyCanvasToClipboard, framebufferUpdateCanvasForCapture } = require('./glov/framebuffer.js');
 const { createGalaxy, distSq, LAYER_STEP } = require('./galaxy.js');
 const { abs, ceil, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
 const input = require('./glov/input.js');
@@ -17,7 +17,7 @@ const { planetMapTexture, solarSystemCreate } = require('./solar_system.js');
 const sprites = require('./glov/sprites.js');
 const textures = require('./glov/textures.js');
 const ui = require('./glov/ui.js');
-const { clamp, clone, deepEqual, easeInOut, easeOut, lerp } = require('../common/util.js');
+const { clamp, clone, deepEqual, easeInOut, easeIn, easeOut, lerp } = require('../common/util.js');
 const { unit_vec, vec2, v2add, v2addScale, v2copy, v2floor, v2set, vec4 } = require('./glov/vmath.js');
 const createSprite = sprites.create;
 const { BLEND_ADDITIVE } = sprites;
@@ -204,6 +204,8 @@ export function main() {
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let use_mouse_pos = false;
+  const font_style_fade = font.styleColored(null, 0xFFFFFF40);
+  const color_legend_fade = vec4(1,1,1,0.25);
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
   function doZoomActual(x, y, delta) {
@@ -237,7 +239,13 @@ export function main() {
     for (let ii = 0; ii < queued_zooms.length; ++ii) {
       let zm = queued_zooms[ii];
       let new_progress = min(1, zm.progress + dt/zoomTime(zm.delta));
-      let dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
+      let dp;
+      if (engine.defines.ATTRACT) {
+        dp = new_progress - zm.progress;
+      } else {
+        // manual mode, smooth the application of zooming
+        dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
+      }
       let new_zoom_level = min(zoom_level + zm.delta * dp, MAX_ZOOM);
       // not limiting zoom, just feels worse?
       if (zm.delta > 0 && new_zoom_level > max_okay_zoom && false) {
@@ -283,6 +291,41 @@ export function main() {
       x, y, delta,
       progress: 0,
     });
+  }
+
+  let last_img;
+  let img_id = 0;
+  function saveSnapshot() {
+    let src = engine.canvas;
+    let viewport = engine.viewport;
+
+    let canvas_full = document.createElement('canvas');
+    canvas_full.width = game_width * 4;
+    canvas_full.height = game_height * 4;
+    let ctx = canvas_full.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, viewport[0], src.height - viewport[3] + viewport[1], viewport[2], viewport[3],
+      0, 0, canvas_full.width, canvas_full.height);
+    let data_full = canvas_full.toDataURL('image/png');
+    //let data_full = canvas_full.toDataURL('image/jpeg', 0.92);
+    if (data_full === last_img) {
+      return;
+    }
+    last_img = data_full;
+
+    if (net.client) {
+      let pak = net.client.pak('img');
+      pak.writeInt(img_id++);
+      pak.writeString(data_full);
+      pak.send();
+    } else {
+      let win = window.open('', 'img_preview');
+      let elems = win.document.getElementsByTagName('img');
+      if (elems && elems.length) {
+        elems[0].remove();
+      }
+      win.document.write(`<html><body><img src="${data_full}"/></body></html>`);
+    }
   }
 
   const VSCALE = 0.5;
@@ -604,13 +647,16 @@ export function main() {
     let legend_scale = 0.25;
     let legend_x0 = game_width - w*legend_scale - 2;
     let legend_x1 = game_width - 4;
+    let legend_color = solar_view ? color_legend_fade : unit_vec;
     y = w;
-    ui.drawLine(legend_x0 - 0.5, y - 4.5, legend_x1 + 0.5, y - 4.5, z, 1, 1, unit_vec);
-    ui.drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, unit_vec);
-    ui.drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, unit_vec);
+
+    ui.drawLine(legend_x0, y - 4.5, legend_x1, y - 4.5, z, 1, 1, legend_color);
+    ui.drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, legend_color);
+    ui.drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, legend_color);
     let ly = legend_scale * params.width_ly / zoom;
     let legend_y = y - 6 - ui.font_height;
-    font.drawSizedAligned(null, legend_x0, legend_y, z, ui.font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
+    font.drawSizedAligned(solar_view ? font_style_fade : null,
+      legend_x0, legend_y, z, ui.font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
       `${format(ly)}ly`);
     ui.drawRect(legend_x0 - 2, legend_y, legend_x1 + 2, y, z - 1, color_text_backdrop);
 
@@ -637,8 +683,13 @@ export function main() {
       local_storage.setJSON('offsx', zoom_offs[0]);
       local_storage.setJSON('offsy', zoom_offs[1]);
     }
-    zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
-    zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
+    if (engine.defines.ATTRACT) {
+      zoom_offs[0] = clamp(zoom_offs[0], 0, 1 - 1/zoom);
+      zoom_offs[1] = clamp(zoom_offs[1], 0, 1 - 1/zoom);
+    } else {
+      zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
+      zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
+    }
 
     if (input.mouseMoved()) {
       use_mouse_pos = true;
@@ -843,8 +894,9 @@ export function main() {
       }
       let solar_system = solar_override_system || star && star.solar_system;
       if (solar_system) {
-        let { planets, star_data } = solar_system;
-        overlayText(`Star #${star && star.id || 'override'}, Type: ${star_data.label}`);
+        let { planets, star_data, name } = solar_system;
+        overlayText(`${name || (star && star.id ? `Star #${star.id}` : '') || 'Override Star'}` +
+          `, Type: ${star_data.label}`);
         for (let ii = 0; ii < planets.length; ++ii) {
           let planet = planets[ii];
           overlayText(`  Planet #${ii+1}: Class ${planet.type.name}`);
@@ -865,6 +917,10 @@ export function main() {
     }
 
     ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
+
+    if (engine.defines.ATTRACT) {
+      engine.postRender(saveSnapshot);
+    }
   }
 
   function testInit(dt) {
