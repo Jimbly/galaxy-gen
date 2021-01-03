@@ -313,41 +313,57 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
   return sample_buf;
 };
 
-const STAR_LARGE_COUNT = 20000; // 20k = about 10ms
 const STAR_QUOTA = 14; // ms
 Galaxy.prototype.realizeStars = function (cell) {
   let start = Date.now();
-  let { layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois, stars, star_progress, star_idx } = cell;
+  let {
+    layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois, stars,
+    star_progress, star_idx,
+  } = cell;
   let scale = star_count / lerp(SUMSQ, sum, sumsq) * 1.03;
-  let value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
   let { buf_dim, params } = this;
   let { seed } = params;
   let yy0;
+  let out_idx;
   ++counts.realizeStars;
   if (!star_progress) {
-    stars = cell.stars = [];
+    assert(star_count >= pois.length);
+    stars = cell.stars = new Array(star_count);
     rand.reseed(mashString(`${seed}_${layer_idx}_${cell_idx}`));
     yy0 = 0;
+    out_idx = 0;
   } else {
     if (star_progress.state) {
       rand.importState(star_progress.state);
     }
     yy0 = star_progress.y;
+    out_idx = star_progress.out;
   }
+  // const value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
   function addStar(xx, yy) {
     ++counts.star;
     let star = {
-      type: rand.range(POI_TYPE_OFFS.length),  // TODO: make this choice implicit from per-cell a seed or the ID
+      // type: rand.range(POI_TYPE_OFFS.length),  // this choice now implicit from the ID
       x: x0 + xx/buf_dim * w,
       y: y0 + yy/buf_dim * w,
-      v: (0.5 + rand.random()) * value_scale, // TODO: make this choice implicit from per-cell a seed or the ID
+      // v: (0.5 + rand.random()) * value_scale, // this choice now implicit from the ID
     };
-    stars.push(star);
+    if (out_idx === star_count) {
+      let idx = rand.range(star_count - pois.length) + pois.length;
+      stars[idx] = star;
+    } else {
+      stars[out_idx++] = star;
+    }
   }
-  let do_stars = (star_count || pois.length) && yy0 !== buf_dim;
-  if (do_stars) {
+  if (star_count) {
     let expire = start + STAR_QUOTA;
+    if (out_idx === 0) {
+      for (let ii = 0; ii < pois.length; ++ii) {
+        let poi = pois[ii];
+        stars[out_idx++] = poi; // Losing ID / changing shape here!
+      }
+    }
     for (let idx=yy0*buf_dim, yy = yy0; yy < buf_dim; ++yy) {
       for (let xx = 0; xx < buf_dim; ++xx, ++idx) {
         let v = data[idx];
@@ -365,6 +381,7 @@ Galaxy.prototype.realizeStars = function (cell) {
         cell.star_progress = {
           y: yy + 1,
           state: rand.exportState(),
+          out: out_idx,
         };
         //let end = Date.now();
         //console.log(`realizeStars(${star_count}): ${end - start}ms place (partial ${yy - yy0 + 1})`);
@@ -372,40 +389,37 @@ Galaxy.prototype.realizeStars = function (cell) {
       }
     }
     // console.log((stars.length-star_count)/star_count, stars.length, star_count); // about 5% under to 30% over
-    while (stars.length < star_count) {
+    while (out_idx < star_count) {
       addStar(rand.floatBetween(0, buf_dim), rand.floatBetween(0, buf_dim));
     }
-    while (stars.length > star_count) {
-      ridx(stars, rand.range(stars.length));
-    }
-    for (let ii = 0; ii < pois.length; ++ii) {
-      let poi = pois[ii];
-      stars.push(poi);
-    }
+    assert.equal(out_idx, star_count);
     for (let ii = 0; ii < stars.length; ++ii) {
       let star = stars[ii];
       // id = ~37bit (at 100B stars) uid; also used to generate a seed
       star.id = star_idx + ii;
     }
   }
-  // let end_place = Date.now();
   // TODO: relaxation step to separate really close stars (1/1000 ly? <=2px in highest res buffer?)
-  if (do_stars && star_count > STAR_LARGE_COUNT && !this.loading) {
-    // spend considerable time
-    cell.star_progress = {
-      y: buf_dim,
-      state: null, // no random after this!
-    };
-    // let end = Date.now();
-    // console.log(`realizeStars(${star_count}): ${end - start}ms place (finished)`);
-    return false;
-  }
   delete cell.star_progress;
   // let end = Date.now();
-  // console.log(`realizeStars(${star_count}): ${end_place - start}ms place, ${end - end_place}ms render`);
+  // console.log(`realizeStars(${star_count}): ${end - start}ms place`);
   ++counts.realizeStarsFinish;
   return true;
 };
+
+// https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
+function hash(x) {
+  x = (((x >>> 16) ^ x) * 0x45d9f3b) >>> 0;
+  x = (((x >>> 16) ^ x) * 0x45d9f3b) >>> 0;
+  x = ((x >>> 16) ^ x) >>> 0;
+  return x;
+}
+function starValueFromID(id) {
+  return (0.5 + hash(id) / 0xffffffff) * 0.75;
+}
+function starVisTypeFromID(id) {
+  return ((hash(id) & 0x7fff) / 0x8000 * POI_TYPE_OFFS.length) | 0;
+}
 
 // render into `data` appropriately for the current zoom
 {
@@ -413,6 +427,9 @@ Galaxy.prototype.realizeStars = function (cell) {
     1/16, 1/8, 1/16,
     1/8, 1/4, 1/8,
     1/16, 1/8, 1/16,
+    // 0,0,0,
+    // 0,1,0,
+    // 0,0,0,
   ];
   // Note: this function gets called recursively
   Galaxy.prototype.renderStars = function (cell) {
@@ -466,7 +483,8 @@ Galaxy.prototype.realizeStars = function (cell) {
     // let max_res = pow(2, max_zoom);
     for (let ii = 0; ii < stars.length; ++ii) {
       let star = stars[ii];
-      let { x, y, v, id } = star;
+      let { x, y, id } = star;
+      let v = starValueFromID(id);
       x = (x - x0) * scale;
       y = (y - y0) * scale;
       if (layer_idx === 7 || layer_idx === 6) {
@@ -886,7 +904,9 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       // Render in stars
       for (let ii = 0; ii < stars.length; ++ii) {
         let star = stars[ii];
-        let { x, y, type, v, id } = star;
+        let { x, y, id } = star;
+        let type = starVisTypeFromID(id);
+        let v = starValueFromID(id);
         let hue = hueFromID(id);
         x = floor((x - x0) / w * buf_dim);
         y = floor((y - y0) / w * buf_dim);

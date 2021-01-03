@@ -63,6 +63,7 @@ export function main() {
     viewport_postprocess: false,
     antialias: false,
     do_borders: false,
+    show_fps: engine.defines.ATTRACT ? false : undefined,
   })) {
     return;
   }
@@ -541,7 +542,7 @@ export function main() {
         x: x - 4, y: 0, w: ui.button_width + 8, h: y, z: z - 1,
       });
     } else {
-      if (ui.buttonText({ x, y, text: '>>', w: ui.button_height }) ||
+      if (!engine.defines.ATTRACT && ui.buttonText({ x, y, text: '>>', w: ui.button_height }) ||
         input.keyDownEdge(KEYS.ESC)
       ) {
         show_panel = !show_panel;
@@ -655,6 +656,9 @@ export function main() {
     let overlay_x = show_panel ? map_x0 + 2 : ui.button_height * 2;
     let overlay_w = 0;
     function overlayText(line) {
+      if (engine.defines.ATTRACT) {
+        return;
+      }
       let textw = ui.print(null, overlay_x, overlay_y, z, line);
       overlay_w = max(overlay_w, textw);
       overlay_y += ui.font_height;
