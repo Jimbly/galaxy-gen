@@ -913,7 +913,7 @@ export function main() {
     if (input.click()) {
       use_mouse_pos = true;
       input.mousePos(mouse_pos);
-      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, 1);
+      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, solar_view ? -1 : 1);
     }
 
     ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
