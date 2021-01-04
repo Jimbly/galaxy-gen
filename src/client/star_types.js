@@ -80,7 +80,7 @@ export function starTypeFromID(id) {
 }
 
 export function hueFromID(id) {
-  return star_types[starType(mashI53(id))].hue
+  return star_types[starType(mashI53(id))].hue;
 }
 
 export function starTypeData(key) {
