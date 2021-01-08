@@ -27,7 +27,7 @@
   "contributors": [
     "Jimb Esser (https://github.com/Jimbly)"
   ],
-  "license": "MIT",
+  "license": "UNLICENSED",
   "dependencies": {
     "dot-prop": "^4.2.0",
     "express": "^4.17.1",
