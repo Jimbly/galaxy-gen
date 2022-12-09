@@ -8,20 +8,20 @@ const mat4Create = require('gl-mat4/create');
 
 const { abs, acos, max, min, floor, pow, round, sqrt } = Math;
 
-export type Mat3 = Float32Array |
+export type Mat3 = Float64Array |
   [number, number, number,
    number, number, number,
    number, number, number];
-export type Mat4 = Float32Array |
+export type Mat4 = Float64Array |
   [number, number, number, number,
    number, number, number, number,
    number, number, number, number,
    number, number, number, number];
 
-export type Vec4 = [number, number, number, number, ...number[]] | Float32Array | Int32Array;
-export type Vec3 = [number, number, number, ...number[]] | Float32Array | Int32Array;
-export type Vec2 = [number, number, ...number[]] | Float32Array | Int32Array;
-export type Vec1 = [number, ...number[]] | Float32Array | Int32Array;
+export type Vec4 = [number, number, number, number, ...number[]] | Float64Array | Int32Array;
+export type Vec3 = [number, number, number, ...number[]] | Float64Array | Int32Array;
+export type Vec2 = [number, number, ...number[]] | Float64Array | Int32Array;
+export type Vec1 = [number, ...number[]] | Float64Array | Int32Array;
 
 export type ROVec4 = Readonly<Vec4>;
 export type ROVec3 = Readonly<Vec3>;
@@ -32,14 +32,14 @@ export const mat3 = mat3Create as () => Mat3;
 export const mat4 = mat4Create as () => Mat4;
 
 export function vec1(v: number): Vec1 {
-  return new Float32Array([v || 0]);
+  return new Float64Array([v || 0]);
 }
 export const rovec1:(v: number) => ROVec1 = vec1;
 
 export function vec2(): Vec2;
 export function vec2(a: number, b: number): Vec2;
 export function vec2(a?: number, b?: number): Vec2 {
-  let r = new Float32Array(2);
+  let r = new Float64Array(2);
   if (a || b) {
     r[0] = a as number;
     r[1] = b as number;
@@ -63,7 +63,7 @@ export const roivec2:(a: number, b: number) => ROVec2 = ivec2;
 export function vec3(): Vec3;
 export function vec3(a: number, b: number, c: number): Vec3;
 export function vec3(a?: number, b?: number, c?: number): Vec3 {
-  let r = new Float32Array(3);
+  let r = new Float64Array(3);
   if (a || b || c) {
     r[0] = a as number;
     r[1] = b as number;
@@ -89,7 +89,7 @@ export const roivec3:(a: number, b: number, c: number) => ROVec3 = ivec3;
 export function vec4(): Vec4;
 export function vec4(a: number, b: number, c: number, d: number): Vec4;
 export function vec4(a?: number, b?: number, c?: number, d?: number): Vec4 {
-  let r = new Float32Array(4);
+  let r = new Float64Array(4);
   if (a || b || c || d) {
     r[0] = a as number;
     r[1] = b as number;

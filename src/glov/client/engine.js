@@ -783,6 +783,9 @@ function tick(timestamp) {
   }
   this_frame_time_actual = now - last_tick;
   let dt = min(max(this_frame_time_actual, 1), 250);
+  if (defines.ATTRACT) {
+    dt = 16;
+  }
   frame_dt = dt;
   last_tick = now;
   frame_timestamp += dt;
