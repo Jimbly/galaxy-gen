@@ -1,21 +1,17 @@
-const argv = require('minimist')(process.argv.slice(2));
 const assert = require('assert');
-const express = require('express');
-const express_static_gzip = require('express-static-gzip');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const path = require('path');
-const {
-  // allowMapFromLocalhostOnly,
-  setOriginHeaders,
-} = require('./glov/request_utils.js');
-const glov_server = require('./glov/server.js');
-const test_worker = require('./test_worker.js');
+const express = require('express');
+const express_static_gzip = require('express-static-gzip');
+const { permTokenWorkerInit } = require('glov/server/perm_token_worker.js');
+const { setupRequestHeaders } = require('glov/server/request_utils.js');
+const glov_server = require('glov/server/server.js');
+const argv = require('minimist')(process.argv.slice(2));
 
 let app = express();
 let server = http.createServer(app);
-// allowMapFromLocalhostOnly(app);
 
 let server_https;
 if (argv.dev) {
@@ -27,7 +23,10 @@ if (argv.dev) {
     server_https = https.createServer(https_options, app);
   }
 }
-app.use(setOriginHeaders);
+setupRequestHeaders(app, {
+  dev: argv.dev,
+  allow_map: true,
+});
 
 app.use(express_static_gzip(path.join(__dirname, '../client/'), {
   enableBrotli: true,
@@ -39,7 +38,12 @@ app.use(express_static_gzip('data_store/public', {
   orderPreference: ['br'],
 }));
 
-glov_server.startup({ server, server_https });
+glov_server.startup({
+  app,
+  server,
+  server_https,
+});
+
 glov_server.ws_server.onMsg('img', function (client, pak, resp_func) {
   let id = pak.readInt();
   let str = pak.readString();
@@ -60,7 +64,9 @@ glov_server.ws_server.onMsg('img', function (client, pak, resp_func) {
   });
 });
 
-test_worker.init(glov_server.channel_server);
+
+// Opt-in to the permissions token system (Note: make sure config/server.json:forward_depth is correct!)
+permTokenWorkerInit(glov_server.channel_server, app);
 
 let port = argv.port || process.env.port || 3000;
 

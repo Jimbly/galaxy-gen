@@ -1,8 +1,8 @@
 /* eslint no-multi-spaces:off, key-spacing:off */
-const assert = require('assert');
-const engine = require('./glov/engine.js');
-const { mashI53 } = require('./glov/rand_alea.js');
-const { vec4 } = require('./glov/vmath.js');
+import assert from 'assert';
+import * as engine from 'glov/client/engine';
+import { mashI53 } from 'glov/common/rand_alea';
+import { vec4 } from 'glov/common/vmath';
 
 const colors = [
   vec4(0.816,1,1,1),

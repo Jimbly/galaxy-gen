@@ -56,6 +56,7 @@ canvas {
   display: block; /* remove scrollbars */
   width: 100%; /* for mobile, deals with canvas resize for top bar */
   height: 100%;
+  outline: none;
   /*width: 100vw;
   height: 100vh;*/
 }
@@ -118,6 +119,9 @@ canvas {
   width: 100%;
   padding: 0;
   margin: 0;
+  box-sizing: border-box;
+  background: white;
+  border-width: 1px;
 }
 
 .glovui_link {

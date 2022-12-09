@@ -17,15 +17,64 @@ module.exports = {
     // Our engine globals
     "gl": true,
     "Z": true,
+    "profilerStart": true,
+    "profilerStartFunc": true,
+    "profilerStop": true,
+    "profilerStopFunc": true,
+    "profilerStopStart": true,
     // Our pre-processor defines
     "BUILD_TIMESTAMP": true,
+    // Our global types
+    "Constructor": true,
   },
-  "extends": "eslint:recommended",
+  "parser": "@typescript-eslint/parser",
+  "plugins": [
+    "@typescript-eslint",
+    "html",
+    "import",
+  ],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:import/typescript",
+  ],
   "parserOptions": {
-    "ecmaVersion": 2018,
+    "ecmaVersion": 2020,
     "sourceType": "module"
   },
   "rules": {
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/member-delimiter-style": "error",
+    "@typescript-eslint/no-array-constructor": "error",
+    "@typescript-eslint/no-dupe-class-members": "error",
+    "@typescript-eslint/no-empty-function": "error",
+    "@typescript-eslint/no-extra-semi": "error",
+    "@typescript-eslint/no-inferrable-types": "off",
+    "@typescript-eslint/no-invalid-this": "error",
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "@typescript-eslint/no-redeclare": "error",
+    "@typescript-eslint/no-shadow": [
+      "error",
+      { "allow": ["next", "done", "err", "pak"] }
+    ],
+    "@typescript-eslint/no-this-alias": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { "args": "none" }
+    ],
+    "@typescript-eslint/no-use-before-define": [
+      "error",
+      {
+        "classes": true,
+        "functions": true,
+        "variables": true
+      }
+    ],
+    "@typescript-eslint/no-useless-constructor": "error",
+    "@typescript-eslint/no-var-requires": "off",
+    "@typescript-eslint/semi": "error",
+
     "accessor-pairs": "error",
     "array-bracket-newline": ["error", "consistent"], // JE
     "array-bracket-spacing": ignore_style ? "off" : [
@@ -34,7 +83,7 @@ module.exports = {
     ],
     "array-callback-return": "error",
     "array-element-newline": "off",
-    "arrow-body-style": "error",
+    "arrow-body-style": "off", // JE
     "arrow-parens": [
       "error",
       "always"
@@ -58,7 +107,7 @@ module.exports = {
     "callback-return": "off", // JE
     "camelcase": "off",
     "capitalized-comments": "off",
-    "class-methods-use-this": "error",
+    "class-methods-use-this": "off", // JG
     "comma-dangle": [
       "error",
       "only-multiline"
@@ -72,12 +121,6 @@ module.exports = {
     "computed-property-spacing": [
       "error",
       "never"
-    ],
-    "consistent-return": [
-      "error",
-      {
-        "treatUndefinedAsUnspecified": true,
-      }
     ],
     "consistent-this": "off", // JE
     "constructor-super": "error",
@@ -119,6 +162,23 @@ module.exports = {
       "error",
       "beside"
     ],
+    "import/no-dynamic-require": "error",
+    "import/order": ["error", {
+      "groups": [
+        "builtin",
+        ["external", "internal"],
+        "parent",
+        "sibling",
+        "index",
+        "object",
+        "type",
+      ],
+      "warnOnUnassignedImports": true,
+      "alphabetize": {
+        "order": "asc",
+        "caseInsensitive": false,
+      }
+    }],
     "indent": [
       "error",
       2,
@@ -135,7 +195,10 @@ module.exports = {
         },
         "MemberExpression": "off",
         "ObjectExpression": 1, // "first",
-        "SwitchCase": 1
+        "SwitchCase": 1,
+        "flatTernaryExpressions": true, // JE
+        // JE: ignore inconsistent application to ternaries in object properties / function parameters:
+        "ignoredNodes": ["ObjectExpression > Property > ConditionalExpression", "CallExpression > ConditionalExpression"],
       }
     ],
     "indent-legacy": "off",
@@ -191,7 +254,7 @@ module.exports = {
     "newline-before-return": "off",
     "newline-per-chained-call": "off",
     "no-alert": "error",
-    "no-array-constructor": "error",
+    "no-array-constructor": "off", // replaced with @typescript-eslint/no-array-constructor
     "no-async-promise-executor": "error",
     "no-await-in-loop": "error",
     "no-bitwise": "off", // JE
@@ -202,6 +265,7 @@ module.exports = {
     "no-confusing-arrow": "error",
     "no-console": "off", // JE
     "no-const-assign": "error",
+    "no-constructor-return": "error", // JE
     "no-constant-condition": "off", // JE
     "no-control-regex": "error",
     "no-continue": "off", // JE
@@ -209,13 +273,13 @@ module.exports = {
     "no-delete-var": "error",
     "no-div-regex": "error",
     "no-dupe-args": "error",
-    "no-dupe-class-members": "error",
+    "no-dupe-class-members": "off", // replaced with @typescript-eslint/no-dupe-class-members
     "no-dupe-keys": "error",
     "no-duplicate-case": "error",
     "no-duplicate-imports": "error",
     "no-else-return": ignore_style || relaxed ? "off" : "error",
     "no-empty-character-class": "error",
-    "no-empty-function": "error",
+    "no-empty-function": "off", // replaced with @typescript-eslint/no-empty-function
     "no-eq-null": "error",
     "no-eval": "error",
     "no-ex-assign": "error",
@@ -227,7 +291,7 @@ module.exports = {
       "error",
       "functions", // JE: Complains about useful parens for readability
     ],
-    "no-extra-semi": "error",
+    "no-extra-semi": "off", // replaced with @typescript-eslint/no-extra-semi
     "no-fallthrough": "error",
     "no-floating-decimal": "error",
     "no-func-assign": "error",
@@ -236,8 +300,9 @@ module.exports = {
     "no-implicit-globals": "error",
     "no-implied-eval": "error",
     "no-inline-comments": "off",
+    "no-inner-declarations": "off", // galaxygen
     "no-invalid-regexp": "error",
-    "no-invalid-this": "error",
+    "no-invalid-this": "off", // replaced with @typescript-eslint/no-invalid-this
     "no-irregular-whitespace": "error",
     "no-iterator": "error",
     "no-label-var": "error",
@@ -296,7 +361,7 @@ module.exports = {
     "no-process-exit": "off", // JE
     "no-proto": "error",
     "no-prototype-builtins": "error",
-    "no-redeclare": "error",
+    "no-redeclare": "off", // replaced with @typescript-eslint/no-redeclare
     "no-restricted-globals": "error",
     "no-restricted-imports": "error",
     "no-restricted-modules": "error",
@@ -308,12 +373,7 @@ module.exports = {
     "no-self-assign": "error",
     "no-self-compare": "error",
     "no-sequences": "error",
-    "no-shadow": [
-      "error",
-      {
-        "allow": ["next", "done", "err", "pak"],
-      }
-    ],
+    "no-shadow": "off", // replaced with @typescript-eslint/no-shadow
     "no-shadow-restricted-names": "error",
     "no-spaced-func": "error",
     "no-sync": "off", // JE
@@ -346,24 +406,12 @@ module.exports = {
     "no-unsafe-negation": "error",
     "no-unused-expressions": "error",
     "no-unused-labels": "error",
-    "no-unused-vars": [
-      "error",
-      {
-        "args": "none"
-      }
-    ],
-    "no-use-before-define": [
-      "error",
-      {
-        "classes": true,
-        "functions": true,
-        "variables": true
-      }
-    ],
+    "no-unused-vars": "off", // Replaced with @typescript-eslint/no-unused-vars
+    "no-use-before-define": "off", // Replaced with @typescript-eslint/no-use-before-define
     "no-useless-call": "error",
     "no-useless-computed-key": "error",
     "no-useless-concat": "error",
-    "no-useless-constructor": "error",
+    "no-useless-constructor": "off", // replaced with @typescript-eslint/no-useless-constructor
     "no-useless-escape": "error",
     "no-useless-rename": "error",
     "no-useless-return": "error",
@@ -426,15 +474,19 @@ module.exports = {
     "require-jsdoc": "off",
     "require-unicode-regexp": "off", // JE: Hasn't caught anything useful, generates bigger code
     "rest-spread-spacing": "error",
-    "semi": "error",
+    "semi": "off", // replaced by @typescript-eslint/semi
     "semi-spacing": "error",
     "semi-style": [
       "error",
       "last"
     ],
-    "sort-imports": "error",
+    "sort-imports":["error", {
+      "ignoreCase": false,
+      "ignoreDeclarationSort": true,
+      "ignoreMemberSort": false,
+    }],
     "sort-keys": "off",
-    "sort-vars": "error",
+    "sort-vars": "off", // JE
     "space-before-blocks": [
       "error",
       "always"
@@ -488,5 +540,29 @@ module.exports = {
       "error",
       "never"
     ]
-  }
+  },
+  "overrides": [
+    {
+      // Enable rules specifically for JavaScript files
+      "files": ["*.js"],
+      "rules": {
+        "consistent-return": [
+          "error",
+          {
+            "treatUndefinedAsUnspecified": true,
+          }
+        ],
+      }
+    },
+    {
+      // Enable rules specifically for TypeScript files
+      "files": ["*.ts", "*.tsx"],
+      "rules": {
+        "@typescript-eslint/explicit-function-return-type": ["error", {
+          "allowExpressions": true,
+        }],
+        "@typescript-eslint/explicit-module-boundary-types": "error",
+      }
+    },
+  ]
 };

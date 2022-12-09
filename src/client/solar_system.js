@@ -1,11 +1,12 @@
-const assert = require('assert');
+import assert from 'assert';
+import * as textures from 'glov/client/textures';
+import { mashString, randCreate } from 'glov/common/rand_alea';
+import { clamp, defaults, nextHighestPowerOfTwo } from 'glov/common/util';
+import { vec2, vec4 } from 'glov/common/vmath';
+import * as SimplexNoise from 'simplex-noise';
+import { starTypeData, starTypeFromID } from './star_types';
+
 const { atan2, max, round, sqrt, PI } = Math;
-const { randCreate, mashString } = require('./glov/rand_alea.js');
-const SimplexNoise = require('simplex-noise');
-const { starTypeData, starTypeFromID } = require('./star_types.js');
-const textures = require('./glov/textures.js');
-const { clamp, defaults, nextHighestPowerOfTwo } = require('../common/util.js');
-const { vec2, vec4 } = require('./glov/vmath.js');
 
 let rand = [
   randCreate(0),

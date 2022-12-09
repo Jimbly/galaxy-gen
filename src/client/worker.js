@@ -1,5 +1,5 @@
 
-const worker = require('./glov/worker_thread.js');
+const worker = require('glov/client/worker_thread.js');
 
 worker.addHandler('test', function () {
   console.log('Worker Test!');

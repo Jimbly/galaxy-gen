@@ -1,15 +1,21 @@
 export const LAYER_STEP = 4;
 export const STAR_LAYER = 6;
 export const MAX_LAYER = 8;
-const assert = require('assert');
-const engine = require('./glov/engine.js');
+import assert from 'assert';
+import * as engine from 'glov/client/engine';
+import * as textures from 'glov/client/textures';
+import { mashString, randCreate } from 'glov/common/rand_alea';
+import {
+  clamp,
+  easeInOut,
+  easeOut,
+  lerp,
+} from 'glov/common/util';
+import * as SimplexNoise from 'simplex-noise';
+import { solarSystemCreate } from './solar_system';
+import { hueFromID } from './star_types';
+
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
-const { randCreate, mashString } = require('./glov/rand_alea.js');
-const SimplexNoise = require('simplex-noise');
-const { hueFromID } = require('./star_types.js');
-const { solarSystemCreate } = require('./solar_system.js');
-const textures = require('./glov/textures.js');
-const { clamp, lerp, easeOut, easeInOut } = require('../common/util.js');
 
 const SUMSQ = 0.75;
 

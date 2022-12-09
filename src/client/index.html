@@ -13,17 +13,24 @@
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="stylesheet" type="text/css" href="main.css">
-    <!-- #if FACEBOOK -->
+    <script>
+      /* eslint-disable */
+      // Platform
+      window.conf_platform = '#{PLATFORM}';
+      // Environment
+      window.conf_env = '#{ENV}';
+    </script>
+    <!-- #if PLATFORM === 'fbinstant' -->
     <script src="https://connect.facebook.net/en_US/fbinstant.beta.js"></script>
     <!-- #endif -->
   </head>
   <body>
     <div id="debug_overlay"><div id="debug" class="noglov"></div></div>
-    <canvas id="canvas" moz-opaque="true" tabindex="1">
+    <canvas id="canvas" moz-opaque="true" tabindex="1"><div id="nocanvas">
       Description goes here.<br/><br/>
       Sorry, but your browser does not support WebGL or does not have it enabled.  Please check:<br/>
       <a href="https://get.webgl.org/">get.webgl.org</a> or <a href="http://www.khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" target="_blank">Getting a WebGL Implementation</a>
-    </canvas>
+    </div></canvas>
     <div id="content">
       <div id="safearea"></div>
       <div id="nowebgl" class="screenwrap" style="visibility: hidden">
@@ -75,17 +82,14 @@
         </div>
       </div>
       <div id="fullscreen" class="screenwrap">
-        <div id="dynamic_text"></div>
+        <form id="dynform" autocomplete="off">
+          <input type="submit" style="display: none">
+          <div id="dynamic_text"></div>
+        </form>
       </div>
     </div>
-    <!-- build:js vendor/combined.js -->
+    <!-- disabled-build:js vendor/combined.js -->
     <!-- endbuild -->
-<script>
-  window.glov_env = 'default';
-/// #if ENV === 'multiplayer'
-  window.glov_env = 'multiplayer';
-/// #endif
-</script>
     <script src="app_deps.bundle.js"></script>
     <script src="app.bundle.js"></script>
     <script src="fsdata.js"></script>

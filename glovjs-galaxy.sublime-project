@@ -1,19 +1,23 @@
-//json5
 {
-    "folders":
-    [
-        {
-            "folder_exclude_patterns":
-            [
-                "node_modules",
-                "build.dev",
-                "build.intermediate",
-                "build.prod",
-                "logs",
-                "data_store",
-            ],
-            "file_exclude_patterns": ["jquery-*.min*", "*.00?", "*.wav", "*.mp3", "*.ogg", "package-lock.json", "*.glb"],
-            "path": "."
-        }
-    ]
+  "folders": [{
+    "folder_exclude_patterns": [
+      "node_modules",
+      ".gbstate",
+      "build.dev",
+      "build.prod",
+      "logs",
+      "data_store",
+    ],
+    "file_exclude_patterns": ["*.00?"],
+    "binary_file_patterns": [
+      "*.glb",
+      "*.gltf",
+      "*.gz",
+      "*.mp3",
+      "*.ogg",
+      "*.wav",
+      "package-lock.json",
+    ],
+    "path": ".",
+  }]
 }

@@ -1,26 +1,46 @@
 /*eslint global-require:off*/
-const local_storage = require('./glov/local_storage.js');
-local_storage.storage_prefix = 'galaxy-gen'; // Before requiring anything else that might load from this
+// eslint-disable-next-line import/order
+const local_storage = require('glov/client/local_storage.js');
+local_storage.setStoragePrefix('galaxy-gen'); // Before requiring anything else that might load from this
 
-const assert = require('assert');
-const camera2d = require('./glov/camera2d.js');
-const engine = require('./glov/engine.js');
-const { copyCanvasToClipboard } = require('./glov/framebuffer.js');
-const { createGalaxy, distSq, LAYER_STEP } = require('./galaxy.js');
+import assert from 'assert';
+import * as camera2d from 'glov/client/camera2d';
+import * as engine from 'glov/client/engine';
+import { copyCanvasToClipboard } from 'glov/client/framebuffer';
+import * as input from 'glov/client/input';
+import { KEYS } from 'glov/client/input';
+import * as net from 'glov/client/net';
+import { netDisconnected } from 'glov/client/net';
+import * as perf from 'glov/client/perf';
+import * as shaders from 'glov/client/shaders';
+import { slider } from 'glov/client/slider';
+import { spriteSetGet } from 'glov/client/sprite_sets.js';
+import * as sprites from 'glov/client/sprites';
+import { BLEND_ADDITIVE, spriteCreate } from 'glov/client/sprites';
+import * as textures from 'glov/client/textures';
+import * as ui from 'glov/client/ui';
+import {
+  clamp,
+  clone,
+  deepEqual,
+  easeInOut,
+  easeOut,
+  lerp,
+} from 'glov/common/util';
+import {
+  unit_vec,
+  v2add,
+  v2addScale,
+  v2copy,
+  v2floor,
+  v2set,
+  vec2,
+  vec4,
+} from 'glov/common/vmath';
+import { LAYER_STEP, createGalaxy, distSq } from './galaxy';
+import { planetMapTexture, solarSystemCreate } from './solar_system';
+
 const { abs, ceil, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
-const input = require('./glov/input.js');
-const { KEYS } = input;
-const net = require('./glov/net.js');
-const perf = require('./glov/perf.js');
-const shaders = require('./glov/shaders.js');
-const { planetMapTexture, solarSystemCreate } = require('./solar_system.js');
-const sprites = require('./glov/sprites.js');
-const textures = require('./glov/textures.js');
-const ui = require('./glov/ui.js');
-const { clamp, clone, deepEqual, easeInOut, easeOut, lerp } = require('../common/util.js');
-const { unit_vec, vec2, v2add, v2addScale, v2copy, v2floor, v2set, vec4 } = require('./glov/vmath.js');
-const createSprite = sprites.create;
-const { BLEND_ADDITIVE } = sprites;
 
 window.Z = window.Z || {};
 Z.BACKGROUND = 1;
@@ -47,10 +67,13 @@ export function main() {
   const font_info_palanquin32 = require('./img/font/palanquin32.json');
   let pixely = view === 1 ? 'strict' : 'on';
   let font;
+  let ui_sprites;
   if (pixely === 'strict' || true) {
     font = { info: font_info_04b03x1, texture: 'font/04b03_8x1' };
+    ui_sprites = spriteSetGet('pixely');
   } else if (pixely && pixely !== 'off') {
     font = { info: font_info_04b03x2, texture: 'font/04b03_8x2' };
+    ui_sprites = spriteSetGet('pixely');
   } else {
     font = { info: font_info_palanquin32, texture: 'font/palanquin32' };
   }
@@ -64,6 +87,7 @@ export function main() {
     antialias: false,
     do_borders: false,
     show_fps: engine.defines.ATTRACT ? false : undefined,
+    ui_sprites,
   })) {
     return;
   }
@@ -143,7 +167,7 @@ export function main() {
   function allocSprite() {
     if (!debug_sprite) {
       let tex = galaxy.getCellTextured(0, 0).tex;
-      debug_sprite = createSprite({
+      debug_sprite = spriteCreate({
         texs: [tex, tex, tex],
       });
     }
@@ -314,6 +338,7 @@ export function main() {
     last_img = data_full;
 
     if (net.client) {
+
       let pak = net.client.pak('img');
       pak.writeInt(img_id++);
       pak.writeString(data_full);
@@ -490,7 +515,7 @@ export function main() {
       // if (view === 1) {
       //   ui.print(style, x, y, z, `Dither: ${params.dither}`);
       //   y += ui.font_height;
-      //   params.dither = round4(ui.slider(params.dither, { x, y, z, min: 0, max: 1 }));
+      //   params.dither = round4(slider(params.dither, { x, y, z, min: 0, max: 1 }));
       //   y += button_spacing;
       // }
 
@@ -504,12 +529,12 @@ export function main() {
         if (solar_override) {
           ui.print(style, x, y, z, `StarID: ${solar_params.star_id}`);
           y += ui.font_height;
-          solar_params.star_id = round(ui.slider(solar_params.star_id, { x, y, z, min: 1, max: 99 }));
+          solar_params.star_id = round(slider(solar_params.star_id, { x, y, z, min: 1, max: 99 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Seed: ${solar_params.seed}`);
           y += ui.font_height;
-          solar_params.seed = round(ui.slider(solar_params.seed, { x, y, z, min: 1, max: 99 }));
+          solar_params.seed = round(slider(solar_params.seed, { x, y, z, min: 1, max: 99 }));
           y += button_spacing;
 
           if (!solar_override_system || !deepEqual(solar_params, gen_solar_params)) {
@@ -523,43 +548,43 @@ export function main() {
       } else {
         ui.print(style, x, y, z, `Seed: ${params.seed}`);
         y += ui.font_height;
-        params.seed = round(ui.slider(params.seed, { x, y, z, min: 1, max: 9999 }));
+        params.seed = round(slider(params.seed, { x, y, z, min: 1, max: 9999 }));
         y += button_spacing;
 
         if (zoom_level < 1.9) { // Galaxy
           ui.print(style, x, y, z, `Arms: ${params.arms}`);
           y += ui.font_height;
-          params.arms = round(ui.slider(params.arms, { x, y, z, min: 1, max: 16 }));
+          params.arms = round(slider(params.arms, { x, y, z, min: 1, max: 16 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
           y += ui.font_height;
-          params.len_mods = round(ui.slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
+          params.len_mods = round(slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
           y += ui.font_height;
-          params.twirl = round4(ui.slider(params.twirl, { x, y, z, min: 0, max: 8 }));
+          params.twirl = round4(slider(params.twirl, { x, y, z, min: 0, max: 8 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Center: ${params.center}`);
           y += ui.font_height;
-          params.center = round4(ui.slider(params.center, { x, y, z, min: 0, max: 0.3 }));
+          params.center = round4(slider(params.center, { x, y, z, min: 0, max: 0.3 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
           y += ui.font_height;
-          params.noise_freq = round4(ui.slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
+          params.noise_freq = round4(slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
           y += ui.font_height;
-          params.noise_weight = round4(ui.slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
+          params.noise_weight = round4(slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
           y += button_spacing;
 
           ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
           y += ui.font_height;
-          params.poi_count = round(ui.slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
+          params.poi_count = round(slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
           y += button_spacing;
         } else {
           let layer_idx = round(zoom_level / (LAYER_STEP / 2));
@@ -569,13 +594,13 @@ export function main() {
           if (params[key]) {
             ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
             y += ui.font_height;
-            params[key].noise_freq = round4(ui.slider(params[key].noise_freq,
+            params[key].noise_freq = round4(slider(params[key].noise_freq,
               { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
             y += button_spacing;
 
             ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
             y += ui.font_height;
-            params[key].noise_weight = round4(ui.slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
+            params[key].noise_weight = round4(slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
             y += button_spacing;
           }
         }
@@ -605,7 +630,7 @@ export function main() {
     }
     x += ui.button_height + 2;
     const SLIDER_W = 110;
-    let new_zoom = roundZoom(ui.slider(target_zoom_level + solar_view,
+    let new_zoom = roundZoom(slider(target_zoom_level + solar_view,
       { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 1 }));
     if (abs(new_zoom - target_zoom_level) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - target_zoom_level);
@@ -918,7 +943,7 @@ export function main() {
 
     ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
 
-    if (engine.defines.ATTRACT) {
+    if (engine.defines.ATTRACT && !netDisconnected()) {
       engine.postRender(saveSnapshot);
     }
   }
