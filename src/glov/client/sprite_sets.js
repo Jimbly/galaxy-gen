@@ -9,6 +9,7 @@ const sprite_sets = {
   },
   pixely: {
     color_set_shades: [0.8, 0.7, 0.4],
+    slider_params: [1, 1, 0.3],
 
     button: { name: 'pixely/button', ws: [4, 5, 4], hs: [13] },
     button_rollover: null,

@@ -356,6 +356,7 @@ export function uiSetFontStyleFocused(new_style: FontStyle): void;
 
 type UISpriteSet = {
   color_set_shades?: [number, number, number];
+  slider_params?: [number, number, number];
 
   button?: UISpriteDef;
   button_rollover?: UISpriteDef;

@@ -23,9 +23,11 @@ const SPOT_DEFAULT_SLIDER = {
 
 let slider_default_vshrink = 1.0;
 let slider_default_handle_shrink = 1.0;
-export function sliderSetDefaultShrink(vshrink, handle_shrink) {
+let slider_default_inset = 0.0;
+export function sliderSetDefaultShrink(vshrink, handle_shrink, slider_inset) {
   slider_default_vshrink = vshrink;
   slider_default_handle_shrink = handle_shrink;
+  slider_default_inset = slider_inset || 0;
 }
 const color_slider_handle = vec4(1,1,1,1);
 const color_slider_handle_grab = vec4(0.5,0.5,0.5,1);
@@ -59,7 +61,7 @@ export function slider(value, param) {
 
   slider_dragging = false;
 
-  let shrinkdiff = handle_shrink - vshrink + 0.4;
+  let shrinkdiff = handle_shrink - vshrink + slider_default_inset;
   drawHBox({
     x: param.x + param.h * shrinkdiff/2,
     y: param.y + param.h * (1 - vshrink)/2,

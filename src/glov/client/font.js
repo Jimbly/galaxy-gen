@@ -407,7 +407,7 @@ GlovFont.prototype.drawSizedAligned = function (style, x, y, z, size, align, w, 
       case ALIGN.HCENTER:
         x += (w - width) * 0.5;
         if (this.integral) {
-          x |= 0;
+          x = round(x);
         }
         break;
       case ALIGN.HRIGHT:
@@ -419,7 +419,7 @@ GlovFont.prototype.drawSizedAligned = function (style, x, y, z, size, align, w, 
     case ALIGN.VCENTER:
       y += (h - y_size) * 0.5;
       if (this.integral) {
-        y |= 0;
+        y = round(y);
       }
       break;
     case ALIGN.VBOTTOM:
