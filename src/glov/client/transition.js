@@ -9,8 +9,8 @@ const { applyCopy, effectsQueue, effectsIsFinal } = require('./effects.js');
 const { framebufferCapture, framebufferStart, framebufferEnd, temporaryTextureClaim } = require('./framebuffer.js');
 const { floor, min, pow, random } = Math;
 const sprites = require('./sprites.js');
-const shaders = require('./shaders.js');
-const textures = require('./textures.js');
+const { shaderCreate } = require('./shaders.js');
+const { textureCreateForCapture } = require('./textures.js');
 const glov_ui = require('./ui.js');
 const { easeOut } = require('glov/common/util.js');
 const { unit_vec, vec4 } = require('glov/common/vmath.js');
@@ -32,7 +32,7 @@ const shader_data = {
 function getShader(key) {
   let elem = shader_data[key];
   if (!elem.shader) {
-    elem.shader = shaders.create(elem.fp);
+    elem.shader = shaderCreate(elem.fp);
   }
   return elem.shader;
 }
@@ -47,7 +47,7 @@ function GlovTransition(z, func) {
 function transitionCapture(trans) {
   // Warning: Slow on iOS
   assert(!trans.capture);
-  trans.capture = textures.createForCapture();
+  trans.capture = textureCreateForCapture();
   framebufferCapture(trans.capture);
 }
 
@@ -373,7 +373,7 @@ export function randomTransition(fade_time_scale) {
     // case 4:
     //   if (!logo) {
     //     GlovTextureLoadOptions options;
-    //     options.clamp_s = options.clamp_t = true;
+    //     options.wrap_s = options.wrap_t = gl.CLAMP_TO_EDGE;
     //     logo = GlovTextures::loadtex("data/SampleLogoTransition.png", &options);
     //   }
     //   glovTransitionQueue(Z_TRANSITION_FINAL, glovTransitionLogoZoom(500, logo));

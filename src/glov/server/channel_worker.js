@@ -62,7 +62,7 @@ function filterUndefineds(v) {
   }
 }
 
-// Some data stores (FireStore) cannot handle any undefined values
+// Some data stores (Firestore) cannot handle any undefined values
 function anyUndefined(walk) {
   if (walk === undefined) {
     return true;

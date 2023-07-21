@@ -11,7 +11,6 @@ const { filewatchStartup } = require('./filewatch.js');
 const { packetEnableDebug } = require('glov/common/packet.js');
 const subscription_manager = require('./subscription_manager.js');
 const wsclient = require('./wsclient.js');
-const wscommon = require('glov/common/wscommon.js');
 const WSClient = wsclient.WSClient;
 
 let client;
@@ -27,11 +26,8 @@ export function init(params) {
       console.log('PacketDebug: ON');
       packetEnableDebug(true);
     }
-    if (!params.no_net_delay) {
-      wscommon.netDelaySet();
-    }
   }
-  client = new WSClient(params.path);
+  client = new WSClient(params.path, params.client_app);
   subs = subscription_manager.create(client, params.cmd_parse);
   subs.auto_create_user = Boolean(params.auto_create_user);
   subs.no_auto_login = Boolean(params.no_auto_login);
@@ -45,6 +41,12 @@ export function init(params) {
     params.engine.addTickFunc((dt) => {
       client.checkDisconnect();
       subs.tick(dt);
+    });
+
+    params.engine.onLoadMetrics((obj) => {
+      subs.onceConnected(() => {
+        client.send('load_metrics', obj);
+      });
     });
   }
 }

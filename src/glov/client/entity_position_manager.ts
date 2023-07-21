@@ -5,11 +5,11 @@ import { getFrameTimestamp } from 'glov/client/engine';
 import { EntityID } from 'glov/common/entity_base_common';
 import { sign } from 'glov/common/util';
 import { ClientEntityManagerInterface } from './entity_manager_client';
+import { PingData, registerPingProvider } from './perf_net';
 
-const { abs, floor, max, PI, sqrt } = Math;
+const { abs, max, PI, sqrt } = Math;
 
 const TWO_PI = PI * 2;
-const EPSILON = 0.01;
 
 type Vector = Float64Array;
 
@@ -25,6 +25,8 @@ interface EntityPositionManagerOpts {
 
   dim_pos?: number; // number of components to be interpolated as-is
   dim_rot?: number; // number of components to be interpolated with 2PI wrapping
+  tol_pos?: number; // tolerance for sending positional changes
+  tol_rot?: number; // tolerance for sending rotational changes
   send_time?: number; // how often to send position updates
   entless_send_time?: number; // if applicable, if we are entityless, how often to send position updates
   window?: number; // maximum expected variation in time between updates; ms
@@ -44,12 +46,12 @@ function defaultErrorHandler(err: string): void {
 }
 
 export class PerEntData {
-  pos: Vector;
-  net_speed: number;
-  net_pos: Vector;
-  impulse: Vector;
-  net_anim_state: AnimState;
-  anim_state: AnimState;
+  pos: Vector; // Current interpolated position
+  net_speed: number; // Last network received speed
+  net_pos: Vector; // Last network received position
+  impulse: Vector; // Calculated impulse to interpolate with
+  net_anim_state: AnimState; // Last received app-specific anim states
+  anim_state: AnimState; // Current interpolated app-specific anim states
 
   constructor(ent_pos_manager: EntityPositionManager) {
     this.pos = ent_pos_manager.vec();
@@ -69,6 +71,8 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
   dim_pos: number;
   dim_rot: number;
   n: number;
+  tol_pos: number;
+  tol_rot: number;
 
   send_time: number;
   entless_send_time: number;
@@ -78,6 +82,8 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
   smooth_factor: number;
   anim_state_defs: Partial<Record<string, EntityPositionManagerAnimStateDef>>;
   error_handler: typeof defaultErrorHandler;
+  ping_time: number = 0;
+  ping_time_time: number = 0;
 
   temp_vec: Vector;
   temp_delta: Vector;
@@ -96,6 +102,8 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     this.dim_pos = options.dim_pos || 2;
     this.dim_rot = options.dim_rot || 0;
     this.n = this.dim_pos + this.dim_rot;
+    this.tol_pos = options.tol_pos || 0.01;
+    this.tol_rot = options.tol_rot || 0.1;
     this.send_time = options.send_time || 200;
     this.entless_send_time = options.entless_send_time || 1000;
     this.window = options.window || 200;
@@ -181,8 +189,13 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     return arr;
   }
   vsame(a: Readonly<Vector>, b: Readonly<Vector>): boolean {
-    for (let ii = 0; ii < this.n; ++ii) {
-      if (abs(a[ii] - b[ii]) > EPSILON) {
+    for (let ii = 0; ii < this.dim_pos; ++ii) {
+      if (abs(a[ii] - b[ii]) > this.tol_pos) {
+        return false;
+      }
+    }
+    for (let ii = this.dim_pos; ii < this.n; ++ii) {
+      if (abs(a[ii] - b[ii]) > this.tol_rot) {
         return false;
       }
     }
@@ -190,7 +203,7 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
   }
   vsamePos(a: Readonly<Vector> | Readonly<number[]>, b: Readonly<Vector> | Readonly<number[]>): boolean {
     for (let ii = 0; ii < this.dim_pos; ++ii) {
-      if (abs(a[ii] - b[ii]) > EPSILON) {
+      if (abs(a[ii] - b[ii]) > this.tol_pos) {
         return false;
       }
     }
@@ -208,10 +221,8 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     this.vsub(this.temp_vec, a, b);
     for (let ii = 0; ii < this.dim_rot; ++ii) {
       let jj = this.dim_pos + ii;
-      let d = abs(this.temp_vec[jj]);
-      if (d > PI) {
-        this.temp_vec[jj] = d - floor((d + PI) / TWO_PI) * TWO_PI;
-      }
+      let delta = this.temp_vec[jj] % TWO_PI;
+      this.temp_vec[jj] = 2 * delta % TWO_PI - delta;
     }
     return this.vlength(this.temp_vec);
   }
@@ -297,6 +308,8 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
             let end = getFrameTimestamp();
             let hrend = engine.hrnow();
             let round_trip = hrend - this.last_send.hrtime;
+            this.ping_time = round_trip;
+            this.ping_time_time = end;
             if (round_trip > send_time) {
               // hiccup, delay next send
               this.last_send.time = end;
@@ -309,8 +322,7 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
           }
         };
         if (this.entity_manager.isEntless()) {
-          assert(this.entity_manager.channel);
-          this.entity_manager.channel.send('move', data_assignments, handle_resp);
+          this.entity_manager.channelSend('move', data_assignments, handle_resp);
         } else {
           // send via entity
           let my_ent = this.entity_manager.getMyEnt();
@@ -446,8 +458,25 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     return ped;
   }
 
+  getPing(): PingData | null {
+    const max_age = 2000;
+    if (!this.ping_time_time) {
+      return null;
+    }
+    let age = getFrameTimestamp() - this.ping_time_time;
+    if (age > max_age) {
+      return null;
+    }
+    return {
+      ping: this.ping_time,
+      fade: 1 - age / max_age,
+    };
+  }
+
 }
 
 export function entityPositionManagerCreate(options: EntityPositionManagerOpts): EntityPositionManager {
-  return new EntityPositionManagerImpl(options);
+  let ret = new EntityPositionManagerImpl(options);
+  registerPingProvider(ret.getPing.bind(ret));
+  return ret;
 }

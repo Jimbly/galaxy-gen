@@ -1,32 +1,30 @@
 // Portions Copyright 2020 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
-/* eslint-disable import/order */
-const assert = require('assert');
-const { asyncParallel } = require('glov-async');
-const camera2d = require('./camera2d.js');
-const { cmd_parse } = require('./cmds.js');
-const engine = require('./engine.js');
-const glov_font = require('./font.js');
-const { isFriend } = require('./social.js');
-const input = require('./input.js');
-const { link } = require('./link.js');
-const local_storage = require('./local_storage.js');
-const { getStringIfLocalizable } = require('./localization.js');
+
+import assert from 'assert';
+import { asyncParallel } from 'glov-async';
+import { clamp, defaults, deprecate, matchAll } from 'glov/common/util';
+import { v3copy, vec4 } from 'glov/common/vmath';
+import * as camera2d from './camera2d';
+import { getAbilityChat } from './client_config';
+import { cmd_parse } from './cmds';
+import * as engine from './engine';
+import * as glov_font from './font';
+import { ALIGN } from './font';
+import * as input from './input';
+import { link } from './link';
+import * as local_storage from './local_storage';
+import { getStringIfLocalizable } from './localization';
+import { netClient, netClientId, netSubs, netUserId } from './net';
+import { scrollAreaCreate } from './scroll_area';
+import * as settings from './settings';
+import { isFriend } from './social';
+import { spotUnfocus } from './spot';
+import * as ui from './ui';
+import { profanityFilter, profanityStartup } from './words/profanity';
+
 const { ceil, floor, max, min, round } = Math;
-const { netClient, netClientId, netSubs, netUserId } = require('./net.js');
-const { profanityFilter, profanityStartup } = require('./words/profanity.js');
-const { scrollAreaCreate } = require('./scroll_area.js');
-const settings = require('./settings.js');
-const {
-  SPOT_NAV_DOWN,
-  SPOT_NAV_LEFT,
-  SPOT_NAV_RIGHT,
-  SPOT_NAV_UP,
-  spotUnfocus,
-} = require('./spot.js');
-const ui = require('./ui.js');
-const { clamp, defaults, deprecate, matchAll } = require('glov/common/util.js');
-const { vec4, v3copy } = require('glov/common/vmath.js');
+
 deprecate(exports, 'create', 'chatUICreate');
 
 export const CHAT_FLAG_EMOTE = 1;
@@ -151,11 +149,11 @@ CmdHistory.prototype.next = function (cur_text) {
 
 function defaultGetRoles() {
   let user_public_data;
-  if (netUserId() && netClient().connected) {
+  if (netSubs() && netUserId() && netClient().connected) {
     let user_channel = netSubs().getMyUserChannel();
     user_public_data = user_channel.data && user_channel.data.public;
     if (user_public_data?.permissions?.sysadmin) {
-      return { sysadmin: 1 };
+      return { sysadmin: 1, csr: 1 };
     }
   }
   return {};
@@ -171,13 +169,7 @@ function ChatUI(params) {
     spatial_focus: false,
     max_len: params.max_len,
     text: '',
-    custom_nav: {
-      // We want left/right as well as up/down to be handled by the input element, not used to change focus.
-      [SPOT_NAV_LEFT]: null,
-      [SPOT_NAV_UP]: null,
-      [SPOT_NAV_RIGHT]: null,
-      [SPOT_NAV_DOWN]: null,
-    },
+    suppress_up_down: true,
   });
   this.channel = null;
 
@@ -250,7 +242,9 @@ function ChatUI(params) {
   this.styles.join_leave = this.styles.system;
   this.classifyRole = params.classifyRole;
 
-  netSubs().on('chat_broadcast', this.onChatBroadcast.bind(this));
+  if (netSubs()) {
+    netSubs().on('chat_broadcast', this.onChatBroadcast.bind(this));
+  }
 }
 
 ChatUI.prototype.setActiveSize = function (font_height, w) {
@@ -421,6 +415,9 @@ ChatUI.prototype.focus = function () {
 };
 
 ChatUI.prototype.runLate = function () {
+  if (!getAbilityChat()) {
+    return;
+  }
   this.did_run_late = true;
   if (input.keyDownEdge(input.KEYS.RETURN)) {
     this.focus();
@@ -507,7 +504,7 @@ function drawHelpTooltip(param) {
   let tooltip = param.tooltip;
   let num_pages = 1;
   let h = param.font_height;
-  let eff_tooltip_pad = ui.tooltip_pad * 0.5;
+  let eff_tooltip_pad = floor(ui.tooltip_pad * 0.5);
   let num_per_page = min(TOOLTIP_MIN_PAGE_SIZE, max(1, floor((param.y - camera2d.y0() - eff_tooltip_pad) / h) - 1));
   if (tooltip.length > 20) {
     let text = tooltip.join('\n');
@@ -548,7 +545,7 @@ function drawHelpTooltip(param) {
   if (num_pages > 1) {
     y -= h;
     ui.font.drawSizedAligned(help_font_style,
-      text_x, y, z+1, h, glov_font.ALIGN.HCENTER,
+      text_x, y, z+1, h, ALIGN.HCENTER,
       text_w, 0,
       `Page ${tooltip_page + 1} / ${num_pages}`);
     let pos = { x, y, w, h };
@@ -560,7 +557,11 @@ function drawHelpTooltip(param) {
   }
   for (let ii = tooltip.length - 1; ii >= 0; --ii) {
     let line = tooltip[ii];
-    y -= h;
+    if (param.wrap) {
+      y -= h * ui.font.numLines(style, text_w, 0, h, line);
+    } else {
+      y -= h;
+    }
     let idx = line.indexOf(' ');
     if (line[0] === '/' && idx !== -1 && param.do_selection) {
       // is a command
@@ -569,7 +570,7 @@ function drawHelpTooltip(param) {
       let cmd_w = ui.font.drawSized(help_font_style_cmd,
         text_x, y, z+1, h, cmd);
       ui.font.drawSizedAligned(help_font_style,
-        text_x + cmd_w, y, z+2, h, glov_font.ALIGN.HFIT,
+        text_x + cmd_w, y, z+2, h, ALIGN.HFIT,
         text_w - cmd_w, 0,
         help);
       let pos = { x, y, w, h };
@@ -581,7 +582,7 @@ function drawHelpTooltip(param) {
       }
     } else {
       ui.font.drawSizedAligned(style,
-        text_x, y, z+1, h, glov_font.ALIGN.HFIT,
+        text_x, y, z+1, h, param.wrap ? ALIGN.HWRAP : ALIGN.HFIT,
         text_w, 0,
         line);
     }
@@ -605,9 +606,11 @@ ChatUI.prototype.isFocused = function () {
 };
 
 ChatUI.prototype.sendChat = function (flags, text) {
-  if (!netClient().connected) {
+  if (!netClient() || !netClient().connected) {
     this.addChatError('Cannot chat: Disconnected');
-  } else if (!this.channel || !netSubs().loggedIn() && !netSubs().allow_anon) {
+  } else if (!this.channel) {
+    this.addChatError('Cannot chat: Must be in a channel');
+  } else if (!netSubs().loggedIn() && !netSubs().allow_anon) {
     this.addChatError('Cannot chat: Must be logged in');
   } else if (text.length > this.max_len) {
     this.addChatError('Chat message too long');
@@ -619,13 +622,13 @@ ChatUI.prototype.sendChat = function (flags, text) {
       if (err) {
         if (err === 'ERR_ECHO') {
           let roles = this.channel?.data?.public?.clients[netClientId()]?.ids?.roles;
-          let style = this.classifyRole(roles, true);
+          let style = this.classifyRole && this.classifyRole(roles, true);
           this.onMsgChat({
             msg: text,
             style: style,
             id: netUserId(),
             client_id: netClientId(),
-            display_name: netSubs().logged_in_display_name,
+            display_name: netSubs().getDisplayName(),
             flags,
           });
         } else {
@@ -646,10 +649,13 @@ ChatUI.prototype.setZOverride = function (z) {
 ChatUI.prototype.run = function (opts) {
   const UI_SCALE = ui.font_height / 24;
   opts = opts || {};
+  if (!getAbilityChat()) {
+    opts.hide = true;
+  }
   const border = opts.border || this.border || (8 * UI_SCALE);
   const SPACE_ABOVE_ENTRY = border;
   const scroll_grow = opts.scroll_grow || 0;
-  if (netClient().disconnected && !this.hide_disconnected_message) {
+  if (netClient() && netClient().disconnected && !this.hide_disconnected_message) {
     ui.font.drawSizedAligned(
       glov_font.style(null, {
         outline_width: 2,
@@ -660,7 +666,7 @@ ChatUI.prototype.run = function (opts) {
       this.disconnected_message_top ? engine.game_height * 0.80 : camera2d.y0(),
       Z.DEBUG,
       ui.font_height,
-      this.disconnected_message_top ? glov_font.ALIGN.HCENTER : glov_font.ALIGN.HVCENTER,
+      this.disconnected_message_top ? ALIGN.HCENTER : ALIGN.HVCENTER,
       camera2d.w(), camera2d.h() * 0.20,
       `Connection lost, attempting to reconnect (${(netClient().timeSinceDisconnect()/1000).toFixed(0)})...`);
   }
@@ -712,7 +718,7 @@ ChatUI.prototype.run = function (opts) {
     y -= border + font_height + 1;
     if (!was_focused && opts.pointerlock && input.pointerLocked()) {
       // do not show edit box
-      ui.font.drawSizedAligned(this.styles.def, x, y, z + 1, font_height, glov_font.ALIGN.HFIT, inner_w, 0,
+      ui.font.drawSizedAligned(this.styles.def, x, y, z + 1, font_height, ALIGN.HFIT, inner_w, 0,
         '<Press Enter to chat>');
     } else {
       if (was_focused) {
@@ -730,6 +736,7 @@ ChatUI.prototype.run = function (opts) {
             if (autocomplete && autocomplete.length) {
               let first = autocomplete[0];
               let auto_text = [];
+              let wrap = false;
               for (let ii = 0; ii < autocomplete.length; ++ii) {
                 let elem = autocomplete[ii];
                 auto_text.push(`/${elem.cmd} - ${elem.help}`);
@@ -745,6 +752,7 @@ ChatUI.prototype.run = function (opts) {
                 } else {
                   auto_text = [first.help];
                 }
+                wrap = true;
               } else {
                 do_selection = true;
               }
@@ -765,6 +773,7 @@ ChatUI.prototype.run = function (opts) {
                 tooltip: auto_text,
                 do_selection,
                 font_height: min(font_height, camera2d.w() / 30),
+                wrap,
               });
               if (do_selection) {
                 // auto-completes to something different than we have typed
@@ -954,12 +963,13 @@ ChatUI.prototype.run = function (opts) {
       });
     }
     // Previously: mouseDownEdge because by the time the Up happens, the chat text might not be here anymore
+    let longpress = input.longPress({ x, y, w: wrap_w, h });
     click = click || input.click({ x, y, w: wrap_w, h });
     if (did_user_context) {
       click = null;
     }
-    if (click) {
-      if (click.button === 2) {
+    if (click || longpress) {
+      if (longpress || click.button === 2) {
         ui.provideUserString('Chat Text', is_url || line);
       } else if (is_url) {
         self.cmdParseInternal(`url ${url_label}`);
@@ -1217,8 +1227,10 @@ export function chatUICreate(params) {
   });
   cmd_parse.register({
     cmd: 'me',
-    help: 'Emote',
-    usage: '$HELP\n  Example: /me jumps up and down!',
+    help: 'Sends a message emoting an action. Can also perform animated emotes.',
+    usage: '$HELP\n  Example: /me jumps up and down!\n' +
+    '    /me waves\n' +
+    '    /me sits',
     func: emote,
   });
   // Also alias /em
@@ -1235,5 +1247,67 @@ export function chatUICreate(params) {
       resp_func();
     },
   });
+  cmd_parse.register({
+    cmd: 'csr_all',
+    access_run: ['sysadmin'],
+    help: '(Admin) Run a command as all users in the current channel',
+    prefix_usage_with_help: true,
+    usage: '  /csr_all command\n' +
+      'Example: /csr_all me bows down',
+    func: function (str, resp_func) {
+      if (!(chat_ui.channel && chat_ui.channel.numSubscriptions())) {
+        return void resp_func('Must be in a channel');
+      }
+      let clients = chat_ui.channel.getChannelData('public.clients', {});
+      let count = 0;
+      for (let client_id in clients) {
+        let ids = clients[client_id].ids;
+        if (ids?.user_id) {
+          let cmd = str;
+          let pak = netSubs().getChannelImmediate(`user.${ids.user_id}`).pak('csr_admin_to_user');
+          pak.writeJSON(cmd_parse.last_access);
+          pak.writeString(cmd);
+          pak.writeAnsiString(client_id);
+          pak.send(chat_ui.handle_cmd_parse);
+          ++count;
+        }
+      }
+      resp_func(null, `Sent command to ${count} user(s)`);
+    }
+  });
+  cmd_parse.register({
+    cmd: 'csr',
+    access_run: ['csr'],
+    help: '(CSR) Run a command as another user',
+    prefix_usage_with_help: true,
+    usage: '  /csr UserID command\n' +
+      'Example: /csr jimbly gems -100',
+    func: function (str, resp_func) {
+      let idx = str.indexOf(' ');
+      if (idx === -1) {
+        return void resp_func('Invalid number of arguments');
+      }
+      let user_id = str.slice(0, idx);
+      let desired_client_id = '';
+      if (chat_ui.channel && chat_ui.channel.numSubscriptions()) {
+        let clients = chat_ui.channel.getChannelData('public.clients', {});
+        for (let client_id in clients) {
+          let ids = clients[client_id].ids;
+          if (ids?.user_id === user_id) {
+            desired_client_id = client_id;
+          }
+        }
+      }
+
+      let cmd = str.slice(idx + 1);
+      let pak = netSubs().getChannelImmediate(`user.${user_id}`).pak('csr_admin_to_user');
+      pak.writeJSON(cmd_parse.last_access);
+      pak.writeString(cmd);
+      pak.writeAnsiString(desired_client_id);
+      pak.send(resp_func);
+    }
+  });
+
+
   return chat_ui;
 }

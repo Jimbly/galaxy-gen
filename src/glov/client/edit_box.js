@@ -20,17 +20,14 @@ const {
 } = require('./input.js');
 const { getStringIfLocalizable } = require('./localization.js');
 const {
-  SPOT_NAV_DOWN,
-  SPOT_NAV_LEFT,
-  SPOT_NAV_RIGHT,
-  SPOT_NAV_UP,
   spotFocusCheck,
   spotFocusSteal,
   spotUnfocus,
   spotlog,
+  spotSuppressKBNav,
 } = require('./spot.js');
 const glov_ui = require('./ui.js');
-const { uiGetDOMElem } = require('./ui.js');
+const { getUIElemData, uiGetDOMElem } = require('./ui.js');
 
 let form_hook_registered = false;
 let active_edit_box;
@@ -93,16 +90,13 @@ class GlovUIEditBox {
     this.initial_focus = false;
     this.onetime_focus = false;
     this.auto_unfocus = false;
+    this.focus_steal = false;
     this.initial_select = false;
     this.spellcheck = true;
     this.esc_clears = true;
     this.multiline = 0;
+    this.suppress_up_down = false;
     this.autocomplete = false;
-    this.custom_nav = {
-      // We want left/right to be handled by the input element, not used to change focus.
-      [SPOT_NAV_LEFT]: null,
-      [SPOT_NAV_RIGHT]: null,
-    };
     this.sticky_focus = true;
     this.applyParams(params);
     assert.equal(typeof this.text, 'string');
@@ -128,12 +122,6 @@ class GlovUIEditBox {
       this.text = '';
     }
     this.h = this.font_height;
-    if (this.multiline && this.custom_nav[SPOT_NAV_UP] === undefined) {
-      this.custom_nav[SPOT_NAV_UP] = null;
-    }
-    if (this.multiline && this.custom_nav[SPOT_NAV_DOWN] === undefined) {
-      this.custom_nav[SPOT_NAV_DOWN] = null;
-    }
   }
   updateText() {
     this.text = this.input.value;
@@ -226,6 +214,10 @@ class GlovUIEditBox {
 
   run(params) {
     this.applyParams(params);
+    if (this.focus_steal) {
+      this.focus_steal = false;
+      this.focus();
+    }
 
     let is_reset = false;
     if (!verify(this.last_frame !== engine.frame_index)) {
@@ -241,6 +233,10 @@ class GlovUIEditBox {
 
     this.canceled = false;
     let { allow_focus, focused } = this.updateFocus(is_reset);
+
+    if (focused) {
+      spotSuppressKBNav(true, Boolean(this.multiline || this.suppress_up_down));
+    }
 
     this_frame_edit_boxes.push(this);
     let elem = allow_focus && uiGetDOMElem(this.elem, true);
@@ -286,6 +282,7 @@ class GlovUIEditBox {
       } else {
         this.input = null;
       }
+      this.last_autocomplete = null;
       this.submitted = false;
       this.elem = elem;
     } else {
@@ -353,4 +350,15 @@ GlovUIEditBox.prototype.CANCEL = 'cancel';
 
 export function editBoxCreate(params) {
   return new GlovUIEditBox(params);
+}
+
+export function editBox(params, current) {
+  let edit_box = getUIElemData('edit_box', params, editBoxCreate);
+  let result = edit_box.run(params);
+
+  return {
+    result,
+    text: edit_box.getText(),
+    edit_box,
+  };
 }

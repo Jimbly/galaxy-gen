@@ -130,7 +130,8 @@ export function slider(value, param) {
       value = clamp(value - step, param.min, param.max);
     }
   }
-  let handle_center_pos = param.x + xoffs + draggable_width * (value - param.min) / (param.max - param.min);
+  let value_for_handle = clamp(value, param.min, param.max);
+  let handle_center_pos = param.x + xoffs + draggable_width * (value_for_handle - param.min) / (param.max - param.min);
   let handle_x = handle_center_pos - handle_w / 2;
   let handle_y = param.y + param.h / 2 - handle_h / 2;
   let handle_color = color_slider_handle;

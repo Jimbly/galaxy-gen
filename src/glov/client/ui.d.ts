@@ -1,12 +1,12 @@
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 /* globals HTMLElement, Event */
 
-import { UnimplementedData } from 'glov/common/types';
 import { ROVec4 } from 'glov/common/vmath';
 import { EditBoxOptsAll } from './edit_box';
 import { ALIGN, Font, FontStyle, Text } from './font';
 import { Box } from './geom_types';
 import { SoundID } from './sound';
+import { SpotParam, SpotRet, SpotStateEnum } from './spot';
 import { Sprite, UISprite } from './sprites';
 
 export type ColorSet = { _opaque: 'ColorSet' };
@@ -16,19 +16,23 @@ export const LINE_ALIGN: number;
 export const LINE_CAP_SQUARE: number;
 export const LINE_CAP_ROUND: number;
 export function makeColorSet(color: ROVec4): ColorSet;
+export function colorSetMakeCustom(regular: ROVec4, rollover: ROVec4, down: ROVec4, disabled: ROVec4): ColorSet;
 export interface UIBox extends Box {
   z?: number;
 }
 export interface UIBoxColored extends UIBox {
   color?: ROVec4;
 }
-export type UIHookFn = (param: UIBox) => void;
+export type UIHookFn = (param: UIBox & { hook: HookList }) => void;
 export function addHook(draw: UIHookFn, click: UIHookFn): void;
 // TODO: how to say that P must also be `{ key: string } | { x: number, y: number }`?
 export function getUIElemData<T, P>(type: string, param: P, allocator: (param: P)=>T) : T;
 export const font: Font;
 export const title_font: Font;
-export const modal_font_style: FontStyle;
+export function uiFontStyleNormal(): FontStyle;
+export function uiFontStyleFocused(): FontStyle;
+export function uiFontStyleDisabled(): FontStyle;
+export function uiFontStyleModal(): FontStyle;
 export interface UISprites {
   button: UISprite;
   button_rollover: null | UISprite;
@@ -76,13 +80,13 @@ export function setProvideUserStringDefaultMessages(success_msg: Text, failure_m
 export function suppressNewDOMElemWarnings(): void;
 export function uiGetDOMElem(last_elem: HTMLElement, allow_modal: boolean): null | HTMLElement;
 export type BaseSoundKey = 'button_click' | 'rollover';
-export function bindSounds(sounds?: Partial<Record<string, SoundID | SoundID[]>>): void;
+export function uiBindSounds(sounds?: Partial<Record<string, SoundID | SoundID[] | null>>): void;
 export interface DrawHBoxParam extends UIBox {
   no_min_width?: boolean;
 }
 export function drawHBox(coords: DrawHBoxParam, s: Sprite, color?: ROVec4): void;
 export function drawVBox(coords: UIBox, s: Sprite, color?: ROVec4): void;
-export function drawBox(coords: UIBox, s: Sprite, pixel_scale: number, color?: ROVec4): void;
+export function drawBox(coords: UIBox, s: Sprite, pixel_scale: number, color?: ROVec4, color1?: ROVec4): void;
 export function drawMultiPartBox(
   coords: UIBox,
   scaleable_data: {
@@ -113,7 +117,7 @@ export interface TooltipParam {
   tooltip_above?: boolean;
   tooltip_auto_above_offset?: number;
   pixel_scale?: number;
-  tooltip: TooltipValue;
+  tooltip: TooltipValue | null;
 }
 export function drawTooltip(param: TooltipParam): void;
 export interface TooltipBoxParam {
@@ -134,52 +138,34 @@ export interface ProgressBarParam extends UIBoxColored {
 }
 export function progressBar(param: ProgressBarParam): void;
 
-// TODO: implement/move to spot.js
-export type SpotParam = UnimplementedData;
-// TODO: implement/move to spot.js
-declare enum SpotState {
-  SPOT_STATE_REGULAR = 1,
-  SPOT_STATE_DOWN = 2,
-  SPOT_STATE_FOCUSED = 3,
-  SPOT_STATE_DISABLED = 4,
-}
 export type EventCallback = (event: Event) => void;
 export type HookList = string | string[];
 export type ButtonStateString = 'regular' | 'down' | 'rollover' | 'disabled';
-export type ButtonRet = {
-  // from SpotRet:
-  ret: number;
-  focused: boolean;
+export type ButtonRet = SpotRet & {
   // ui.button-specific
   state: ButtonStateString;
 };
-export interface ButtonParam extends Partial<TooltipParam> {
+export interface ButtonParam extends Partial<TooltipParam>, Partial<SpotParam> {
+  // importantly: everything in SpotParam
   x: number;
   y: number;
   z?: number;
-  w?: number;
-  h?: number;
-  key?: string;
   draw_only?: boolean;
   draw_only_mouseover?: boolean;
-  def?: SpotParam;
   color?: ROVec4;
-  disabled?: boolean;
-  disabled_focusable?: boolean;
   rollover_quiet?: boolean;
   colors?: ColorSet;
   sound?: string;
   z_bias?: Partial<Record<ButtonStateString, number>>;
-  in_event_cb?: EventCallback | null;
-  hook?: HookList;
-  pad_focusable?: boolean;
   base_name?: string;
-  drag_over?: boolean;
-  // Also: everything in SpotParam (Move to spot.js and extend interface when converted to TS)
 }
 export interface ButtonTextParam extends ButtonParam {
   text: Text;
+  font?: Font;
   font_height?: number;
+  font_style_normal?: FontStyle;
+  font_style_focused?: FontStyle;
+  font_style_disabled?: FontStyle;
   align?: ALIGN;
 }
 export interface ButtonImageParamBase extends ButtonParam {
@@ -188,6 +174,7 @@ export interface ButtonImageParamBase extends ButtonParam {
   img_rect?: ROVec4;
   left_align?: boolean;
   img_color?: ROVec4;
+  z_inc?: number;
   color1?: ROVec4;
   rotation?: number;
   flip?: boolean;
@@ -201,7 +188,7 @@ export interface ButtonImageParam2 extends ButtonImageParamBase {
 export type ButtonImageParam = ButtonImageParam1 | ButtonImageParam2;
 export function buttonShared(param: ButtonParam): ButtonRet;
 export function buttonBackgroundDraw(param: ButtonParam, state: ButtonStateString): void;
-export function buttonSpotBackgroundDraw(param: ButtonParam, spot_state: SpotState): void;
+export function buttonSpotBackgroundDraw(param: ButtonParam, spot_state: SpotStateEnum): void;
 export function buttonTextDraw(param: ButtonTextParam, state: ButtonStateString, focused: boolean): void;
 export function buttonText(param: ButtonTextParam): ButtonRet | null;
 export function buttonImage(param: ButtonImageParam): ButtonRet | null;
@@ -209,16 +196,21 @@ export function button(param: ButtonTextParam | ButtonImageParam): ButtonRet | n
 
 export function print(style: FontStyle | null, x: number, y: number, z: number, text: Text): number;
 
-export interface LabelParam extends UIBox {
+export type LabelParam = Partial<TooltipBoxParam> & {
+  x: number;
+  y: number;
+  z?: number;
+  w?: number;
+  h?: number;
   style?: FontStyle;
   style_focused?: FontStyle;
   font?: Font;
   size?: number;
   align?: ALIGN;
   text?: Text;
-  tooltip?: Text;
-}
-export function label(param: LabelParam): void;
+  tooltip?: TooltipValue;
+};
+export function label(param: LabelParam): number;
 
 export function modalDialogClear(): void;
 
@@ -249,6 +241,7 @@ export interface ModalDialogParamBase<CB> {
   y0?: number;
   tick?: ModalDialogTickCallback;
   buttons?: Partial<Record<string, ModalDialogButton<CB>>>;
+  no_fullscreen_zoom?: boolean;
 }
 
 export type ModalDialogParam = ModalDialogParamBase<() => void>;
@@ -353,6 +346,8 @@ export function setModalSizes(
 export function setTooltipWidth(tooltip_width: number, tooltip_panel_pixel_scale: number): void;
 export function uiGetFontStyleFocused(): FontStyle;
 export function uiSetFontStyleFocused(new_style: FontStyle): void;
+export function uiSetPanelColor(color: ROVec4): void;
+export function uiSetButtonColorSet(color_set: ColorSet): void;
 
 type UISpriteSet = {
   color_set_shades?: [number, number, number];
@@ -380,7 +375,7 @@ type UISpriteSet = {
   progress_bar_trough?: UISpriteDef;
 };
 export const internal : {
-  checkHooks(param: { hook?: string }, click: boolean): void;
+  checkHooks(param: { hook?: HookList }, click: boolean): void;
   cleanupDOMElems(): void;
   uiEndFrame(): void;
   uiSetFonts(new_font: Font, new_title_font?: Font): void;

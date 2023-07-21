@@ -260,7 +260,7 @@ class DataStore {
 let all_stores = [];
 
 // Init the type of datastore system
-export function create(store_path, one_file) {
+export function dataStoreCreate(store_path, one_file) {
   if (one_file) {
     return new DataStoreOneFile(store_path);
   }
@@ -271,6 +271,7 @@ export function create(store_path, one_file) {
   all_stores.push(ret);
   return ret;
 }
+exports.create = dataStoreCreate; // legacy API
 
 function finishFlush() {
   --ds_stats.inflight_set;

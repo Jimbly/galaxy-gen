@@ -1,6 +1,6 @@
 import { perfCounterAdd } from 'glov/common/perfcounters';
 import { ErrorCallback } from 'glov/common/types';
-import { metricsAdd } from './metrics';
+//import { metricsAdd } from '../server/metrics';
 
 const { floor, min, random } = Math;
 
@@ -20,6 +20,11 @@ export interface ExecuteWithRetryOptions {
   quiet?: boolean;
   /** Disable notifying metrics system of retries */
   no_metrics?: boolean;
+}
+
+let metricsAdd: ((label: string, value: number) => void) | undefined;
+export function setMetricsAdd(func: (label: string, value: number) => void): void {
+  metricsAdd = func;
 }
 
 /**
@@ -47,9 +52,9 @@ export function executeWithRetry<T = unknown, E = unknown>(
   let max_retries = options.max_retries;
   let inc_backoff_duration = options.inc_backoff_duration;
   let max_backoff = options.max_backoff;
-  let no_metrics = options.no_metrics;
   let log_prefix = options.log_prefix || 'Log';
   let quiet = options.quiet;
+  let no_metrics = options.no_metrics;
 
   let attempts = 0;
 
@@ -70,13 +75,13 @@ export function executeWithRetry<T = unknown, E = unknown>(
         if (attempts === max_retries) {
           // Return the error if we have exceeded max retries
           (quiet ? console.info : console.error)(`[RETRY] ${log_prefix} | [Retries exhausted] | ${err}`);
-          if (!no_metrics) {
+          if (metricsAdd && !no_metrics) {
             metricsAdd(`retry.${metric}.fail`, 1);
           }
           return cb(err);
         }
 
-        if (!no_metrics) {
+        if (metricsAdd && !no_metrics) {
           metricsAdd(`retry.${metric}`, 1);
         }
         (quiet ? console.info : console.warn)(`[RETRY] ${log_prefix} | [${attempts}] | ${err}`);

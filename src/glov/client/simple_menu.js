@@ -126,8 +126,8 @@ class GlovSimpleMenu {
       if (menu_item.slider) {
         // slider_no_notches = true;
         // slider_sound_release = this.sound_accept;
-        let slider_width = 160;
-        let slider_x = x + sel_box.width - slider_width - 4 - display.xpad;
+        let slider_width = sel_box.slider_w || 160;
+        let slider_x = x + sel_box.width - slider_width - display.xpad;
         let color = display.style_default.color_vec4;
         // if (display.style_default.color_mode == glov_font.COLOR_MODE.GRADIENT) {
         //   color = colorIntLerp(display.style_default.color_vec4, display.style_default.colorLR, 0.5);
@@ -239,6 +239,10 @@ class GlovSimpleMenu {
 
   getSelectedItem() {
     return this.sel_box.items[this.selected];
+  }
+
+  getItem(index) {
+    return this.sel_box.items[index];
   }
 }
 

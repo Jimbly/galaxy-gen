@@ -135,22 +135,40 @@ export function screenAspect() {
 // Drawing area 0,0-w,h
 // But keep the aspect ratio of those things drawn to be correct
 // This may create a padding or margin on either top and bottom or sides of the screen
-// User users constant values in this range for consistent UI on all devices
+// User should use constant values in this range for consistent UI on all devices
 export function setAspectFixed(w, h) {
   let pa = render_width ? 1 : engine.pixel_aspect;
   let inv_aspect = h / pa / w;
   let inv_desired_aspect;
+  let screen_w;
+  let screen_h;
   if (render_width) {
-    inv_desired_aspect = render_height / render_width;
+    screen_w = render_width;
+    screen_h = render_height;
   } else {
-    inv_desired_aspect = 1 / screenAspect();
+    screen_w = safeScreenWidth();
+    screen_h = safeScreenHeight();
   }
+  inv_desired_aspect = screen_h / screen_w;
+  // ensure the left/top margin is integer screen pixels
+  // Note: the margin is, however, not integer virtual pixels, so anything
+  //   using an `integral` font and camera2d.x0()/etc will have artifacts
   if (inv_aspect > inv_desired_aspect) {
-    let margin = (h / pa / inv_desired_aspect - w) / 2;
-    set(-margin, 0, w + margin, h, false);
+    let virtual_w = h / pa / inv_desired_aspect;
+    let virtual_to_screen = screen_w / virtual_w;
+    let margin = virtual_w - w;
+    let left_margin_screen_px = round(margin * virtual_to_screen / 2);
+    let left_margin = left_margin_screen_px / virtual_to_screen;
+    let right_margin = margin - left_margin;
+    set(-left_margin, 0, w + right_margin, h, false);
   } else {
-    let margin = (w * pa * inv_desired_aspect - h) / 2;
-    set(0, -margin, w, h + margin, false);
+    let virtual_h = w * pa * inv_desired_aspect;
+    let virtual_to_screen = screen_h / virtual_h;
+    let margin = virtual_h - h;
+    let top_margin_screen_px = round(margin * virtual_to_screen / 2);
+    let top_margin = top_margin_screen_px / virtual_to_screen;
+    let bot_margin = margin - top_margin;
+    set(0, -top_margin, w, h + bot_margin, false);
   }
 }
 

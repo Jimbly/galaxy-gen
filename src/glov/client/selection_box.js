@@ -42,7 +42,12 @@ import {
   spotSubPush,
 } from './spot.js';
 import { spriteClipPause, spriteClipResume, spriteClipped } from './sprites.js';
-import { playUISound } from './ui.js';
+import {
+  getUIElemData,
+  playUISound,
+  uiFontStyleFocused,
+  uiFontStyleNormal,
+} from './ui.js';
 import * as glov_ui from './ui.js';
 
 let glov_markup = null; // Not ported
@@ -286,6 +291,14 @@ class SelectionBoxBase {
     }
   }
 
+  wasClicked() {
+    return this.was_clicked;
+  }
+
+  wasRightClicked() {
+    return this.was_right_clicked;
+  }
+
   isSelected(tag_or_index) {
     if (typeof tag_or_index === 'number') {
       return this.selected === tag_or_index;
@@ -295,6 +308,27 @@ class SelectionBoxBase {
 
   getSelected() {
     return this.items[this.selected];
+  }
+
+  findIndex(tag_or_index) {
+    if (typeof tag_or_index === 'number') {
+      assert(tag_or_index < this.items.length);
+      return tag_or_index;
+    } else {
+      for (let ii = 0; ii < this.items.length; ++ii) {
+        if (this.items[ii].tag === tag_or_index) {
+          return ii;
+        }
+      }
+    }
+    return -1;
+  }
+
+  setSelected(tag_or_index) {
+    let idx = this.findIndex(tag_or_index);
+    if (idx !== -1) {
+      this.selected = idx;
+    }
   }
 
   handleInitialSelection() {
@@ -654,6 +688,10 @@ class GlovSelectionBox extends SelectionBoxBase {
     // nothing
   }
 
+  isDropdownVisible() {
+    return false;
+  }
+
   run(params) {
     this.applyParams(params);
     let { x, y, z, entry_height, ctx } = this;
@@ -694,6 +732,10 @@ class GlovDropDown extends SelectionBoxBase {
     // Run-time state
     this.dropdown_visible = false;
     this.last_selected = undefined;
+  }
+
+  isDropdownVisible() {
+    return this.dropdown_visible;
   }
 
   focus() {
@@ -786,7 +828,7 @@ class GlovDropDown extends SelectionBoxBase {
     }, glov_ui.sprites.menu_header, COLORS[root_spot_ret.spot_state]);
     let align = (display.centered ? glov_font.ALIGN.HCENTER : glov_font.ALIGN.HLEFT) |
       glov_font.ALIGN.HFIT | glov_font.ALIGN.VCENTER;
-    font.drawSizedAligned(root_spot_ret.focused ? glov_ui.font_style_focused : glov_ui.font_style_normal,
+    font.drawSizedAligned(root_spot_ret.focused ? uiFontStyleFocused() : uiFontStyleNormal(),
       x + display.xpad, y, z + 2,
       font_height, align,
       width - display.xpad - glov_ui.sprites.menu_header.uidata.wh[2] * entry_height, entry_height,
@@ -862,4 +904,32 @@ export function dropDownCreate(params) {
     font = glov_ui.font;
   }
   return new GlovDropDown(params);
+}
+
+export function dropDown(param, current, opts) {
+  opts = opts || {};
+  param.auto_reset = false; // Handled every frame here automatically
+  let { suppress_return_during_dropdown } = opts;
+  // let dropdown = getUIElemData<SelectionBox, SelectionBoxOpts>('dropdown', param, dropDownCreate);
+  let dropdown = getUIElemData('dropdown', param, dropDownCreate);
+  dropdown.applyParams(param);
+  if (!dropdown.isDropdownVisible()) {
+    dropdown.setSelected(current);
+  }
+  let old_selected;
+  if (suppress_return_during_dropdown) {
+    let old_idx = dropdown.findIndex(current);
+    old_selected = old_idx === -1 ? null : dropdown.items[old_idx];
+  } else {
+    old_selected = dropdown.getSelected();
+  }
+  dropdown.run();
+  if (suppress_return_during_dropdown && dropdown.was_clicked ||
+    !suppress_return_during_dropdown
+  ) {
+    if (old_selected !== dropdown.getSelected()) {
+      return dropdown.getSelected();
+    }
+  }
+  return null;
 }

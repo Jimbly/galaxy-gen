@@ -1,20 +1,24 @@
 // Portions Copyright 2022 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
+export let entity_field_defs: Partial<Record<string, EntityFieldDef>> = Object.create(null);
+
 import assert from 'assert';
 import { asyncSeries } from 'glov-async';
 import {
   ActionMessageParam,
   ClientID,
   EntityBaseCommon,
+  EntityBaseDataCommon,
   EntityFieldDecoder,
   EntityFieldDefCommon,
   EntityFieldEncoder,
   EntityFieldEncoding,
   EntityFieldSpecial,
   EntityFieldSub,
-  EntityID,
   EntityManagerEvent,
+  entity_field_decoders,
+  entity_field_encoders,
 } from 'glov/common/entity_base_common';
 import {
   ClientHandlerSource,
@@ -59,6 +63,47 @@ export interface EntityFieldDef extends EntityFieldDefCommon {
 }
 export type EntityFieldDefOpts = Partial<Exclude<EntityFieldDef, 'encoder'>>;
 
+let last_field_id = EntityFieldSpecial.MAX - 1;
+export function entityServerRegisterFieldDefs<DataObjectType>(
+  defs: Record<keyof DataObjectType, EntityFieldDefOpts>
+): void;
+export function entityServerRegisterFieldDefs(defs: Record<string, EntityFieldDefOpts>): void {
+  for (let key in defs) {
+    let def_in = defs[key];
+    // Construct an EntityFieldDef in a type-safe manner
+    let ephemeral = def_in.ephemeral || false;
+    let server_only = def_in.server_only || false;
+    let default_value = def_in.default_value;
+    let encoding = def_in.encoding || EntityFieldEncoding.JSON;
+    let encoder = entity_field_encoders[encoding];
+    assert(encoder, `Missing encoder for type ${encoding} referenced by field ${key}`);
+    let decoder = entity_field_decoders[encoding];
+    assert(decoder);
+    let sub = def_in.sub || EntityFieldSub.None;
+    if (sub) {
+      assert(default_value === undefined, 'Default values not supported for Records/Arrays');
+    }
+    let field_id = server_only ? -1 : ++last_field_id;
+    let def_out: EntityFieldDef = {
+      ephemeral,
+      server_only,
+      encoding,
+      default_value,
+      sub,
+      encoder,
+      decoder,
+      field_id,
+      field_name: key,
+    };
+
+    // Then also copy all other app-specific fields
+    defaults(def_out, def_in);
+
+    assert(!entity_field_defs[key]);
+    entity_field_defs[key] = def_out;
+  }
+}
+
 export interface ActionHandlerParam extends WithRequired<ActionMessageParam, 'data_assignments' | 'self' | 'ent_id'> {
   src: ClientHandlerSource;
   predicate?: { field: string; expected_value: string }; // expected_value no longer optional
@@ -75,6 +120,7 @@ export type DataAssignmentType = 'number' | 'string' | 'array' | 'boolean' | 'ob
 export type ActionDef<Entity extends EntityBaseServer> = {
   self_only: boolean;
   allowed_data_assignments: Partial<Record<string, DataAssignmentType>>;
+  allow_any_assignment?: boolean;
   handler?: ActionHandler<Entity>;
 };
 
@@ -88,12 +134,26 @@ function actionDefDefaults<Entity extends EntityBaseServer>(
   action_def: Partial<ActionDefOpts<Entity>>
 ): asserts action_def is ActionDef<EntityBaseServer> {
   if (has(action_def, 'handler')) {
+    // Has a handler member, but it's `undefined`, likely but with caller
     assert(action_def.handler, `Undefined function set for action ${action_def.action_id}`);
   }
   if (action_def.self_only === undefined) {
     action_def.self_only = true;
   }
+  action_def.allow_any_assignment = action_def.allow_any_assignment || false;
   action_def.allowed_data_assignments = objectToSet(action_def.allowed_data_assignments);
+}
+
+let entity_action_defs: Partial<Record<string, ActionDef<EntityBaseServer>>> = Object.create(null);
+export function entityServerRegisterActions<Entity extends EntityBaseServer>(
+  action_defs: ActionDefOpts<Entity>[]
+): void {
+  action_defs.forEach((action_def) => {
+    let { action_id } = action_def;
+    assert(!entity_action_defs[action_id]);
+    actionDefDefaults(action_def);
+    entity_action_defs[action_id] = action_def;
+  });
 }
 
 interface PlayerEntity extends EntityBaseServer {
@@ -106,23 +166,18 @@ export type DirtyFields = Partial<Record<string, true>>;
 export class EntityBaseServer extends EntityBaseCommon {
   declare entity_manager: ServerEntityManagerInterface;
 
-  static DEFAULT_PLAYER_DATA = {
-    // pos: [0,0]
-  };
-
-  is_player: boolean;
+  declare is_player: boolean;
   in_dirty_list: boolean;
   dirty_fields: DirtyFields;
   dirty_sub_fields: Partial<Record<string, DirtyFields>>;
   need_save: boolean;
   player_uid?: string; // Only for player-type entities
-  current_vaid!: VAID; // Initially set in finishDeserialize()
+  current_vaid!: VAID; // Initially set in finishCreation()
   last_vaid?: VAID;
   last_delete_reason?: string = undefined;
 
-  constructor(ent_id: EntityID, entity_manager: ServerEntityManagerInterface) {
-    super(ent_id, entity_manager);
-    this.is_player = false;
+  constructor(data: EntityBaseDataCommon) {
+    super(data);
     this.in_dirty_list = false;
     this.need_save = false;
     this.dirty_fields = {};
@@ -194,17 +249,12 @@ export class EntityBaseServer extends EntityBaseCommon {
     this.entity_manager.worker.sendChannelMessage(`client.${client_id}`, 'ent_broadcast', data);
   }
 
-  fromSerialized(ser: DataObject): void {
-    this.data = ser;
-    this.finishDeserialize();
-  }
-
   // Serialized when saving to the data store
   toSerializedStorage(): DataObject {
-    let { data, field_defs } = this;
+    let { data } = this;
     let ret: DataObject = {};
     for (let key in data) {
-      let field_def = field_defs[key];
+      let field_def = entity_field_defs[key];
       if (!field_def) {
         assert(field_def, `Missing field definition for ${key}`);
       }
@@ -218,7 +268,8 @@ export class EntityBaseServer extends EntityBaseCommon {
     return ret;
   }
 
-  finishDeserialize(): void {
+  // Needs to be called after child class's constructor finishes, not in base class's constructor
+  finishCreation(): void {
     this.current_vaid = this.visibleAreaGet();
   }
 
@@ -235,7 +286,7 @@ export class EntityBaseServer extends EntityBaseCommon {
     this.entity_manager.dirtySub(this, field, index);
   }
 
-  dirtyVA(field: string, delete_reason: string): void {
+  dirtyVA(field: string, delete_reason: string | null): void {
     this.entity_manager.dirty(this, field, delete_reason);
   }
 
@@ -243,13 +294,13 @@ export class EntityBaseServer extends EntityBaseCommon {
     let { action_id, ent_id, predicate, self, /*payload, */data_assignments, src } = action_data;
 
     // Validate
-    let action_def = this.action_defs[action_id];
+    let action_def = entity_action_defs[action_id];
     if (!action_def) {
       this.errorSrc(src, `Received invalid action_id=${action_id}`);
       return void resp_func('ERR_INVALID_ACTION');
     }
 
-    let { allowed_data_assignments, self_only, handler } = action_def;
+    let { allowed_data_assignments, allow_any_assignment, self_only, handler } = action_def;
 
     if (self) {
       assert.equal(ent_id, this.id);
@@ -276,7 +327,9 @@ export class EntityBaseServer extends EntityBaseCommon {
     for (let key in data_assignments) {
       let allowed_type = allowed_data_assignments[key];
       let provided_type = Array.isArray(data_assignments[key]) ? 'array' : typeof data_assignments[key];
-      if (allowed_type === null && data_assignments[key] === null) {
+      if (allow_any_assignment) {
+        // OK
+      } else if (allowed_type === null && data_assignments[key] === null) {
         // OK
       } else if (!allowed_type) {
         this.errorSrc(src, `Action ${action_id} attempted to set disallowed field "${key}"`);
@@ -319,6 +372,9 @@ export class EntityBaseServer extends EntityBaseCommon {
         next();
       },
     ], (err?: string | null) => {
+      if (err) {
+        this.warnSrc(src, `Action ${action_id} failed "${err}"`);
+      }
       resp_func(err || null, result);
     });
   }
@@ -343,7 +399,7 @@ export class EntityBaseServer extends EntityBaseCommon {
     let data = this.data as DataObject;
     let sub_value = data[field] as (unknown[] | DataObject);
     if (!sub_value) {
-      let field_def = this.field_defs[field];
+      let field_def = entity_field_defs[field];
       assert(field_def);
       let { sub } = field_def;
       assert(sub);
@@ -378,93 +434,37 @@ export class EntityBaseServer extends EntityBaseCommon {
       }
     }
   }
-
-  declare field_defs: Partial<Record<string, EntityFieldDef>>; // on prototype, not instances
-  private static last_field_id = EntityFieldSpecial.MAX - 1;
-  static registerFieldDefs<DataObjectType>(defs: Record<keyof DataObjectType, EntityFieldDefOpts>): void;
-  static registerFieldDefs(defs: Record<string, EntityFieldDefOpts>): void {
-    for (let key in defs) {
-      let def_in = defs[key];
-      // Construct an EntityFieldDef in a type-safe manner
-      let ephemeral = def_in.ephemeral || false;
-      let server_only = def_in.server_only || false;
-      let default_value = def_in.default_value;
-      let encoding = def_in.encoding || EntityFieldEncoding.JSON;
-      let encoder = this.field_encoders[encoding];
-      assert(encoder, `Missing encoder for type ${encoding} referenced by field ${key}`);
-      let decoder = this.field_decoders[encoding];
-      assert(decoder);
-      let sub = def_in.sub || EntityFieldSub.None;
-      if (sub) {
-        assert(default_value === undefined, 'Default values not supported for Records/Arrays');
-      }
-      let field_id = server_only ? -1 : ++this.last_field_id;
-      let def_out: EntityFieldDef = {
-        ephemeral,
-        server_only,
-        encoding,
-        default_value,
-        sub,
-        encoder,
-        decoder,
-        field_id,
-        field_name: key,
-      };
-
-      // Then also copy all other app-specific fields
-      defaults(def_out, def_in);
-
-      assert(!this.prototype.field_defs[key]);
-      this.prototype.field_defs[key] = def_out;
-    }
-  }
-
-  declare action_defs: Partial<Record<string, ActionDef<EntityBaseServer>>>; // on prototype, not instances
-  static registerActions<Entity extends EntityBaseServer>(action_defs: ActionDefOpts<Entity>[]): void {
-    action_defs.forEach((action_def) => {
-      let { action_id } = action_def;
-      assert(!this.prototype.action_defs[action_id]);
-      actionDefDefaults(action_def);
-      this.prototype.action_defs[action_id] = action_def;
-    });
-  }
-
-  // Optional app-specific override
-  // cb(err, constructed entity)
-  static loadPlayerEntityImpl<
-    Entity extends EntityBaseServer,
-  >(
-    sem: ServerEntityManagerInterface,
-    src: ClientHandlerSource,
-    join_payload: JoinPayload,
-    player_uid: string,
-    cb: NetErrorCallback<Entity>,
-  ): void {
-    sem.worker.getBulkChannelData(`pent.${player_uid}`, null, (err: null | string, data: DataObject) => {
-      if (err) {
-        return void cb(err);
-      }
-      if (!data) {
-        data = clone(this.DEFAULT_PLAYER_DATA);
-      }
-      let ent = new this(-1, sem);
-      ent.last_saved_data = JSON.stringify(data);
-      ent.fromSerialized(data);
-      cb(null, ent as Entity);
-    });
-  }
 }
 
-EntityBaseServer.prototype.field_defs = Object.create(null);
-EntityBaseServer.registerFieldDefs({
-  // no longer on .data: id: { ephemeral: true },
+EntityBaseServer.prototype.is_player = false;
 
-  // expect game to register pos/state/etc definitions as appropriate
-});
+// Optional app-specific override
+// cb(err, constructed entity)
+export function entityServerDefaultLoadPlayerEntity<
+  Entity extends EntityBaseServer,
+>(
+  default_data: DataObject,
+  sem: ServerEntityManagerInterface,
+  src: ClientHandlerSource,
+  join_payload: JoinPayload,
+  player_uid: string,
+  cb: NetErrorCallback<Entity>,
+): void {
+  sem.worker.getBulkChannelData(`pent.${player_uid}`, null, (err: null | string, data: DataObject) => {
+    if (err) {
+      return void cb(err);
+    }
+    if (!data) {
+      data = clone(default_data);
+    }
+    let ent = sem.createEntity(data);
+    ent.last_saved_data = JSON.stringify(data);
+    cb(null, ent);
+  });
+}
 
-EntityBaseServer.prototype.action_defs = Object.create(null);
 // Example, handler-less, permissive move and animation state
-// EntityBaseServer.registerActions([{
+// entityServerRegisterActions([{
 //   action_id: 'move',
 //   self_only: false,
 //   allowed_data_assignments: {

@@ -10,7 +10,7 @@ import { isPacket } from 'glov/common/packet';
 import * as events from 'glov/common/tiny-events.js';
 import * as util from 'glov/common/util.js';
 import * as wscommon from 'glov/common/wscommon.js';
-const { wsHandleMessage, wsPak, wsPakSendDest } = wscommon;
+const { netDelayGet, wsHandleMessage, wsPak, wsPakSendDest } = wscommon;
 import * as WebSocket from 'ws';
 
 import { ipBanReady, ipBanned } from './ip_ban';
@@ -98,7 +98,7 @@ function WSServer() {
   this.clients = Object.create(null);
   this.handlers = {};
   this.restarting = undefined;
-  this.app_build_timestamp = 0;
+  this.app_build_timestamp = { app: 0 };
   this.restart_filter = null;
   this.onMsg('ping', util.nop);
   packetLogInit(this);
@@ -138,7 +138,7 @@ function logBigFilter(client, msg, data) {
   return true; // always accept
 }
 
-WSServer.prototype.init = function (server, server_https, no_timeout) {
+WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
   let ws_server = this;
   ws_server.wss = new WebSocket.Server({ noServer: true, maxPayload: 1024*1024 });
 
@@ -241,17 +241,21 @@ WSServer.prototype.init = function (server, server_https, no_timeout) {
       build: client.client_build,
     });
 
+    let query = requestGetQuery(req);
+    let client_app = query.app || 'app';
     let cack_data = {
       id: client.client_id,
       secret: client.secret,
-      build: this.app_build_timestamp,
+      build: this.app_build_timestamp[client_app],
       restarting: ws_server.restarting,
     };
+    if (dev) {
+      cack_data.net_delay = netDelayGet();
+    }
     ws_server.emit('cack_data', cack_data, client);
 
     client.send('cack', cack_data);
 
-    let query = requestGetQuery(req);
     let reconnect_id = Number(query.reconnect);
     if (reconnect_id) {
       // we're reconnecting an existing client, immediately disconnect the old one
@@ -340,8 +344,9 @@ WSServer.prototype.broadcast = function (msg, data) {
   return this.broadcastPacket(pak);
 };
 
-WSServer.prototype.setAppBuildTimestamp = function (ver) {
-  this.app_build_timestamp = ver;
+WSServer.prototype.setAppBuildTimestamp = function (app, ver) {
+  assert(ver);
+  this.app_build_timestamp[app] = ver;
 };
 
 export function isClient(obj) {

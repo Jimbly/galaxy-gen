@@ -7,6 +7,26 @@ exports.styleColored = fontStyleColored; // eslint-disable-line @typescript-esli
 exports.styleAlpha = fontStyleAlpha; // eslint-disable-line @typescript-eslint/no-use-before-define
 exports.create = fontCreate; // eslint-disable-line @typescript-eslint/no-use-before-define
 
+export const ALIGN = {
+  HLEFT: 0,
+  HCENTER: 1,
+  HRIGHT: 2,
+  HMASK: 3,
+
+  VTOP: 0 << 2,
+  VCENTER: 1 << 2,
+  VBOTTOM: 2 << 2,
+  VMASK: 3 << 2,
+
+  HFIT: 1 << 4,
+  HWRAP: 1 << 5,
+
+  HCENTERFIT: 1 | (1 << 4),
+  HRIGHTFIT: 2 | (1 << 4),
+  HVCENTER: 1 | (1 << 2), // to avoid doing bitwise ops elsewhere
+  HVCENTERFIT: 1 | (1 << 2) | (1 << 4), // to avoid doing bitwise ops elsewhere
+};
+
 /* eslint-disable import/order */
 const assert = require('assert');
 const camera2d = require('./camera2d.js');
@@ -16,10 +36,10 @@ const geom = require('./geom.js');
 const { getStringFromLocalizable } = require('./localization.js');
 const { max, min, round } = Math;
 // const settings = require('./settings.js');
-const shaders = require('./shaders.js');
+const { shaderCreate, shadersPrelink } = require('./shaders.js');
 const sprites = require('./sprites.js');
 const { BLEND_ALPHA, BLEND_PREMULALPHA, spriteChainedStart, spriteChainedStop, spriteDataAlloc } = sprites;
-const textures = require('./textures.js');
+const { textureLoad } = require('./textures.js');
 const { clamp } = require('glov/common/util.js');
 const {
   v3scale,
@@ -67,26 +87,6 @@ font_style = glov_font.style(null, {
 //   SINGLE: 0,
 //   GRADIENT: 1,
 // };
-
-export const ALIGN = {
-  HLEFT: 0,
-  HCENTER: 1,
-  HRIGHT: 2,
-  HMASK: 3,
-
-  VTOP: 0 << 2,
-  VCENTER: 1 << 2,
-  VBOTTOM: 2 << 2,
-  VMASK: 3 << 2,
-
-  HFIT: 1 << 4,
-  HWRAP: 1 << 5,
-
-  HCENTERFIT: 1 | (1 << 4),
-  HRIGHTFIT: 2 | (1 << 4),
-  HVCENTER: 1 | (1 << 2), // to avoid doing bitwise ops elsewhere
-  HVCENTERFIT: 1 | (1 << 2) | (1 << 4), // to avoid doing bitwise ops elsewhere
-};
 
 const ALIGN_NEEDS_WIDTH = ALIGN.HMASK | ALIGN.HFIT;
 
@@ -160,6 +160,7 @@ export function vec4ColorFromIntColor(v, c) {
   v[1] = ((c >> 16) & 0xFF) / 255;
   v[2] = ((c >> 8) & 0xFF) / 255;
   v[3] = (c & 0xFF) / 255;
+  return v;
 }
 
 function vec4ColorFromIntColorPreMultiplied(v, c) {
@@ -314,7 +315,7 @@ function techParamsGet() {
 function GlovFont(font_info, texture_name) {
   assert(font_info.font_size !== 0); // Got lost somewhere
 
-  this.texture = textures.load({
+  this.texture = textureLoad({
     url: `img/${texture_name}.png`,
     filter_min: font_info.noFilter ? gl.NEAREST : gl.LINEAR,
     filter_mag: font_info.noFilter ? gl.NEAREST : gl.LINEAR,
@@ -534,9 +535,11 @@ GlovFont.prototype.dims = function (style, w, indent, size, text) {
   return {
     w: max_x1,
     h: numlines * size,
+    numlines,
   };
 };
 
+let unicode_replacement_chars;
 GlovFont.prototype.infoFromChar = function (c) {
   let ret = this.char_infos[c];
   if (ret) {
@@ -544,6 +547,15 @@ GlovFont.prototype.infoFromChar = function (c) {
   }
   if (c >= 9 && c <= 13) { // characters that String.trim() strip
     return this.whitespace_character;
+  }
+  if (unicode_replacement_chars) {
+    let ascii = unicode_replacement_chars[c];
+    if (ascii) {
+      ret = this.char_infos[ascii];
+      if (ret) {
+        return ret;
+      }
+    }
   }
   // no char info, not whitespace, show replacement even if ascii, control code
   return this.replacement_character;
@@ -1034,14 +1046,14 @@ function fontShadersInit() {
   if (font_shaders.font_aa) {
     return;
   }
-  font_shaders.font_aa = shaders.create('shaders/font_aa.fp');
-  font_shaders.font_aa_glow = shaders.create('shaders/font_aa_glow.fp');
-  font_shaders.font_aa_outline = shaders.create('shaders/font_aa_outline.fp');
-  font_shaders.font_aa_outline_glow = shaders.create('shaders/font_aa_outline_glow.fp');
-  shaders.prelink(sprites.sprite_vshader, font_shaders.font_aa);
-  shaders.prelink(sprites.sprite_vshader, font_shaders.font_aa_glow);
-  shaders.prelink(sprites.sprite_vshader, font_shaders.font_aa_outline);
-  shaders.prelink(sprites.sprite_vshader, font_shaders.font_aa_outline_glow);
+  font_shaders.font_aa = shaderCreate('shaders/font_aa.fp');
+  font_shaders.font_aa_glow = shaderCreate('shaders/font_aa_glow.fp');
+  font_shaders.font_aa_outline = shaderCreate('shaders/font_aa_outline.fp');
+  font_shaders.font_aa_outline_glow = shaderCreate('shaders/font_aa_outline_glow.fp');
+  shadersPrelink(sprites.sprite_vshader, font_shaders.font_aa);
+  shadersPrelink(sprites.sprite_vshader, font_shaders.font_aa_glow);
+  shadersPrelink(sprites.sprite_vshader, font_shaders.font_aa_outline);
+  shadersPrelink(sprites.sprite_vshader, font_shaders.font_aa_outline_glow);
 }
 
 export function fontCreate(font_info, texture_name) {
@@ -1054,4 +1066,8 @@ export function fontTick() {
   tech_params_cache.length = 0;
   tech_params_pool_idx = 0;
   techParamsAlloc();
+}
+
+export function fontSetReplacementChars(replacement_chars) {
+  unicode_replacement_chars = replacement_chars;
 }

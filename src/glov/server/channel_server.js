@@ -13,6 +13,7 @@ const { ackWrapPakStart, ackWrapPakFinish, ackWrapPakPayload } = require('glov/c
 const assert = require('assert');
 const { asyncParallel, asyncSeries } = require('glov-async');
 const cmd_parse = require('glov/common/cmd_parse.js');
+const { dataErrorQueueGet } = require('glov/common/data_error.js');
 const { cwstats, ChannelWorker, UNACKED_PACKET_ASSUME_GOOD } = require('./channel_worker.js');
 const client_comm = require('./client_comm.js');
 const { ds_stats, dataStoreMonitorFlush } = require('./data_store.js');
@@ -685,7 +686,7 @@ export class ChannelServer {
       if (client) {
         if (data.sysadmin) { // Send to system admins only
           let { client_channel } = client;
-          if (!client_channel || !client_channel.ids || !client_channel.ids.sysadmin) {
+          if (!client_channel || !client_channel.ids || !(client_channel.ids.sysadmin || client_channel.ids.csr)) {
             continue;
           }
         }
@@ -1158,6 +1159,7 @@ export class ChannelServer {
     let crash_dump = {
       err: inspect(e).split('\n'),
       perf_counters: perfCounterHistory(),
+      data_errors: dataErrorQueueGet(),
     };
     function addPacketLog(receiver, key) {
       if (receiver.pkt_log) {

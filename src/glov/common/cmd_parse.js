@@ -23,11 +23,26 @@ export function defaultHandler(err, resp) {
   }
 }
 
-function checkAccess(access, list) {
+function checkAccess(access, implied_access, list) {
   if (list) {
+    if (!access) {
+      return false;
+    }
     for (let ii = 0; ii < list.length; ++ii) {
-      if (!access || !access[list[ii]]) {
-        return false;
+      let role = list[ii];
+      if (!access[role]) {
+        // Check for access via implied access
+        let ok = false;
+        for (let my_role in access) {
+          let extra = implied_access[my_role];
+          if (extra && extra[role]) {
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) {
+          return false;
+        }
       }
     }
   }
@@ -53,6 +68,9 @@ function CmdParse(params) {
     func: this.cmdList.bind(this),
     access_show: ['hidden'],
   });
+  this.implied_access = {
+    sysadmin: { csr: true },
+  };
 }
 CmdParse.prototype.cmdList = function (str, resp_func) {
   if (!this.cmd_list) {
@@ -90,7 +108,7 @@ CmdParse.prototype.setDefaultHandler = function (fn) {
   this.default_handler = fn;
 };
 CmdParse.prototype.checkAccess = function (access_list) {
-  return checkAccess(this.last_access, access_list);
+  return checkAccess(this.last_access, this.implied_access, access_list);
 };
 CmdParse.prototype.handle = function (self, str, resp_func) {
   resp_func = resp_func || this.default_handler;
@@ -103,7 +121,7 @@ CmdParse.prototype.handle = function (self, str, resp_func) {
   let cmd = canonical(m[1]);
   let cmd_data = this.cmds[cmd];
   this.last_access = self && self.access;
-  if (cmd_data && !checkAccess(this.last_access, cmd_data.access_run)) {
+  if (cmd_data && !this.checkAccess(cmd_data.access_run)) {
     // this.was_not_found = true;
     resp_func(`Access denied: "${m[1]}"`);
     return false;
@@ -127,6 +145,9 @@ CmdParse.prototype.register = function (param) {
   let help_lower = String(help || '').toLowerCase();
   if (help_lower.includes('(admin)')) {
     assert(access_run && access_run.includes('sysadmin'));
+  }
+  if (help_lower.includes('(csr)')) {
+    assert(access_run && access_run.includes('csr'));
   }
   if (help_lower.includes('(hidden)')) {
     assert(access_show && access_show.length);
@@ -183,9 +204,9 @@ CmdParse.prototype.registerValue = function (cmd, param) {
       }
       if (init_value !== undefined) {
         param.set(init_value);
-      }
-      if (param.on_change) {
-        param.on_change(true);
+        if (param.on_change) {
+          param.on_change(true);
+        }
       }
     }
   }
@@ -354,12 +375,13 @@ CmdParse.prototype.autoComplete = function (str, access) {
   let list = [];
   str = str.split(' ');
   let first_tok = canonical(str[0]);
+  this.last_access = access;
   for (let cname in this.cmds_for_complete) {
     if (str.length === 1 && cname.slice(0, first_tok.length) === first_tok ||
       str.length > 1 && cname === first_tok
     ) {
       let cmd_data = this.cmds_for_complete[cname];
-      if (checkAccess(access, cmd_data.access_show) && checkAccess(access, cmd_data.access_run)) {
+      if (this.checkAccess(cmd_data.access_show) && this.checkAccess(cmd_data.access_run)) {
         list.push({
           cname,
           cmd: cmd_data.name,

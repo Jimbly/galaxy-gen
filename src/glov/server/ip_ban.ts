@@ -118,13 +118,13 @@ export function ipBanInit(): void {
     on_data: ipBanOnData,
     cmds: [{
       cmd: 'ipban',
-      help: 'List or add to IP bans',
+      help: '(CSR) List or add to IP bans',
       usage: 'List bans: /ipban\n' +
         'Add an IP ban: /ipban IP [DAYS]\n' +
         '    DAYS defaults to 90, can be fractional (e.g. 0.25 = 6 hours)\n' +
         'Delete an IP ban: /ipban IP -1\n',
       prefix_usage_with_help: true,
-      access_run: ['sysadmin'],
+      access_run: ['csr'],
       func: cmdIPBan,
     }],
   });

@@ -23,7 +23,7 @@ function DataStoreLimited(actual_ds, limit_time, set_delay_time, get_delay_time)
   this.per_obj_state = {};
 }
 
-export function create(actual_ds, limit_time, set_delay_time, get_delay_time) {
+export function dataStoreLimitedCreate(actual_ds, limit_time, set_delay_time, get_delay_time) {
   return new DataStoreLimited(actual_ds, limit_time, set_delay_time, get_delay_time);
 }
 

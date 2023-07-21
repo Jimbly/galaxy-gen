@@ -31,8 +31,10 @@ import {
   ErrorCallback,
   NetErrorCallback,
   NetResponseCallback,
+  isDataObject,
 } from 'glov/common/types';
 import { callEach, logdata, nop } from 'glov/common/util';
+import { entityServerDefaultLoadPlayerEntity, entity_field_defs } from 'glov/server/entity_base_server';
 import { ChannelWorker } from './channel_worker.js';
 import { ChattableWorker } from './chattable_worker.js';
 import {
@@ -95,27 +97,29 @@ function visibleAreaInit<
     if (err) {
       delete sem.visible_areas[vaid];
     }
-    callEach(va2.loading, va2.loading = null, err);
+    callEach(va2.loading, va2.loading = null, err || null);
   }
   sem.vaAddToUnseenSet(vaid, va);
-  sem.worker.log(`Initializing VisibleArea ${vaid}: Loading existing entities`);
+  if (ENTITY_LOG_VERBOSE) {
+    sem.worker.debug(`Initializing VisibleArea ${vaid}: Loading existing entities`);
+  }
   sem.load_func(sem.worker, vaid, function (err?: string, ent_data?: DataObject[]) {
     if (err) {
       return void done(err);
     }
     if (!ent_data) {
       // initial load of VA
-      sem.worker.log(`Initializing VisibleArea ${vaid}: No existing data, asking worker to initialize`);
+      sem.worker.debug(`Initializing VisibleArea ${vaid}: No existing data, asking worker to initialize`);
       // Want to at least save an empty ent_data[] so that the next load is not consider initial
       sem.visible_areas_need_save[vaid] = true;
       sem.emit('visible_area_init', vaid);
     } else {
-      sem.worker.log(`Initializing VisibleArea ${vaid}: Loaded ${ent_data.length} entities`);
+      if (ENTITY_LOG_VERBOSE || ent_data.length) {
+        sem.worker.debug(`Initializing VisibleArea ${vaid}: Loaded ${ent_data.length} entities`);
+      }
       for (let ii = 0; ii < ent_data.length; ++ii) {
         // Same as addEntityFromSerialized(), but does not flag `visible_areas_need_save`
-        let ent_id = ++sem.last_ent_id;
-        let ent = new sem.EntityCtor(ent_id, sem) as Entity;
-        ent.fromSerialized(ent_data[ii]);
+        let ent = sem.createEntity(ent_data[ii]);
         ent.fixupPostLoad();
         // Dirty flag should not be set: anyone who sees this VA must be waiting to send
         // initial ents anyway, do not need to send this entity to anyone
@@ -193,7 +197,7 @@ function loadPlayerEntity<
   sem.player_uid_to_client[player_uid] = client;
   client.player_uid = player_uid;
   client.loading = true;
-  sem.EntityCtor.loadPlayerEntityImpl(sem, src, join_payload, player_uid, (err?: string | null, ent?: Entity) => {
+  sem.load_player_func(sem, src, join_payload, player_uid, (err?: string | null, ent?: Entity) => {
     client.loading = false;
     if (err || client.left_while_loading) {
       if (ent) {
@@ -211,13 +215,16 @@ function loadPlayerEntity<
       sem.clientRemoveEntityInternal(client, 'left_while_loading');
       return void cb(null, 0);
     }
-    let ent_id = ++sem.last_ent_id;
-    ent.id = /*ent.data.id = */ent_id;
+    assert(ent.id > 0);
     // ent.user_id = user_id; // not currently needed, but might be generally useful?
     ent.player_uid = player_uid;
-    ent.is_player = true;
+    if (!ent.is_player) {
+      // If the caller is using a TraitFactory, this should already be true on
+      //   the prototype, if not, add it to the object.
+      ent.is_player = true;
+    }
     client.ever_had_ent_id = true;
-    client.ent_id = ent_id;
+    client.ent_id = ent.id;
     ent.fixupPostLoad();
 
     sem.addEntityInternal(ent);
@@ -225,7 +232,7 @@ function loadPlayerEntity<
     // Add to dirty list so full update gets sent to all subscribers
     addToDirtyList(sem, ent);
 
-    cb(null, ent_id);
+    cb(null, ent.id);
   });
 }
 
@@ -255,21 +262,48 @@ function toSerializedStorage(ent: EntityBaseServer): DataObject {
 }
 
 export function entityManagerDefaultSaveEnts(
+  serialized_ent_version: number,
   worker: ChannelWorker,
   vaid: VAID,
   ent_data: DataObject[],
   done: () => void,
 ): void {
   worker.debug(`Saving ${ent_data.length} ent(s) for VA ${vaid}`);
-  worker.setBulkChannelData(`ents.${vaid}`, ent_data, done);
+  let ser_data = {
+    ver: serialized_ent_version,
+    ents: ent_data,
+  };
+  worker.setBulkChannelData(`ents.${vaid}`, ser_data, done);
 }
 
 export function entityManagerDefaultLoadEnts(
+  serialized_ent_version: number,
   worker: ChannelWorker,
   vaid: VAID,
   cb: (err?: string, ent_data?: DataObject[]) => void,
 ): void {
-  worker.getBulkChannelData(`ents.${vaid}`, null, cb);
+  worker.getBulkChannelData(`ents.${vaid}`, null, function (err?: string, data?: unknown) {
+    if (err) {
+      return cb(err);
+    }
+    if (!data) {
+      return cb();
+    }
+    if (Array.isArray(data)) {
+      data = {
+        ver: 0,
+        ents: data,
+      };
+    }
+    assert(isDataObject(data));
+    assert(typeof data.ver === 'number');
+    if (data.ver !== serialized_ent_version) {
+      worker.debug(`Dropping old version (${data.ver}) ents for VisibleArea ${vaid}`);
+      return cb();
+    }
+    assert(Array.isArray(data.ents));
+    cb(undefined, data.ents);
+  });
 }
 
 
@@ -307,7 +341,14 @@ class SEMClientImpl {
   }
 }
 
-export type EntSaveFunc <
+export type EntCreateFunc<
+  Entity extends EntityBaseServer,
+  Worker extends EntityManagerReadyWorker<Entity, Worker>,
+> = (
+  data: DataObject,
+) => Entity;
+
+export type EntSaveFunc<
   Entity extends EntityBaseServer,
   Worker extends EntityManagerReadyWorker<Entity, Worker>,
 > = (
@@ -317,7 +358,7 @@ export type EntSaveFunc <
   done: () => void,
 ) => void;
 
-export type EntLoadFunc <
+export type EntLoadFunc<
   Entity extends EntityBaseServer,
   Worker extends EntityManagerReadyWorker<Entity, Worker>,
 > = (
@@ -326,17 +367,30 @@ export type EntLoadFunc <
   cb: (err?: string, ent_data?: DataObject[]) => void,
 ) => void;
 
+export type EntLoadPlayerFunc<
+  Entity extends EntityBaseServer,
+  Worker extends EntityManagerReadyWorker<Entity, Worker>,
+> = (
+  sem: ServerEntityManager<Entity, Worker>,
+  src: ClientHandlerSource,
+  join_payload: JoinPayload,
+  player_uid: string,
+  cb: NetErrorCallback<Entity>,
+) => void;
+
 export interface ServerEntityManagerOpts<
   Entity extends EntityBaseServer,
   Worker extends EntityManagerReadyWorker<Entity, Worker>,
 > {
   worker: Worker;
-  EntityCtor: typeof EntityBaseServer;
+  create_func: EntCreateFunc<Entity, Worker>;
   max_ents_per_tick?: number;
   va_unload_time?: number;
   save_time?: number;
   load_func?: EntLoadFunc<Entity, Worker>;
   save_func?: EntSaveFunc<Entity, Worker>;
+  load_player_func?: EntLoadPlayerFunc<Entity, Worker>;
+  serialized_ent_version?: number;
 }
 
 export type ServerEntityManager<
@@ -360,8 +414,6 @@ class ServerEntityManagerImpl<
   implements EntityManager<Entity>
 { // eslint-disable-line brace-style
   worker: Worker;
-  EntityCtor: typeof EntityBaseServer;
-  field_defs: Partial<Record<string, EntityFieldDef>>;
   field_defs_by_id: (EntityFieldDef|null)[];
 
   last_ent_id: EntityID = 0;
@@ -378,8 +430,10 @@ class ServerEntityManagerImpl<
   max_ents_per_tick: number;
   va_unload_time: number;
   save_time: number;
+  create_func: EntCreateFunc<Entity, Worker>;
   load_func: EntLoadFunc<Entity, Worker>;
   save_func: EntSaveFunc<Entity, Worker>;
+  load_player_func: EntLoadPlayerFunc<Entity, Worker>;
   schema: EntityManagerSchema;
   all_client_fields: DirtyFields;
   mem_usage = {
@@ -401,19 +455,20 @@ class ServerEntityManagerImpl<
     super();
     this.worker = options.worker;
     (this.worker.default_mem_usage as DataObject).entity_manager = this.mem_usage;
-    this.EntityCtor = options.EntityCtor;
-    this.field_defs = this.EntityCtor.prototype.field_defs;
+    this.create_func = options.create_func;
     this.max_ents_per_tick = options.max_ents_per_tick || 100;
     this.va_unload_time = options.va_unload_time || 10000;
     this.save_time = options.save_time || 10000;
-    this.load_func = options.load_func || entityManagerDefaultLoadEnts;
-    this.save_func = options.save_func || entityManagerDefaultSaveEnts;
+    this.load_func = options.load_func || entityManagerDefaultLoadEnts.bind(null, options.serialized_ent_version || 0);
+    this.save_func = options.save_func || entityManagerDefaultSaveEnts.bind(null, options.serialized_ent_version || 0);
+    this.load_player_func = options.load_player_func || entityServerDefaultLoadPlayerEntity.bind(null, {}) as
+      EntLoadPlayerFunc<Entity, Worker>;
     this.schema = [];
     this.all_client_fields = {};
     this.field_defs_by_id = [null];
-    let { field_defs, all_client_fields, field_defs_by_id } = this;
-    for (let key in field_defs) {
-      let field_def = field_defs[key]!;
+    let { all_client_fields, field_defs_by_id } = this;
+    for (let key in entity_field_defs) {
+      let field_def = entity_field_defs[key]!;
       if (!field_def.server_only) {
         assert(field_def.field_id);
         let index = field_def.field_id - EntityFieldSpecial.MAX;
@@ -511,6 +566,10 @@ class ServerEntityManagerImpl<
     });
   }
 
+  numClients(): number {
+    return this.mem_usage.clients.count;
+  }
+
   clientJoin(
     src: ClientHandlerSource,
     player_uid: string | null,
@@ -602,16 +661,26 @@ class ServerEntityManagerImpl<
     });
   }
 
-  deleteEntityInternal(ent: Entity): void {
-    // Note: unloadVA also deletes entities in a similar way
-    let { entities: sem_entities } = this;
-    let { current_vaid, id: ent_id } = ent;
-    let va = this.visible_areas[current_vaid];
-    assert(va);
+  deleteEntityFinish(va: VARecord<Entity>, ent: Entity): void {
+    let { id: ent_id } = ent;
     let { entities: va_entities } = va;
+    let { entities: sem_entities } = this;
+    if (ent.in_dirty_list) {
+      let idx = this.dirty_list.indexOf(ent);
+      assert(idx !== -1);
+      this.dirty_list.splice(idx, 1);
+      ent.in_dirty_list = false;
+    }
     delete sem_entities[ent_id];
     delete va_entities[ent_id];
     this.mem_usage.entities.count--;
+  }
+
+  deleteEntityInternal(ent: Entity): void {
+    let { current_vaid } = ent;
+    let va = this.visible_areas[current_vaid];
+    assert(va);
+    this.deleteEntityFinish(va, ent);
   }
 
   deleteEntity(ent_id: EntityID, reason: string): void {
@@ -619,11 +688,12 @@ class ServerEntityManagerImpl<
     let ent = this.entities[ent_id];
     assert(ent);
     let { last_vaid } = ent;
-    assert(last_vaid !== undefined);
-    let dels = this.ent_deletes[last_vaid] = this.ent_deletes[last_vaid] || [];
-    dels.push([ent_id, reason]);
-    if (!ent.is_player) {
-      this.visible_areas_need_save[last_vaid] = true;
+    if (last_vaid !== undefined) { // has had an update sent
+      let dels = this.ent_deletes[last_vaid] = this.ent_deletes[last_vaid] || [];
+      dels.push([ent_id, reason]);
+      if (!ent.is_player) {
+        this.visible_areas_need_save[last_vaid] = true;
+      }
     }
 
     this.deleteEntityInternal(ent);
@@ -643,11 +713,17 @@ class ServerEntityManagerImpl<
     this.mem_usage.entities.count++;
   }
 
+  createEntity(data: DataObject): Entity {
+    let ent = this.create_func(data);
+    ent.id = ++this.last_ent_id;
+    ent.entity_manager = this;
+    ent.finishCreation();
+    return ent;
+  }
+
   addEntityFromSerialized(data: DataObject): void {
-    let ent_id = ++this.last_ent_id;
-    let ent = new this.EntityCtor(ent_id, this) as Entity;
+    let ent = this.createEntity(data);
     assert(!ent.is_player);
-    ent.fromSerialized(data);
     ent.fixupPostLoad();
 
     this.addEntityInternal(ent);
@@ -835,7 +911,6 @@ class ServerEntityManagerImpl<
     assert(!this.visible_areas_need_save[vaid]);
     assert(!this.visible_area_broadcasts[vaid]);
     let { entities: va_entities } = va;
-    let { entities: sem_entities } = this;
     let count = 0;
     for (let ent_id_string in va_entities) {
       let ent = va_entities[ent_id_string]!;
@@ -845,10 +920,7 @@ class ServerEntityManagerImpl<
       let { current_vaid, last_vaid } = ent;
       assert.equal(current_vaid, vaid);
       assert.equal(current_vaid, last_vaid); // Shouldn't be mid-move if this is getting unloaded!
-      // inlined to avoid re-looking up the VA every time: this.deleteEntityInternal(ent);
-      delete sem_entities[ent_id_string];
-      delete va_entities[ent_id_string];
-      this.mem_usage.entities.count--;
+      this.deleteEntityFinish(va, ent);
       ++count;
     }
     delete this.visible_areas[vaid];
@@ -1098,7 +1170,7 @@ class ServerEntityManagerImpl<
   }
 
   private addFullEntToPacket(pak: Packet, debug_out: string[] | null, ent: Entity): void {
-    let { field_defs, all_client_fields } = this;
+    let { all_client_fields } = this;
     pak.writeU8(EntityUpdateCmd.Full);
     pak.writeInt(ent.id);
 
@@ -1106,7 +1178,7 @@ class ServerEntityManagerImpl<
     let debug: string[] | null = debug_out ? [] : null;
 
     for (let field in all_client_fields) {
-      let field_def = field_defs[field];
+      let field_def = entity_field_defs[field];
       assert(field_def);
       let { field_id, sub, encoder, default_value } = field_def;
       assert(typeof field_id === 'number');
@@ -1124,7 +1196,7 @@ class ServerEntityManagerImpl<
           for (let index = 0; index < value.length; ++index) {
             pak.writeInt(index + 1);
             let sub_value = value[index];
-            encoder(ent, pak, sub_value);
+            encoder(ent, pak, sub_value, false);
           }
           pak.writeInt(0);
         } else { // EntityFieldSub.Record
@@ -1134,7 +1206,7 @@ class ServerEntityManagerImpl<
             let key = keys[ii];
             let sub_value = (value as DataObject)[key];
             pak.writeAnsiString(key);
-            encoder(ent, pak, sub_value);
+            encoder(ent, pak, sub_value, false);
           }
           pak.writeAnsiString('');
         }
@@ -1143,7 +1215,7 @@ class ServerEntityManagerImpl<
           debug.push(field);
         }
         pak.writeInt(field_id);
-        encoder(ent, pak, value);
+        encoder(ent, pak, value, false);
       }
     }
     if (debug_out) {
@@ -1153,7 +1225,6 @@ class ServerEntityManagerImpl<
   }
 
   private addDiffToPacket(per_va: PerVAUpdate, ent: Entity): boolean {
-    let { field_defs } = this;
     let data: DataObject = ent.data;
     let wrote_header = false;
     let pak!: Packet; // Initialized with wrote_header
@@ -1166,7 +1237,7 @@ class ServerEntityManagerImpl<
 
 
     for (let field in dirty_fields) {
-      let field_def = field_defs[field];
+      let field_def = entity_field_defs[field];
       assert(field_def);
       let { server_only, field_id, sub, encoder, default_value } = field_def;
       if (server_only) {
@@ -1201,7 +1272,7 @@ class ServerEntityManagerImpl<
               assert(isFinite(index));
               pak.writeInt(index + 1);
               let sub_value = value[index];
-              encoder(ent, pak, sub_value);
+              encoder(ent, pak, sub_value, true);
             }
           }
           pak.writeInt(0);
@@ -1210,7 +1281,7 @@ class ServerEntityManagerImpl<
           for (let key in dirty_sub) {
             let sub_value = (value as DataObject)[key];
             pak.writeAnsiString(key);
-            encoder(ent, pak, sub_value);
+            encoder(ent, pak, sub_value, true);
           }
           pak.writeAnsiString('');
         }
@@ -1220,7 +1291,7 @@ class ServerEntityManagerImpl<
           pak.writeInt(field_id);
         } else {
           pak.writeInt(field_id);
-          encoder(ent, pak, value);
+          encoder(ent, pak, value, true);
         }
       }
     }
@@ -1453,6 +1524,28 @@ class ServerEntityManagerImpl<
     }
     return ret;
   }
+
+  entitiesReload(predicate?: (ent: Entity) => boolean): Entity[] {
+    let ret: Entity[] = [];
+    // TODO: destroy and recreate all existing entities under new IDs, except for players?
+    // let { entities } = this;
+    // for (let ent_id_string in entities) {
+    //   let ent = entities[ent_id_string]!;
+    //   if (predicate && !predicate(ent)) {
+    //     continue;
+    //   }
+    //   let new_ent = this.create_func(ent.data);
+    //   new_ent.id = ent.id;
+    //   new_ent.entity_manager = this;
+    //   // Invalidate old ent
+    //   ent.id = 0;
+    //   ent.entity_manager = null!;
+    //   entities[ent_id_string] = new_ent;
+    //   ret.push(new_ent);
+    // }
+    return ret;
+  }
+
 }
 
 export function createServerEntityManager<
@@ -1473,9 +1566,11 @@ export function entityManagerChatDecorateData<
   data_broadcast: ChatMessageDataBroadcast,
 ): void {
   if (data_broadcast.client_id) {
-    let client = worker.entity_manager.getClient(data_broadcast.client_id);
-    if (client && client.ent_id) {
-      data_broadcast.ent_id = client.ent_id;
+    if (worker.entity_manager.hasClient(data_broadcast.client_id)) {
+      let client = worker.entity_manager.getClient(data_broadcast.client_id);
+      if (client.ent_id) {
+        data_broadcast.ent_id = client.ent_id;
+      }
     }
   }
 }

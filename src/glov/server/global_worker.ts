@@ -19,7 +19,7 @@ export class GlobalWorker extends ChannelWorker {
     if (!isClientHandlerSource(src)) {
       return null;
     }
-    if (!src.sysadmin) {
+    if (!src.sysadmin && !src.csr) {
       return 'ERR_ACCESS_DENIED';
     }
     return null;
@@ -33,7 +33,7 @@ let inited = false;
 export function globalWorkerAddCmd(cmd_def: CmdDef): void {
   assert(!inited);
   assert(!global_worker_cmds.find((e) => e.cmd === cmd_def.cmd));
-  assert(cmd_def.access_run && cmd_def.access_run.includes('sysadmin'));
+  assert(cmd_def.access_run && (cmd_def.access_run.includes('sysadmin') || cmd_def.access_run.includes('csr')));
   global_worker_cmds.push(cmd_def);
 }
 

@@ -36,6 +36,9 @@ export function alphaDraw() {
   }
   list.length = 0;
   dynGeomDrawAlpha(); // TODO: merge sort with `list`
+
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
 }
 
 export function alphaDrawListSize() {

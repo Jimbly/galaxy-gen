@@ -26,7 +26,7 @@ import { ExternalUserInfo } from './external_user_info';
 import * as input from './input';
 import { netDisconnected, netSubs } from './net';
 import { Sprite, spriteCreate } from './sprites';
-import * as textures from './textures';
+import { textureLoad } from './textures';
 
 declare let gl: WebGLRenderingContext | WebGL2RenderingContext;
 
@@ -373,7 +373,7 @@ export function getUserProfileImage(user_id: string): UserProfileImage {
   }
 
   if (url) {
-    let tex = textures.load({
+    let tex = textureLoad({
       url: url,
       filter_min: gl.LINEAR_MIPMAP_LINEAR,
       filter_mag: gl.LINEAR,
@@ -395,11 +395,15 @@ export function setDefaultUserProfileImage(image: UserProfileImage): void {
   default_profile_image = image;
 }
 
-let external_user_info_providers = Object.create(null);
+let external_user_info_providers: Partial<Record<string, {
+  get_current_user?: (cb: ErrorCallback<ExternalUserInfo>) => void;
+  get_friends?: (cb: ErrorCallback<ExternalUserInfo[]>) => void;
+}>> = {};
+
 export function registerExternalUserInfoProvider(
   provider: string,
-  get_current_user: ((cb: ErrorCallback<ExternalUserInfo>) => void) | null,
-  get_friends: ((cb: ErrorCallback<ExternalUserInfo[]>) => void) | null,
+  get_current_user?: (cb: ErrorCallback<ExternalUserInfo>) => void,
+  get_friends?: (cb: ErrorCallback<ExternalUserInfo[]>) => void,
 ): void {
   if (get_current_user || get_friends) {
     assert(!friend_list);
@@ -430,7 +434,7 @@ export function socialInit(): void {
 
       // Sync friend list with external providers' friends
       for (const provider in external_user_info_providers) {
-        let { get_current_user, get_friends } = external_user_info_providers[provider];
+        let { get_current_user, get_friends } = external_user_info_providers[provider]!;
         if (get_current_user) {
           requestExternalCurrentUser(provider, get_current_user);
         }

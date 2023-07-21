@@ -9,7 +9,7 @@ import {
   ClientHandlerSource,
   ErrorCallback,
 } from 'glov/common/types';
-import { sanitize } from 'glov/common/util';
+import { sanitize, secondsToFriendlyString } from 'glov/common/util';
 import { ChannelWorker } from './channel_worker';
 
 const CHAT_MAX_LEN = 1024; // Client must be set to this or fewer
@@ -17,14 +17,16 @@ const CHAT_USER_FLAGS = 0x1;
 const CHAT_MAX_MESSAGES = 50;
 
 const CHAT_COOLDOWN_DATA_KEY = 'public.chat_cooldown';
+const CHAT_MINIMUM_ACCOUNT_AGE_KEY = 'public.chat_minimum_account_age';
 const CHAT_DATA_KEY = 'private.chat';
 
 export interface ChattableWorker extends ChannelWorker {
   chat_msg_timestamps?: FIFO< { timestamp: number; id: string }>;
   chat_records_map?: Partial<Record<string, { timestamp: number; id: string }>>;
-  chatFilter?: (source: ClientHandlerSource, msg: string) => string | null;
-  chatDecorateData?: (data_saved: ChatMessageDataSaved, data_broadcast: ChatMessageDataBroadcast) => void;
-  chatCooldownFilter?: (source: ClientHandlerSource) => boolean;
+  chatFilter?(source: ClientHandlerSource, msg: string): string | null;
+  chatDecorateData?(data_saved: ChatMessageDataSaved, data_broadcast: ChatMessageDataBroadcast): void;
+  chatCooldownFilter?(source: ClientHandlerSource): boolean;
+  chatMinimumAccountAgeFilter?(source: ClientHandlerSource): number;
 }
 
 export function chatGetCooldown(worker: ChannelWorker): number {
@@ -34,6 +36,15 @@ export function chatGetCooldown(worker: ChannelWorker): number {
 export function chatSetCooldown(worker: ChannelWorker, seconds: number): void {
   assert(seconds >= 0);
   worker.setChannelData(CHAT_COOLDOWN_DATA_KEY, seconds);
+}
+
+export function chatGetMinimumAccountAge(worker: ChannelWorker): number {
+  return worker.getChannelData(CHAT_MINIMUM_ACCOUNT_AGE_KEY, 0);
+}
+
+export function chatSetMinimumAccountAge(worker: ChannelWorker, minutes: number): void {
+  assert(minutes >= 0);
+  worker.setChannelData(CHAT_MINIMUM_ACCOUNT_AGE_KEY, minutes);
 }
 
 export function chatGet(worker: ChannelWorker): ChatHistoryData | null {
@@ -85,6 +96,26 @@ export function sendChat(
   return null;
 }
 
+function denyChat(
+  worker: ChattableWorker,
+  source: ChatIDs,
+  err: string,
+  msg: string,
+  time_left?: string | number
+): string {
+  let { user_id, channel_id, display_name } = source; // user_id is falsey if not logged in
+  let id = user_id || channel_id;
+  worker.logSrc(source,
+    `suppressed chat from ${id} ("${display_name}") (${channel_id}) (${err}): ${JSON.stringify(msg)}`);
+  if (err === 'ERR_ACCOUNT_AGE') {
+    return `Your account is too recent to chat in this world. Wait ${time_left} before writing again.`;
+  }
+  if (err === 'ERR_COOLDOWN') {
+    return `This world has chat slow mode enabled. Wait ${time_left} seconds before writting again.`;
+  }
+  return err;
+}
+
 function chatReceive(
   worker: ChattableWorker,
   source: ChatIDs,
@@ -107,11 +138,23 @@ function chatReceive(
   if (worker.chatFilter) {
     let err = worker.chatFilter(source, msg);
     if (err) {
-      worker.logSrc(source,
-        `denied chat from ${id} ("${display_name}") (${channel_id}) (${err}): ${JSON.stringify(msg)}`);
-      return err;
+      return denyChat(worker, source, err, msg);
     }
   }
+
+  let ts = Date.now();
+  let minimum_account_age_minutes = chatGetMinimumAccountAge(worker);
+  let acc_creation_ts;
+  if (minimum_account_age_minutes && (worker.chatMinimumAccountAgeFilter &&
+    (acc_creation_ts = worker.chatMinimumAccountAgeFilter(source)))) { // Chat minimum account age
+    let time_elapsed_seconds = Math.floor((ts - acc_creation_ts) * 0.001);
+    if (time_elapsed_seconds < minimum_account_age_minutes * 60) {
+      let seconds_left = minimum_account_age_minutes * 60 - time_elapsed_seconds;
+      let time_left = seconds_left < 60 ? `${seconds_left} seconds` : secondsToFriendlyString(seconds_left);
+      return denyChat(worker, source, 'ERR_ACCOUNT_AGE', msg, time_left);
+    }
+  }
+
   if (!worker.chat_msg_timestamps) {
     worker.chat_msg_timestamps = fifoCreate();
   }
@@ -120,7 +163,6 @@ function chatReceive(
   }
   let cooldown = chatGetCooldown(worker);
   if (cooldown && (!worker.chatCooldownFilter || worker.chatCooldownFilter(source))) { // Chat slow mode
-    let ts = Date.now();
     let cooldown_time = cooldown * 1000;
     let record;
     while ((record = worker.chat_msg_timestamps.peek())) {
@@ -135,7 +177,7 @@ function chatReceive(
     if (last) {
       let time_elapsed = ts - last.timestamp;
       let time_left = Math.ceil(cooldown - time_elapsed * 0.001);
-      return `This world has chat slow mode enabled. Wait ${time_left} seconds before writting again.`;
+      return denyChat(worker, source, 'ERR_COOLDOWN', msg, time_left);
     }
     last = worker.chat_records_map[id] = {
       timestamp: ts,
@@ -145,9 +187,7 @@ function chatReceive(
   }
   let err = sendChat(worker, id, client_id, display_name, flags, msg);
   if (err) {
-    worker.logSrc(source,
-      `suppressed chat from ${id} ("${display_name}") (${channel_id}) (${err}): ${JSON.stringify(msg)}`);
-    return err;
+    return denyChat(worker, source, err, msg);
   }
   // Log entire, non-truncated chat string
   worker.logSrc(source, `chat from ${id} ("${display_name}") (${channel_id}): ${JSON.stringify(msg)}`);

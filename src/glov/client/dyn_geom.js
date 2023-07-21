@@ -8,6 +8,7 @@ export const FACE_XYZ = 1<<1;
 export const FACE_FRUSTUM = 1<<2;
 export const FACE_CAMERA = 1<<3;
 export const FACE_DEFAULT = FACE_XY|FACE_FRUSTUM;
+export const FACE_CUSTOM = 1<<4;
 
 
 const DYN_VERT_SIZE = 4*3;
@@ -30,15 +31,19 @@ const engine = require('./engine.js');
 const { engineStartupFunc, setGlobalMatrices } = engine;
 const geom = require('./geom.js');
 const { ceil, max, min } = Math;
-const shaders = require('./shaders.js');
+const {
+  SEMANTIC,
+  shaderCreate,
+  shadersBind,
+  shadersPrelink,
+} = require('./shaders.js');
 const sprites = require('./sprites.js');
 const {
   BLEND_ALPHA,
   blendModeReset,
   blendModeSet,
 } = sprites;
-const textures = require('./textures.js');
-const { cmpTextureArray } = textures;
+const { textureCmpArray, textureBindArray } = require('./textures.js');
 
 let mat_vp;
 let mat_view = mat4();
@@ -172,7 +177,9 @@ let cam_down = vec3();
 let cam_pos = vec3();
 let right = vec3();
 let forward = vec3();
+let look_at_called = false;
 export function dynGeomLookAt(cam_pos_in, target_pos, up_in) {
+  look_at_called = true;
   v3copy(cam_pos, cam_pos_in);
   v3copy(up, up_in);
   v3scale(down, up, -1);
@@ -190,6 +197,7 @@ let temp = vec3();
 const xaxis = vec3(1,0,0);
 let target_right = vec3();
 export function dynGeomSpriteSetup(params) {
+  assert(look_at_called); // Must call dynGeomLookAt each frame!
   let {
     pos, // 3D world position
     shader, shader_params,
@@ -205,7 +213,10 @@ export function dynGeomSpriteSetup(params) {
 
   let my_right;
   let my_down;
-  if (facing & FACE_XY) {
+  if (facing === FACE_CUSTOM) {
+    my_right = params.face_right;
+    my_down = params.face_down;
+  } else if (facing & FACE_XY) {
     my_right = right;
     my_down = down;
   } else if (facing & FACE_XYZ) {
@@ -361,14 +372,14 @@ function commitAndFlush() {
     let batch = batches[ii];
     let { state, start, end } = batch;
     if (last_bound_shader !== state.shader || last_bound_vshader !== state.vshader || state.shader_params) {
-      shaders.bind(state.vshader, state.shader, state.shader_params || sprite3d_shader_params);
+      shadersBind(state.vshader, state.shader, state.shader_params || sprite3d_shader_params);
       last_bound_shader = state.shader;
       last_bound_vshader = state.vshader;
     }
     if (do_blending) {
       blendModeSet(state.blend);
     }
-    textures.bindArray(state.texs);
+    textureBindArray(state.texs);
     ++geom_stats.draw_calls_dyn;
     gl.drawElements(sprite_geom.mode, end - start, gl.UNSIGNED_SHORT, start * 2);
   }
@@ -387,9 +398,9 @@ function drawSetup(do_blend) {
   if (!sprite_geom) {
     sprite_geom = geom.create([
       // needs to be multiple of 4 elements, for best performance
-      [shaders.semantic.POSITION, gl.FLOAT, 4, false], // 1 unused
-      [shaders.semantic.COLOR, gl.FLOAT, 4, false],
-      [shaders.semantic.TEXCOORD, gl.FLOAT, 4, false], // 2 unused
+      [SEMANTIC.POSITION, gl.FLOAT, 4, false], // 1 unused
+      [SEMANTIC.COLOR, gl.FLOAT, 4, false],
+      [SEMANTIC.TEXCOORD, gl.FLOAT, 4, false], // 2 unused
     ], [], [], geom.TRIANGLES);
     sprite_buffer_vert = new Float32Array(1024);
     sprite_buffer_idx = new Uint16Array(1024);
@@ -398,7 +409,7 @@ function drawSetup(do_blend) {
 
 function drawElem(elem) {
   if (!batch_state ||
-    cmpTextureArray(elem.texs, batch_state.texs) ||
+    textureCmpArray(elem.texs, batch_state.texs) ||
     elem.shader !== batch_state.shader ||
     elem.vshader !== batch_state.vshader ||
     elem.shader_params !== batch_state.shader_params ||
@@ -471,7 +482,7 @@ function cmpOpaue(a, b) {
   if (d) {
     return d;
   }
-  d = cmpTextureArray(a.texs, b.texs);
+  d = textureCmpArray(a.texs, b.texs);
   if (d) {
     return d;
   }
@@ -498,9 +509,15 @@ export function dynGeomDrawOpaque() {
   queue = buckets[BUCKET_DECAL];
   if (queue.length) {
     queue.sort(cmpOpaue);
-    // TODO: depth write, etc
+    gl.enable(gl.BLEND);
+    gl.depthMask(false); // no depth writes
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(-2, 1);
     queueDraw(true, queue, 0, queue.length);
     queue.length = 0;
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
   }
   profilerStopFunc();
 }
@@ -522,9 +539,9 @@ export function dynGeomDrawAlpha() {
 
 function dynGeomStartup() {
   geom_stats = geom.stats;
-  sprite3d_vshader = shaders.create('shaders/sprite3d.vp');
+  sprite3d_vshader = shaderCreate('shaders/sprite3d.vp');
   sprite_fshader = sprites.sprite_fshader;
-  shaders.prelink(sprite3d_vshader, sprite_fshader);
+  shadersPrelink(sprite3d_vshader, sprite_fshader);
   mat_vp = engine.mat_vp;
 }
 engineStartupFunc(dynGeomStartup);

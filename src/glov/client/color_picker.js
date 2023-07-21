@@ -9,7 +9,7 @@ const { min } = Math;
 const ui = require('./ui.js');
 const { LINE_CAP_SQUARE } = ui;
 const { spriteClipped, spriteClipPause, spriteClipResume, spriteCreate } = require('./sprites.js');
-const textures = require('./textures.js');
+const { TEXTURE_FORMAT } = require('./textures.js');
 const { clamp } = require('glov/common/util.js');
 const { vec3, v3copy, vec4 } = require('glov/common/vmath.js');
 
@@ -55,7 +55,7 @@ function initTextures() {
   picker_sprite_hue_sat = spriteCreate({
     url: 'cpicker_hs',
     width: HS_SIZE, height: HS_SIZE,
-    format: textures.format.RGB8,
+    format: TEXTURE_FORMAT.RGB8,
     data,
     filter_min: gl.LINEAR,
     filter_mag: gl.LINEAR,
@@ -70,7 +70,7 @@ function initTextures() {
   picker_sprite_val = spriteCreate({
     url: 'cpicker_v',
     width: 1, height: data.length,
-    format: textures.format.R8,
+    format: TEXTURE_FORMAT.R8,
     data,
     filter_min: gl.LINEAR,
     filter_mag: gl.LINEAR,

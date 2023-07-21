@@ -66,10 +66,12 @@ export function localStorageSet(key: string, value: unknown): void {
   }
 }
 
-export function localStorageSetJSON(key: string, value: unknown): void {
+export function localStorageSetJSON<T = unknown>(key: string, value: T): void {
   localStorageSet(key, JSON.stringify(value));
 }
 
+export function localStorageGetJSON<T = unknown>(key: string, def: T): T;
+export function localStorageGetJSON<T = unknown>(key: string, def?: T): T | undefined;
 export function localStorageGetJSON<T = unknown>(key: string, def?: T): T | undefined {
   let value = localStorageGet(key);
   if (value === undefined) {
@@ -86,16 +88,16 @@ export function localStorageGetJSON<T = unknown>(key: string, def?: T): T | unde
 export function localStorageClearAll(key_prefix?: string): void {
   let prefix = new RegExp(`^${storage_prefix}_${key_prefix || ''}`, 'u');
   if (lsd) {
-    let keysToRemove = [];
+    let keys_to_remove = [];
     for (let i = 0; i < lsd.length; i++) {
       let key = lsd.key(i);
       assert(key);
       if (key.match(prefix)) {
-        keysToRemove.push(key);
+        keys_to_remove.push(key);
       }
     }
-    for (let i = 0; i < keysToRemove.length; i++) {
-      lsd.removeItem(keysToRemove[i]);
+    for (let i = 0; i < keys_to_remove.length; i++) {
+      lsd.removeItem(keys_to_remove[i]);
     }
   }
   for (let key in lsd_overlay) {
@@ -109,7 +111,7 @@ export type LocalStorageData = Partial<Record<string, string>>;
 
 export function localStorageExportAll(filter_prefix: string): LocalStorageData {
   let obj: LocalStorageData = {};
-  let prefix = new RegExp(`^${storage_prefix}_(${filter_prefix || ''}.*)`, 'u');
+  let prefix = new RegExp(`^${storage_prefix}_(${filter_prefix || ''}.*)`);
   if (lsd) {
     for (let i = 0; i < lsd.length; i++) {
       let key = lsd.key(i);

@@ -10,11 +10,10 @@ import {
   EALF_HAS_ENT_ID,
   EALF_HAS_PAYLOAD,
   EALF_HAS_PREDICATE,
-  EntityFieldDecoder,
+  EntityBaseDataCommon,
   EntityFieldDefCommon,
   EntityFieldEncoder,
   EntityFieldEncoding,
-  EntityFieldEncodingType,
   EntityFieldSpecial,
   EntityFieldSub,
   EntityID,
@@ -22,6 +21,8 @@ import {
   EntityManagerEvent,
   EntityManagerSchema,
   EntityUpdateCmd,
+  entity_field_decoders,
+  entity_field_encoders,
 } from 'glov/common/entity_base_common';
 import { Packet } from 'glov/common/packet';
 import { EventEmitter } from 'glov/common/tiny-events';
@@ -37,19 +38,53 @@ const walltime: () => number = require('./walltime.js');
 
 const { max, min, round } = Math;
 
-interface ClientEntityManagerBaseOpts {
+export type EntCreateFunc<
+  Entity extends EntityBaseClient,
+> = (data: DataObject) => Entity;
+
+interface ClientEntityManagerBaseOpts<Entity extends EntityBaseClient> {
   on_broadcast?: (data: EntityManagerEvent) => void;
-  EntityCtor: typeof EntityBaseClient;
+  create_func: EntCreateFunc<Entity>;
 
   channel?: ClientChannelWorker;
 }
 
-interface ClientEntityManagerOpts extends ClientEntityManagerBaseOpts {
+export interface ClientEntityManagerOpts<Entity extends EntityBaseClient> extends ClientEntityManagerBaseOpts<Entity> {
   channel_type: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ClientEntityManagerInterface = ClientEntityManager<any>;
+export interface ClientEntityManagerInterface<Entity extends EntityBaseClient=any> extends EntityManager<Entity> {
+  reinit(options: Partial<ClientEntityManagerBaseOpts<Entity>>): void;
+  getEnt(ent_id: EntityID): Entity | undefined;
+  hasMyEnt(): boolean;
+  getMyEntID(): EntityID;
+  getMyEnt(): Entity;
+  getSubscriptionId(): string;
+  getSubscriptionIdPrefix(): string;
+  isReady(): boolean;
+  isEntless(): boolean;
+  tick(): void;
+  checkNet(): boolean;
+  isOnline(): boolean;
+
+  // Online only
+  actionSendQueued(
+    action: ClientActionMessageParam<Entity>,
+    resp_func?: NetErrorCallback<unknown>,
+  ): void;
+  actionListFlush(): void;
+  channelSend(msg: string, data?: unknown, resp_func?: NetErrorCallback): void;
+
+  // Offline only
+  addEntityFromSerialized(data: DataObject): Entity;
+  setMyEntID(id: EntityID): void;
+  deleteEntity(ent_id: EntityID, reason: string) : void;
+
+  // EventEmitter:
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on<T extends any[]>(type: string, fn: (...args: T) => void): void;
+}
 
 interface FadingEnt {
   is_out: boolean; // fading out? otherwise, is fading in
@@ -58,14 +93,14 @@ interface FadingEnt {
   countdown_max: number;
 }
 
-interface EntityFieldDefClient extends EntityFieldDefCommon {
+interface EntityFieldDefClient<Entity extends EntityBaseClient> extends EntityFieldDefCommon {
   field_name: string;
   field_id: number;
-  encoder: EntityFieldEncoder<EntityBaseClient>;
+  encoder: EntityFieldEncoder<Entity>;
 }
 
 function entActionAppend<Entity extends EntityBaseClient>(
-  entity_manager: ClientEntityManager<Entity>,
+  entity_manager: ClientEntityManagerImpl<Entity>,
   ent: Entity,
   pak: Packet,
   action_data: ActionMessageParam
@@ -114,23 +149,22 @@ function entActionAppend<Entity extends EntityBaseClient>(
         pak.writeInt(field_id);
       } else {
         pak.writeInt(field_id);
-        // TODO: maybe need an optional non-differential decoder here?
-        encoder(ent, pak, value);
+        encoder(ent, pak, value, false);
       }
     }
     pak.writeInt(EntityFieldSpecial.Terminate);
   }
 }
 
-export type ClientEntityManager<Entity extends EntityBaseClient> =
-  Readonly<ClientEntityManagerImpl<Entity>>; // Really want all non-functions private, not readonly...
 class ClientEntityManagerImpl<
   Entity extends EntityBaseClient
-> extends EventEmitter implements EntityManager<Entity>, ClientEntityManagerBaseOpts {
+> extends EventEmitter implements EntityManager<Entity>,
+    ClientEntityManagerBaseOpts<Entity>,
+    ClientEntityManagerInterface<Entity> {
   my_ent_id!: EntityID;
 
-  on_broadcast!: (data: EntityManagerEvent) => void;
-  EntityCtor!: typeof EntityBaseClient;
+  on_broadcast?: (data: EntityManagerEvent) => void;
+  create_func!: EntCreateFunc<Entity>;
   channel?: ClientChannelWorker;
 
   client_id?: ClientID;
@@ -140,17 +174,17 @@ class ClientEntityManagerImpl<
   entities!: Partial<Record<EntityID, Entity>>;
   fading_ents!: FadingEnt[];
 
-  field_defs?: (EntityFieldDefClient|null)[];
-  field_defs_by_name?: Partial<Record<string, EntityFieldDefClient>>;
-  field_decoders: Partial<Record<EntityFieldEncodingType, EntityFieldDecoder<EntityBaseClient>>>;
-  field_encoders: Partial<Record<EntityFieldEncodingType, EntityFieldEncoder<EntityBaseClient>>>;
+  field_defs?: (EntityFieldDefClient<Entity>|null)[];
+  field_defs_by_name?: Partial<Record<string, EntityFieldDefClient<Entity>>>;
 
   received_ent_ready!: boolean;
   received_ent_start!: boolean;
 
   frame_wall_time: number;
 
-  constructor(options: ClientEntityManagerOpts) {
+  dummy_ent_data?: EntityBaseDataCommon; // Used for a destination of applying diffs before getting a full update
+
+  constructor(options: ClientEntityManagerOpts<Entity>) {
     super();
     assert(options.channel_type);
     netSubs().onChannelMsg(options.channel_type, 'ent_update', this.onEntUpdate.bind(this));
@@ -162,15 +196,13 @@ class ClientEntityManagerImpl<
 
     this.reinit(options);
 
-    this.field_decoders = this.EntityCtor.field_decoders;
-    this.field_encoders = this.EntityCtor.field_encoders;
     this.frame_wall_time = walltime();
   }
 
-  reinit(options: Partial<ClientEntityManagerBaseOpts>): void {
+  reinit(options: Partial<ClientEntityManagerBaseOpts<Entity>>): void {
     this.deinit();
 
-    this.EntityCtor = options.EntityCtor || this.EntityCtor;
+    this.create_func = options.create_func || this.create_func;
     this.on_broadcast = options.on_broadcast || this.on_broadcast;
 
     // Never inheriting this over reinit()
@@ -241,9 +273,11 @@ class ClientEntityManagerImpl<
     return this.received_ent_start;
   }
 
-  // Has received all initial visible entities
-  receivedEntReady(): boolean {
-    return this.received_ent_ready;
+  getSubscriptionId(): string {
+    return this.subscription_id || netClientId();
+  }
+  getSubscriptionIdPrefix(): string {
+    return this.sub_id_prefix;
   }
 
   private onChannelSubscribe(data: unknown): void {
@@ -259,6 +293,7 @@ class ClientEntityManagerImpl<
     if (!this.received_ent_start) {
       return;
     }
+    assert(this.on_broadcast);
     this.on_broadcast(data);
   }
 
@@ -312,37 +347,25 @@ class ClientEntityManagerImpl<
     }
   }
 
-  private getEntityForUpdate(ent_id: EntityID): Entity {
-    let ent = this.entities[ent_id];
-    if (!ent) {
-      ent = this.entities[ent_id] = new this.EntityCtor(ent_id, this) as Entity;
-    }
-    if (ent.fading_out) {
-      // was deleting, but got a new update on it (presumably was out of view, and came back), cancel delete
-      // TODO: start fade in from appropriate value (after getting full update
-      //   later in the packet and calling onCreate)
-      ent.fading_out = false;
-      ent.fade = null;
-      for (let jj = 0; jj < this.fading_ents.length; ++jj) {
-        let fade = this.fading_ents[jj];
-        if (fade.ent_id === ent_id) {
-          ridx(this.fading_ents, jj);
-          break;
-        }
-      }
-    }
-    return ent;
+  deleteEntity(ent_id: EntityID, reason: string) : void {
+    assert(false, 'Offline only');
   }
 
-  private readDiffFromPacket(ent_id: EntityID, pak: Packet): void {
-    let { field_defs, field_decoders } = this;
+  private getEntDataForDiff(ent_id: EntityID): [EntityBaseDataCommon, Entity | null] {
+    let ent = this.entities[ent_id];
+    if (ent) {
+      return [ent.data, ent];
+    }
+    if (!this.dummy_ent_data) {
+      this.dummy_ent_data = this.initializeNewFullEntData();
+    }
+    return [this.dummy_ent_data, null];
+  }
+
+  private readDiffFromPacket(ent_data: EntityBaseDataCommon, pak: Packet): void {
+    let { field_defs } = this;
     assert(field_defs); // should have received this before receiving any diffs!
-    // Get an entity to apply the diff to.  Note: this may allocate an entity
-    //   that did not previously exist, and apply a meaningless diff, but we
-    //   need to do so in order to advance through the packet.  Presumably there's
-    //   a full update for this entity at the end of the packet for us.
-    let ent = this.getEntityForUpdate(ent_id);
-    let data = ent.data as DataObject;
+    let data = ent_data as DataObject;
     let field_id: number;
     while ((field_id = pak.readInt())) {
       let do_default = field_id === EntityFieldSpecial.Default;
@@ -354,7 +377,7 @@ class ClientEntityManagerImpl<
         assert(field_def, `Missing field_def in server-provided schema for field#"${field_id}"`); // catch coding bug
       }
       let { default_value, encoding, field_name, sub } = field_def;
-      let decoder = field_decoders[encoding];
+      let decoder = entity_field_decoders[encoding];
       if (!decoder) {
         assert(decoder, `Missing decoder for type ${field_def.encoding}`); // catch server<->client unable to comm
       }
@@ -403,19 +426,16 @@ class ClientEntityManagerImpl<
         }
       }
     }
-    ent.postEntUpdate();
-    this.emit('ent_update', ent.id);
   }
 
   private initSchema(schema: EntityManagerSchema): void {
-    let field_defs: (EntityFieldDefClient|null)[] = [null];
-    let field_defs_by_name: Partial<Record<string, EntityFieldDefClient>> = {};
-    let { field_encoders } = this;
+    let field_defs: (EntityFieldDefClient<Entity>|null)[] = [null];
+    let field_defs_by_name: Partial<Record<string, EntityFieldDefClient<Entity>>> = {};
     for (let ii = 0; ii < schema.length; ++ii) {
       let ser_def = schema[ii];
       let idx = ii + EntityFieldSpecial.MAX;
       let encoding = ser_def.e || EntityFieldEncoding.JSON;
-      let encoder = field_encoders[encoding];
+      let encoder = entity_field_encoders[encoding];
       assert(encoder);
       let def = field_defs[idx] = {
         encoding,
@@ -431,10 +451,10 @@ class ClientEntityManagerImpl<
     this.field_defs_by_name = field_defs_by_name;
   }
 
-  private initializeNewFullEnt(ent: Entity): void {
+  private initializeNewFullEntData(): EntityBaseDataCommon {
     let { field_defs } = this;
     assert(field_defs);
-    let data = ent.data as DataObject;
+    let data = {} as DataObject;
     for (let ii = 0; ii < field_defs.length; ++ii) {
       let def = field_defs[ii];
       if (!def) {
@@ -445,6 +465,37 @@ class ClientEntityManagerImpl<
         data[field_name] = default_value;
       }
     }
+    return data;
+  }
+
+  private instantiateEntFromFullUpdate(ent_id: EntityID, ent_data: EntityBaseDataCommon, is_initial: boolean): Entity {
+    let existing_ent = this.entities[ent_id];
+    if (existing_ent) {
+      assert(existing_ent.fading_out); // otherwise should have been deleted?
+      // was deleting, but got a new update on it (presumably was out of view, and came back), finish delete
+      // TODO: start fade in from appropriate value (after applying full update
+      //   later in the packet and calling onCreate)
+      existing_ent.fading_out = false;
+      existing_ent.fade = null;
+      for (let jj = 0; jj < this.fading_ents.length; ++jj) {
+        let fade = this.fading_ents[jj];
+        if (fade.ent_id === ent_id) {
+          ridx(this.fading_ents, jj);
+          this.finalizeDelete(ent_id);
+          break;
+        }
+      }
+      // Should be cleaned up at this point
+      assert(!this.entities[ent_id]);
+    }
+    let ent = this.entities[ent_id] = this.create_func(ent_data);
+    ent.id = ent_id;
+    ent.entity_manager = this;
+    let fade_in_time = ent.onCreate(is_initial);
+    if (fade_in_time) {
+      this.fadeInEnt(ent, fade_in_time);
+    }
+    return ent;
   }
 
   private onEntUpdate(pak: Packet): void {
@@ -458,17 +509,24 @@ class ClientEntityManagerImpl<
       switch (cmd) {
         case EntityUpdateCmd.Full: {
           let ent_id = pak.readInt();
-          let ent = this.getEntityForUpdate(ent_id);
-          this.initializeNewFullEnt(ent);
-          this.readDiffFromPacket(ent_id, pak);
-          let fade_in_time = ent.onCreate(is_initial);
-          if (fade_in_time) {
-            this.fadeInEnt(ent, fade_in_time);
-          }
+          let ent_data = this.initializeNewFullEntData();
+          this.readDiffFromPacket(ent_data, pak);
+          let ent = this.instantiateEntFromFullUpdate(ent_id, ent_data, is_initial);
+          ent.postEntUpdate();
+          this.emit('ent_update', ent.id);
         } break;
         case EntityUpdateCmd.Diff: {
           let ent_id = pak.readInt();
-          this.readDiffFromPacket(ent_id, pak);
+          // Get an entity to apply the diff to.  Note: this may reference an entity
+          //   that does not yet exist, and apply a meaningless diff to `dummy_ent_data`, but we
+          //   need to do so in order to advance through the packet.  Presumably there's
+          //   a full update for this entity at the end of the packet for us.
+          let [ent_data, ent] = this.getEntDataForDiff(ent_id);
+          this.readDiffFromPacket(ent_data, pak);
+          if (ent) {
+            ent.postEntUpdate();
+            this.emit('ent_update', ent.id);
+          }
         } break;
         case EntityUpdateCmd.Delete: {
           let ent_id = pak.readInt();
@@ -499,6 +557,7 @@ class ClientEntityManagerImpl<
     } // else may have been from a previous connection?
   }
 
+  // Has received all initial visible entities
   isReady(): boolean {
     return this.received_ent_ready;
   }
@@ -531,8 +590,8 @@ class ClientEntityManagerImpl<
   }
 
   private handleActionListResult(
-    action_list: ClientActionMessageParam[],
-    resp_list: NetErrorCallback<unknown>[],
+    action_list: ClientActionMessageParam<Entity>[],
+    resp_list: (NetErrorCallback<unknown> | undefined)[],
     err: string | null,
     resp?: ActionListResponse,
   ): void {
@@ -570,8 +629,8 @@ class ClientEntityManagerImpl<
   }
 
   action_list_queue: {
-    action_list: ClientActionMessageParam[];
-    resp_list: NetErrorCallback<unknown>[];
+    action_list: ClientActionMessageParam<Entity>[];
+    resp_list: (NetErrorCallback<unknown> | undefined)[];
   } | null = null;
 
   actionListFlush(): void {
@@ -579,6 +638,7 @@ class ClientEntityManagerImpl<
       return;
     }
     assert(this.channel);
+    assert(this.channel.numSubscriptions());
     let { action_list, resp_list } = this.action_list_queue;
     this.action_list_queue = null;
     let pak = this.channel.pak('ent_action_list');
@@ -598,9 +658,10 @@ class ClientEntityManagerImpl<
   }
 
   actionSendQueued(
-    action: ClientActionMessageParam,
-    resp_func: NetErrorCallback<unknown>,
+    action: ClientActionMessageParam<Entity>,
+    resp_func?: NetErrorCallback<unknown>,
   ): void {
+    assert(this.channel?.numSubscriptions());
     if (!this.action_list_queue) {
       this.action_list_queue = {
         action_list: [],
@@ -609,6 +670,12 @@ class ClientEntityManagerImpl<
     }
     this.action_list_queue.action_list.push(action);
     this.action_list_queue.resp_list.push(resp_func);
+  }
+
+  channelSend(msg: string, data?: unknown, resp_func?: NetErrorCallback): void {
+    assert(this.channel);
+    assert(this.channel.numSubscriptions());
+    this.channel.send(msg, data, resp_func);
   }
 
   getEnt(ent_id: EntityID): Entity | undefined {
@@ -652,10 +719,41 @@ class ClientEntityManagerImpl<
     }
     return ret;
   }
+
+  entitiesReload(predicate?: (ent: Entity) => boolean): Entity[] {
+    let { entities } = this;
+    let ret = [];
+    for (let ent_id_string in entities) {
+      let ent = entities[ent_id_string]!;
+      if (predicate && !predicate(ent)) {
+        continue;
+      }
+      let new_ent = this.create_func(ent.data);
+      new_ent.id = ent.id;
+      new_ent.entity_manager = this;
+      // Invalidate old ent
+      ent.id = 0;
+      ent.entity_manager = null!;
+      entities[ent_id_string] = new_ent;
+      ret.push(new_ent);
+    }
+    return ret;
+  }
+
+  isOnline(): boolean {
+    return true;
+  }
+
+  addEntityFromSerialized(): Entity {
+    assert(false, 'Offline only');
+  }
+  setMyEntID(): void {
+    assert(false, 'Offline only');
+  }
 }
 
 export function clientEntityManagerCreate<Entity extends EntityBaseClient>(
-  options: ClientEntityManagerOpts
-): ClientEntityManager<Entity> {
+  options: ClientEntityManagerOpts<Entity>
+): ClientEntityManagerInterface<Entity> {
   return new ClientEntityManagerImpl(options);
 }

@@ -31,6 +31,10 @@ namespace verify {
   export function dothrow(doit: boolean): void {
     should_throw = doit;
   }
+
+  export function shouldThrow(): boolean {
+    return should_throw;
+  }
 }
 
 export = verify;

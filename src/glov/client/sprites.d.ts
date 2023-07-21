@@ -1,4 +1,9 @@
-import type { ROVec4, Vec4 } from 'glov/common/vmath';
+// TODO: move when converted to TypeScript
+import type { BUCKET_ALPHA, BUCKET_DECAL, BUCKET_OPAQUE } from './dyn_geom';
+// TODO: move when converted to TypeScript
+import type { shaderCreate } from 'glov/client/shaders';
+type Shader = ReturnType<typeof shaderCreate>;
+import type { ROVec1, ROVec2, ROVec3, ROVec4 } from 'glov/common/vmath';
 
 export enum BlendMode {
   BLEND_ALPHA = 0,
@@ -10,7 +15,7 @@ export const BLEND_ADDITIVE = 1;
 export const BLEND_PREMULALPHA = 2;
 
 export interface Texture {
-  destroy: () => void;
+  destroy(): void;
 }
 
 /**
@@ -19,7 +24,7 @@ export interface Texture {
 export interface SpriteUIData {
   widths: number[]; heights: number[];
   wh: number[]; hw: number[];
-  rects: Vec4[];
+  rects: ROVec4[]; // [u0, v0, u1, v1]
   aspect: number[] | null;
   total_w: number; total_h: number;
 }
@@ -28,17 +33,38 @@ export interface SpriteDrawParams {
   w?: number; h?: number;
   frame?: number;
   rot?: number;
-  uvs?: number[];
-  color?: Vec4 | ROVec4;
-  shader?: unknown;
-  shader_params?: Partial<Record<string, number[]>>;
+  uvs?: number[]; // [u0, v0, u1, v1]
+  color?: ROVec4;
+  shader?: Shader;
+  shader_params?: Partial<Record<string, number[]|ROVec1|ROVec2|ROVec3|ROVec4>>;
+}
+export type BucketType = typeof BUCKET_OPAQUE | typeof BUCKET_DECAL | typeof BUCKET_ALPHA;
+export interface SpriteDraw3DParams {
+  frame?: number;
+  pos: ROVec3; // 3D world position
+  offs?: ROVec2; // 2D offset (-x/-y is upper left), in world scale
+  size: ROVec2; // 2D w;h; in world scale
+  uvs?: ROVec4;
+  blend?: BlendMode;
+  color?: ROVec4;
+  doublesided?: boolean;
+  shader?: Shader;
+  shader_params?: Partial<Record<string, number[]|ROVec1|ROVec2|ROVec3|ROVec4>>;
+  bucket?: BucketType;
+  facing?: number;
+  face_right?: ROVec3;
+  face_down?: ROVec3;
+  vshader?: Shader;
 }
 export interface Sprite {
   uidata?: SpriteUIData;
   uvs: number[];
-  draw: (params: SpriteDrawParams) => void;
-  drawDualTint: (params: SpriteDrawParams & { color1: Vec4 }) => void;
+  origin: ROVec2;
+  draw(params: SpriteDrawParams): void;
+  drawDualTint(params: SpriteDrawParams & { color1: ROVec4 }): void;
+  draw3D(params: SpriteDraw3DParams): void;
   texs: Texture[];
+  lazyLoad(): number;
 }
 export interface UISprite extends Sprite {
   uidata: SpriteUIData;
@@ -46,9 +72,37 @@ export interface UISprite extends Sprite {
 /**
  * Client Sprite creation parameters
  */
-export type SpriteParam = {
-  // TODO
+export type SpriteParamBase = {
+  origin?: ROVec2;
+  size?: ROVec2;
+  color?: ROVec4;
+  uvs?: ROVec4;
+  ws?: number[]; // (relative) widths/heights for calculating frames within a sprite sheet / atlas
+  hs?: number[];
+  shader?: Shader;
 };
+export type TextureOptions = {
+  filter_min?: number;
+  filter_mag?: number;
+  wrap_s?: number;
+  wrap_t?: number;
+};
+export type SpriteParam = SpriteParamBase & ({
+  texs: Texture[];
+} | {
+  tex: Texture;
+} | (TextureOptions & ({
+  layers: number;
+  name: string;
+  ext?: string;
+} | {
+  name: string;
+  ext?: string;
+  lazy_load?: boolean;
+} | {
+  url: string;
+  lazy_load?: boolean;
+})));
 
 export function spriteQueuePush(): void;
 export function spriteQueuePop(): void;

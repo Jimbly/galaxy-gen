@@ -1,3 +1,5 @@
+import * as execute_with_retry from 'glov/common/execute_with_retry';
+
 const assert = require('assert');
 
 let metric;
@@ -38,6 +40,7 @@ export function metricsStats(metric_name, value) {
 // metric_impl must have .add and .set
 export function metricsInit(metric_impl) {
   metric = metric_impl;
+  execute_with_retry.setMetricsAdd(metricsAdd);
 }
 
 // Legacy API

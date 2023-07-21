@@ -9,7 +9,10 @@ const camera2d = require('./camera2d.js');
 const in_event = require('./in_event.js');
 const input = require('./input.js');
 const { abs } = Math;
-const { uiGetDOMElem } = require('./ui.js');
+const {
+  playUISound,
+  uiGetDOMElem,
+} = require('./ui.js');
 const ui = require('./ui.js');
 const settings = require('./settings.js');
 const { SPOT_DEFAULT_BUTTON, spot, spotFocusSteal, spotKey } = require('./spot.js');
@@ -27,6 +30,11 @@ let style_link_hover_default = style(null, {
 
 export function linkGetDefaultStyle() {
   return style_link_default;
+}
+
+export function linkSetDefaultStyle(style_link, style_link_hover) {
+  style_link_default = style_link;
+  style_link_hover_default = style_link_hover;
 }
 
 let state_cache = {};
@@ -143,6 +151,10 @@ export function linkText(param) {
   ui.drawLine(x, y + h - underline_w, x + w, y + h - underline_w, z - 0.5, underline_w, 1, style_use.color_vec4);
   let clicked = link(param);
   if (clicked) {
+    const sound_button = param.sound_button === undefined ? param.def.sound_button : param.sound_button;
+    if (sound_button) {
+      playUISound(sound_button);
+    }
     spotFocusSteal(param);
   }
   if (spot_ret.ret && !internal) {

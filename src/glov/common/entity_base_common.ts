@@ -1,6 +1,9 @@
 // Portions Copyright 2022 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
+export let entity_field_encoders: Partial<Record<EntityFieldEncodingType, EntityFieldEncoder<EntityBaseCommon>>> = {};
+export let entity_field_decoders: Partial<Record<EntityFieldEncodingType, EntityFieldDecoder<EntityBaseCommon>>> = {};
+
 import assert from 'assert';
 import { Packet } from 'glov/common/packet';
 import { Vec2, Vec3 } from 'glov/common/vmath';
@@ -37,13 +40,19 @@ export type EntityFieldEncoder<Entity extends EntityBaseCommon> = (
   ent: Entity,
   pak: Packet,
   value: unknown,
+  // If is_diff is true, the receiver will have already received either the most
+  //   recent diff, or a full update (which may have been a more up-to-date value
+  //   than the most recent diff, but never older).
+  // OK: Send only the fields that have changed since the last diff
+  // NOT OK: Send a numerical difference from the last diff
+  is_diff: boolean,
 ) => void;
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type EntityFieldDecoder<Entity extends EntityBaseCommon> = (
   // ent: Entity,
   pak: Packet,
-  old_value: unknown
+  old_value: unknown // Note: on client->server encodings (data_assignmenets), old_value is always `null`
 ) => unknown;
 
 
@@ -108,10 +117,11 @@ export type EntityManagerEvent = {
 
 export interface EntityManager<Entity extends EntityBaseCommon = EntityBaseCommon> {
   entities: Partial<Record<EntityID, Entity>>;
-  entitiesFind: (
+  entitiesFind(
     predicate: (ent: Entity) => boolean,
     skip_fading_out?: boolean
-  ) => Entity[];
+  ): Entity[];
+  entitiesReload(predicate?: (ent: Entity) => boolean): Entity[];
 }
 
 export type EntityBaseDataCommon = {
@@ -119,15 +129,12 @@ export type EntityBaseDataCommon = {
 };
 
 export class EntityBaseCommon {
-  id: EntityID;
+  id!: EntityID; // Set by EntityManager
   data: EntityBaseDataCommon | DataObject;
-  entity_manager: EntityManager;
+  entity_manager!: EntityManager; // Set by EntityManager
 
-  constructor(ent_id: EntityID, entity_manager: EntityManager) {
-    this.id = ent_id;
-    this.data = {};
-    // this.data.pos = [0,0];
-    this.entity_manager = entity_manager;
+  constructor(data: EntityBaseDataCommon) {
+    this.data = data;
   }
 
   getData<T>(field: string): T | undefined {
@@ -135,32 +142,31 @@ export class EntityBaseCommon {
     return undefined;
   }
 
-  static field_encoders: Partial<Record<EntityFieldEncodingType, EntityFieldEncoder<EntityBaseCommon>>> = {};
-  static field_decoders: Partial<Record<EntityFieldEncodingType, EntityFieldDecoder<EntityBaseCommon>>> = {};
-  // Note: must be called _before_ registerFieldDefs()
-  static registerFieldEncoding<Entity extends EntityBaseCommon>(
-    data: Partial<Record<EntityFieldEncodingType, {
-      // encoder: on the CLIENT used for sending data_assigments
-      // decoder: on the CLIENT used for receiving full entity updates and entity diffs
-      // encoder: on the SERVER used for sending full entity updates and entity diffs
-      // decoder: on the SERVER used for receiving data_assignemnts (old_value always === null)
-      encoder: EntityFieldEncoder<Entity>;
-      decoder: EntityFieldDecoder<Entity>;
-    }>>
-  ): void {
-    for (let key_string in data) {
-      let key = Number(key_string) as EntityFieldEncodingType;
-      let pair = data[key]!;
-      let encoder = pair.encoder as EntityFieldEncoder<EntityBaseCommon>;
-      let decoder = pair.decoder as EntityFieldDecoder<EntityBaseCommon>;
-      assert(!this.field_encoders[key]);
-      this.field_encoders[key] = encoder;
-      this.field_decoders[key] = decoder;
-    }
+}
+
+// Note: must be called _before_ entityServerRegisterFieldDefs() on the server
+export function entityCommonRegisterFieldEncoding<Entity extends EntityBaseCommon>(
+  data: Partial<Record<EntityFieldEncodingType, {
+    // encoder: on the CLIENT used for sending data_assigments
+    // decoder: on the CLIENT used for receiving full entity updates and entity diffs
+    // encoder: on the SERVER used for sending full entity updates and entity diffs
+    // decoder: on the SERVER used for receiving data_assignemnts (old_value always === null)
+    encoder: EntityFieldEncoder<Entity>;
+    decoder: EntityFieldDecoder<Entity>;
+  }>>
+): void {
+  for (let key_string in data) {
+    let key = Number(key_string) as EntityFieldEncodingType;
+    let pair = data[key]!;
+    let encoder = pair.encoder as EntityFieldEncoder<EntityBaseCommon>;
+    let decoder = pair.decoder as EntityFieldDecoder<EntityBaseCommon>;
+    assert(!entity_field_encoders[key]);
+    entity_field_encoders[key] = encoder;
+    entity_field_decoders[key] = decoder;
   }
 }
 
-EntityBaseCommon.registerFieldEncoding({
+entityCommonRegisterFieldEncoding({
   // Using functions with names to get better callstacks
   /* eslint-disable func-name-matching */
   [EntityFieldEncoding.JSON]: {

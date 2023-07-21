@@ -96,12 +96,21 @@ register({
     prefix_usage_with_help: true,
     usage:
       'Display current maximum: /max_fps\n' +
-      'Disable maximum FPS limit: /max_fps 0 (highly recommended)\n' +
       'Set maximum FPS limit: /max_fps 30\n' +
-      'Default: /max_fps 0',
-    default_value: 0,
+      'Set automatic by browser: /max_fps 0 (may be unresponsive)\n' +
+      'Set unlimited: /max_fps 1000 (may be unresponsive)\n' +
+      'Default: /max_fps 60',
+    default_value: 60,
     type: cmd_parse.TYPE_FLOAT,
-    ver: 1,
+    ver: 2,
+  },
+  use_animation_frame: {
+    label: 'Use requestAnimationFrame',
+    help: 'Use requestAnimationFrame for any max_fps values lower than this value.',
+    prefix_usage_with_help: true,
+    default_value: 60,
+    type: cmd_parse.TYPE_INT,
+    range: [0, 240],
   },
   render_scale: {
     label: 'Render Scale (3D)',

@@ -2,9 +2,11 @@
   "folders": [{
     "folder_exclude_patterns": [
       "node_modules",
+      ".gbcache",
       ".gbstate",
       "build.dev",
       "build.prod",
+      "build.test",
       "logs",
       "data_store",
     ],

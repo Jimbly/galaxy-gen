@@ -8,6 +8,11 @@ global.profilerStart = global.profilerStop = global.profilerStopStart = function
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import {
+  dataErrorOnError,
+  dataErrorQueueEnable,
+  dataErrorQueueGet,
+} from 'glov/common/data_error';
 import { packetEnableDebug } from 'glov/common/packet';
 import wscommon from 'glov/common/wscommon';
 import minimist from 'minimist';
@@ -33,6 +38,10 @@ const { netDelaySet } = wscommon;
 const STATUS_TIME = 5000;
 export let ws_server;
 export let channel_server;
+
+export function getChannelServer() {
+  return channel_server;
+}
 
 let last_status = '';
 function displayStatus() {
@@ -67,24 +76,26 @@ function updateBuildTimestamp(base_name, is_startup) {
     }
     console.info(`Build timestamp for "${base_name}"${old_timestamp ? ' changed to' : ''}: ${obj.ver}`);
     last_build_timestamp[base_name] = obj.ver;
+    ws_server.setAppBuildTimestamp(base_name, obj.ver);
     if (base_name === 'app') {
       errorReportsSetAppBuildTimestamp(obj.ver);
-      ws_server.setAppBuildTimestamp(obj.ver);
-      if (!is_startup) {
+    }
+    if (!is_startup) {
+      if (base_name === 'app') {
         // Do a broadcast message so people get a few seconds of warning
         ws_server.broadcast('chat_broadcast', {
           src: 'system',
           msg: 'New client version deployed, reloading momentarily...'
         });
-        if (argv.dev) {
-          // immediate
-          ws_server.broadcast('build', last_build_timestamp.app);
-        } else {
-          // delay by 15 seconds, the server may also be about to be restarted
-          setTimeout(function () {
-            ws_server.broadcast('build', last_build_timestamp.app);
-          }, 15000);
-        }
+      }
+      if (argv.dev) {
+        // immediate
+        ws_server.broadcast('build', { app: base_name, ver: last_build_timestamp.app });
+      } else {
+        // delay by 15 seconds, the server may also be about to be restarted
+        setTimeout(function () {
+          ws_server.broadcast('build', { app: base_name, ver: last_build_timestamp.app });
+        }, 15000);
       }
     }
   });
@@ -97,6 +108,10 @@ export function sendToBuildClients(msg, data) {
       client.send(msg, data);
     }
   }
+}
+
+function onDataError(err) {
+  sendToBuildClients('data_errors', [err]);
 }
 
 export function startup(params) {
@@ -134,12 +149,14 @@ export function startup(params) {
     if (argv['net-delay'] !== false) {
       netDelaySet();
     }
+    dataErrorQueueEnable(true);
+    dataErrorOnError(onDataError);
   }
   if (server_config.log && server_config.log.load_log) {
     channel_server.load_log = true;
   }
 
-  ws_server = glov_wsserver.create(server, server_https, argv.timeout === false);
+  ws_server = glov_wsserver.create(server, server_https, argv.timeout === false, argv.dev);
   ws_server.on('error', function (error, client) {
     if (client) {
       channel_server.last_worker = client.client_channel;
@@ -160,7 +177,7 @@ export function startup(params) {
   });
 
   ipBanInit();
-  readyDataInit();
+  readyDataInit(channel_server, app);
 
   channel_server.init({
     exchange,
@@ -194,9 +211,16 @@ export function startup(params) {
         for (let ii = 0; ii < files.length; ++ii) {
           let filename = files[ii];
           console.log(`File changed: ${filename}`);
-          ws_server.broadcast('filewatch', filename);
-          serverFilewatchTriggerChange(filename);
-          let m = filename.match(/(.*)\.ver\.json$/);
+          let shortname;
+          if (filename.startsWith('client/')) {
+            shortname = filename.replace(/^client\//, '');
+            ws_server.broadcast('filewatch', shortname);
+          } else {
+            assert(filename.startsWith('server/'));
+            shortname = filename.replace(/^server\//, '');
+          }
+          serverFilewatchTriggerChange(shortname);
+          let m = shortname.match(/(.*)\.ver\.json$/);
           if (m) {
             let file_base_name = m[1]; // e.g. 'app' or 'worker'
             updateBuildTimestamp(file_base_name);
@@ -212,6 +236,10 @@ export function startup(params) {
     client.gbstate_enable = pak.readBool();
     if (client.gbstate_enable) {
       client.send('gbstate', gbstate);
+      let data_errors = dataErrorQueueGet();
+      if (data_errors.length) {
+        client.send('data_errors', data_errors);
+      }
     }
     resp_func();
   });

@@ -38,8 +38,9 @@ class GlovSSFile implements SSFile {
   excl_group: Record<string, boolean>;
   excl_group_first: string;
   excl_group_debug: string;
+  tag_id?: string;
 
-  constructor(ss: GlovSoundScape, file: SSDataFile) {
+  constructor(ss: GlovSoundScape, file: SSDataFile, tag_id?: string) {
     this.file = `${ss.base_path}${file.file}`;
     if (typeof file.excl_group === 'string') {
       file.excl_group = [file.excl_group];
@@ -53,6 +54,9 @@ class GlovSSFile implements SSFile {
     }
     this.excl_group = map;
     this.fade_time = file.fade_time || ss.default_fade_time;
+    if (tag_id) {
+      this.tag_id = tag_id;
+    }
   }
 }
 
@@ -60,6 +64,7 @@ const DEFAULT_PERIOD = 30000;
 const DEFAULT_PERIOD_NOISE = 15000;
 const DEFAULT_MAX_INTENSITY = Infinity;
 const DEFAULT_ADD_DELAY = 5000; // how long to wait between adding another track
+const DEFAULT_TAG_TOLERANCE = 5000;
 
 class GlovSSTagLayer implements SSTagLayer {
   excl_group_master?: boolean;
@@ -76,10 +81,10 @@ class GlovSSTagLayer implements SSTagLayer {
 
   priority: number;
 
-  constructor(ss: GlovSoundScape, layer: SSDataTagLayer, parent: SSLayer) {
+  constructor(ss: GlovSoundScape, layer: SSDataTagLayer, parent: SSLayer, tag_id: string) {
     this.files_map = {};
     this.files = layer.files.map((file) => {
-      let new_file = new GlovSSFile(ss, file);
+      let new_file = new GlovSSFile(ss, file, tag_id);
       this.files_map[new_file.file] = new_file;
       if (!ss.streaming) {
         soundLoad(file.file, { streaming: true });
@@ -153,7 +158,8 @@ class GlovSSParentLayer implements SSParentLayer {
     this.max_intensity = layer.max_intensity || DEFAULT_MAX_INTENSITY;
     this.tags = {};
     for (let tag in tags) {
-      this.tags[tag] = new GlovSSTagLayer(ss, tags[tag], this);
+      ss.tags[tag] = false;
+      this.tags[tag] = new GlovSSTagLayer(ss, tags[tag], this, tag);
     }
     this.user_idx = ++ss.user_idx;
   }
@@ -181,6 +187,9 @@ export class GlovSoundScape implements SoundScape {
   fade_in_start = 0;
   intensity = 0;
   tags: Record<string, boolean> = {};
+  tag_timer: Partial<Record<string, number>> = {};
+  tag_tolerance: number;
+
   streaming_cbs: Record<string, ((sound: GlovSoundSetUp) => void)[]> = {};
 
   layer_state: Record<string, SSLayerState> = {};
@@ -190,7 +199,8 @@ export class GlovSoundScape implements SoundScape {
 
   constructor(params: {
     layers: Record<string, SSDataLayer>; base_path: string; default_fade_time: number;
-    enable_logs?: boolean; streaming?: boolean; kill_delay?: number; add_all?: boolean;
+    enable_logs?: boolean; streaming?: boolean; kill_delay?: number; tag_tolerance?: number;
+    add_all?: boolean;
   }) {
     this.data_layers = params.layers;
     this.layers = {};
@@ -199,6 +209,7 @@ export class GlovSoundScape implements SoundScape {
     this.enable_logs = params.enable_logs !== undefined ? params.enable_logs : DEFAULT_ENABLE_LOGS;
     this.streaming = params.streaming !== undefined ? params.streaming : DEFAULT_STREAMING;
     this.kill_delay = params.kill_delay !== undefined ? params.kill_delay : DEFAULT_KILL_DELAY;
+    this.tag_tolerance = params.tag_tolerance !== undefined ? params.tag_tolerance : DEFAULT_TAG_TOLERANCE;
     params.add_all = params.add_all !== undefined ? params.add_all : DEFAULT_ADD_ALL;
     if (params.add_all) {
       this.addAll();
@@ -244,8 +255,25 @@ export class GlovSoundScape implements SoundScape {
   getTag(tag: string): boolean {
     return this.tags[tag];
   }
-  setTag(tag: string, value: boolean): void {
-    this.tags[tag] = value;
+  getTagTime(tag: string): number | undefined {
+    let tag_time = this.tag_timer[tag];
+    return tag_time && this.tag_tolerance - (engine.frame_timestamp - tag_time);
+  }
+  setTag(tag: string, value: boolean, force?: boolean): void {
+    if (force) {
+      this.tags[tag] = value;
+      delete this.tag_timer[tag];
+      return;
+    }
+    if (this.tag_timer[tag]) {
+      if (this.tags[tag] === value) {
+        delete this.tag_timer[tag];
+      }
+      return;
+    }
+    if (this.tags[tag] !== value) {
+      this.tag_timer[tag] = engine.frame_timestamp;
+    }
   }
   getIntensity(): number {
     return this.intensity;
@@ -282,6 +310,14 @@ export class GlovSoundScape implements SoundScape {
   tick(): void {
     let now = engine.frame_timestamp;
     let { intensity, layer_state, layer_keys } = this;
+
+    for (let tag in this.tag_timer) {
+      let tag_time = this.tag_timer[tag]!;
+      if (now > tag_time + this.tag_tolerance) {
+        this.tags[tag] = !this.tags[tag];
+        delete this.tag_timer[tag];
+      }
+    }
 
     let active_excl_group = '';
     let active_files: Record<string, boolean>;
@@ -595,7 +631,11 @@ export class GlovSoundScape implements SoundScape {
       for (let ii = 0; ii < active.length; ++ii) {
         let active_sound = active[ii];
         let filename = active_sound.file.file.substring(active_sound.file.file.lastIndexOf('/')+1);
-        let text = `  ${filename}\t `+
+        let text = '  ';
+        if (active_sound.file.tag_id) {
+          text += `[${active_sound.file.tag_id}]`;
+        }
+        text += ` ${filename}\t `+
         `  ${active_sound.file.excl_group ? active_sound.file.excl_group_debug : '*'} `;
         if (isPlaceholderSound(active_sound.sound)) {
           text += '  (Sound being streamed...)';

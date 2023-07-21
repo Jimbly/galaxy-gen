@@ -12,14 +12,16 @@
     <meta property="og:image:height" content="480">
     <meta name="twitter:card" content="summary_large_image">
 
-    <link rel="stylesheet" type="text/css" href="main.css">
     <script>
       /* eslint-disable */
+      window.time_load_start = Date.now();
       // Platform
       window.conf_platform = '#{PLATFORM}';
       // Environment
       window.conf_env = '#{ENV}';
     </script>
+
+    <link rel="stylesheet" type="text/css" href="main.css">
     <!-- #if PLATFORM === 'fbinstant' -->
     <script src="https://connect.facebook.net/en_US/fbinstant.beta.js"></script>
     <!-- #endif -->

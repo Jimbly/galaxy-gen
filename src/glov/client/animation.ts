@@ -20,14 +20,23 @@
   }
 */
 
-class GlovAnimationSequencer {
+type AnimationFunc = (progress: number) => void;
+export type AnimationSequencer = AnimationSequencerImpl;
+class AnimationSequencerImpl {
+  time = 0;
+  fns: {
+    done: boolean;
+    fn: AnimationFunc;
+    start: number;
+    end: number;
+    duration: number;
+  }[];
   constructor() {
-    this.time = 0;
     this.fns = [];
   }
 
   // Calls fn(progress) with progress >0 and <= 1; guaranteed call with === 1
-  add(start, duration, fn) {
+  add(start: number, duration: number, fn: AnimationFunc): number {
     let end = start + duration;
     this.fns.push({
       done: false,
@@ -39,7 +48,7 @@ class GlovAnimationSequencer {
     return end;
   }
 
-  update(dt) {
+  update(dt: number): boolean {
     this.time += dt;
     let any_left = false;
     for (let ii = 0; ii < this.fns.length; ++ii) {
@@ -58,8 +67,9 @@ class GlovAnimationSequencer {
   }
 }
 
-export function createAnimationSequencer() {
-  return new GlovAnimationSequencer();
+export function animationSequencerCreate(): AnimationSequencer {
+  return new AnimationSequencerImpl();
 }
 
-exports.create = createAnimationSequencer;
+exports.createAnimationSequencer = animationSequencerCreate;
+exports.create = animationSequencerCreate;

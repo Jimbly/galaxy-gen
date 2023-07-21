@@ -190,3 +190,7 @@ export function getFallbackEnvironment(platform: Platform, version: string): str
   }
   return null;
 }
+
+export function getAllFallbackEnvironments(): Partial<Record<Platform, string>> {
+  return plat_fallback_envs;
+}

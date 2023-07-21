@@ -1,5 +1,5 @@
 import assert from 'assert';
-import * as dot_prop from 'glov/common/dot-prop';
+import { dotPropDelete, dotPropGet, dotPropSet } from 'glov/common/dot-prop';
 import { CmdDef } from 'glov/common/types';
 import { ChannelServerWorker } from './channel_server_worker';
 import { globalWorkerAddCmd } from './global_worker';
@@ -30,15 +30,15 @@ export function serverGlobalsHandleChannelData(key: string, value: unknown): voi
     global_data = value as Partial<Record<string, unknown>>;
   } else {
     if (value === undefined) {
-      dot_prop.delete(global_data, key);
+      dotPropDelete(global_data, key);
     } else {
-      dot_prop.set(global_data, key, value);
+      dotPropSet(global_data, key, value);
     }
   }
   for (let ii = 0; ii < on_data_cbs.length; ++ii) {
     let { prefix, cb } = on_data_cbs[ii];
     if (prefixMatches(prefix, key)) {
-      cb(csworker, dot_prop.get(global_data, prefix));
+      cb(csworker, dotPropGet(global_data, prefix));
     }
   }
 }
@@ -50,7 +50,7 @@ export function serverGlobalsReady(): boolean {
 export function serverGlobalsGet<T>(key: string): T | undefined;
 export function serverGlobalsGet<T>(key: string, def: T): T;
 export function serverGlobalsGet<T>(key: string, def?: T): T | undefined {
-  return dot_prop.get(global_data, key, def);
+  return dotPropGet(global_data, key, def);
 }
 
 type ServerGlobalsDef<T=unknown> = {

@@ -1,6 +1,8 @@
 import type { FriendData } from './friends_data';
 import type { Packet } from './packet';
 
+export type VoidFunc = () => void;
+
 /**
  * Data object type to be used when handling an object that contains some type of (possible unknown) information.
  * @template T - The type of information held by the object, defaults to unknown.
@@ -77,7 +79,7 @@ export interface CmdDef {
   prefix_usage_with_help?: boolean;
   access_show?: string[];
   access_run?: string[];
-  func: (str: string, resp_func: CmdRespFunc) => void;
+  func(str: string, resp_func: CmdRespFunc): void;
 }
 
 /**
@@ -155,6 +157,8 @@ export interface ClientHandlerSource extends HandlerSource {
   access?: true;
   direct?: true;
   sysadmin?: true;
+  csr?: true;
+  elevated?: number;
 }
 export function isClientHandlerSource(src: HandlerSource): src is ClientHandlerSource {
   return src.type === 'client';
@@ -164,16 +168,29 @@ export interface ChatIDs extends ClientHandlerSource {
   style?: string;
 }
 
+export type ClientIDs = {
+  client_id: string;
+  user_id?: string;
+  display_name?: string;
+  roles?: Partial<Record<string, true>>;
+};
+
 export interface ClientChannelWorker {
-  on: (key: string, cb: (data: DataObject, key: string, value: DataObject) => void) => void;
-  removeListener: (key: string, cb: (data: DataObject, key: string, value: DataObject) => void) => void;
-  onSubscribe: (cb: (data: unknown) => void) => void;
-  onceSubscribe: (cb: ((data: DataObject) => void) | (() => void)) => void;
-  numSubscriptions: () => number;
-  unsubscribe: () => void;
-  getChannelData: <T>(key: string, default_value: T) => T;
-  pak: (msg: string) => Packet;
-  send: (msg: string, data?: unknown, resp_func?: NetErrorCallback) => void;
+  on(key: string, cb: (data: DataObject, key: string, value: DataObject) => void): void;
+  removeListener(key: string, cb: (data: DataObject, key: string, value: DataObject) => void): void;
+  onSubscribe(cb: (data: unknown) => void): void;
+  onceSubscribe(cb: ((data: DataObject) => void) | VoidFunc): void;
+  numSubscriptions(): number;
+  isFullySubscribed(): boolean;
+  unsubscribe(): void;
+  getChannelData<T>(key: string, default_value: T): T;
+  getChannelData(key: string): unknown;
+  getChannelID(): string;
+  setChannelData(key: string, value: unknown, skip_predict?: boolean, resp_func?: NetErrorCallback): void;
+  pak(msg: string): Packet;
+  send<R=never, P=null>(msg: string, data: P, resp_func: NetErrorCallback<R>): void;
+  send(msg: string, data?: unknown, resp_func?: NetErrorCallback): void;
+  cmdParse(cmd: string, resp_func: CmdRespFunc): void;
   readonly data: {
     public?: unknown;
   };
@@ -186,3 +203,7 @@ export interface UserChannel extends ClientChannelWorker {
 // TODO: Delete this type and all usages of it.
 // It is being used as a placeholder for data types that are not yet implemented.
 export type UnimplementedData = DataObject;
+
+export type DeepPartial<T> = T extends DataObject ? {
+    [P in keyof T]?: DeepPartial<T[P]>;
+} : T;

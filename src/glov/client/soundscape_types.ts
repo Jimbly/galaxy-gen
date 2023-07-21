@@ -106,6 +106,7 @@ export interface SSFile {
   excl_group: Record<string, boolean>;
   excl_group_first: string;
   excl_group_debug: string;
+  tag_id?: string; // To show which tag a file was chosen from in debug logs
 }
 
 export interface SSLayerCommon {

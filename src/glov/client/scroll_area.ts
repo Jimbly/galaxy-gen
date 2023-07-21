@@ -7,6 +7,7 @@ import verify from 'glov/common/verify.js';
 import { Vec4, vec2, vec4 } from 'glov/common/vmath';
 import * as camera2d from './camera2d.js';
 import * as engine from './engine.js';
+import { renderNeeded } from './engine.js';
 import { Box } from './geom_types';
 import * as input from './input.js';
 import {
@@ -273,6 +274,7 @@ class ScrollAreaInternal implements ScrollArea {
       } else {
         this.overscroll_delay -= dt;
       }
+      renderNeeded();
     }
 
     let {

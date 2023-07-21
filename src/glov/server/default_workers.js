@@ -12,7 +12,7 @@ import {
 } from 'glov/common/enums.js';
 import { FriendStatus } from 'glov/common/friends_data.js';
 import * as md5 from 'glov/common/md5.js';
-import { deprecate, sanitize } from 'glov/common/util.js';
+import { EMAIL_REGEX, deprecate, sanitize } from 'glov/common/util.js';
 import { isProfane, isReserved } from 'glov/common/words/profanity_common.js';
 
 import { channelServerWorkerInit } from './channel_server_worker.js';
@@ -27,7 +27,6 @@ deprecate(exports, 'handleChat', 'chattable_worker:handleChat');
 
 const DISPLAY_NAME_MAX_LENGTH = 30;
 const DISPLAY_NAME_WAITING_PERIOD = 23 * 60 * 60 * 1000;
-const email_regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_FRIENDS = 100;
 const FRIENDS_DATA_KEY = 'private.friends';
 
@@ -71,6 +70,7 @@ function getDisplayNameBypass(source) {
 function validDisplayName(display_name, override) {
   if (!display_name || sanitize(display_name).trim() !== display_name ||
     isProfane(display_name) || display_name.length > DISPLAY_NAME_MAX_LENGTH ||
+    EMAIL_REGEX.test(display_name) ||
     (!override && isReserved(display_name))
   ) {
     return false;
@@ -113,6 +113,16 @@ export class DefaultUserWorker extends ChannelWorker {
     this.presence_data = {}; // client_id -> data
     this.presence_idx = 0;
     this.my_clients = {};
+
+    // Migration logic for engine-level fields
+    if (this.exists()) {
+      let creation_time_old = this.getChannelData('private.creation_time');
+      if (creation_time_old) {
+        this.setChannelData('public.creation_time', creation_time_old);
+        this.setChannelData('private.creation_time', undefined);
+      }
+    }
+
   }
 
   migrateFriendsList(legacy_friends) {
@@ -600,6 +610,9 @@ export class DefaultUserWorker extends ChannelWorker {
     if (!this.getChannelData('private.password')) {
       return resp_func('ERR_USER_NOT_FOUND');
     }
+    if (this.getChannelData('public.banned')) {
+      return resp_func('ERR_ACCOUNT_BANNED');
+    }
     if (md5(data.salt + this.getChannelData('private.password')) !== data.password) {
       return resp_func('Invalid password');
     }
@@ -621,10 +634,22 @@ export class DefaultUserWorker extends ChannelWorker {
 
     this.setChannelData('private.login_time', Date.now());
     metrics.add('user.login', 1);
+    metrics.add('user.login_pass', 1);
     return resp_func(null, this.getChannelData('public'));
   }
   handleLoginExternal(src, data, resp_func) {
+    if (this.channel_server.restarting) {
+      if (!this.getChannelData('public.permissions.sysadmin')) {
+        // Maybe black-hole like other messages instead?
+        return resp_func('ERR_RESTARTING');
+      }
+    }
+
     //Should the authentication step happen here instead?
+
+    if (this.getChannelData('public.banned')) {
+      return resp_func('ERR_ACCOUNT_BANNED');
+    }
     if (!this.getChannelData('private.external')) {
       this.setChannelData('private.external', true);
       return this.createShared(data, resp_func);
@@ -644,7 +669,7 @@ export class DefaultUserWorker extends ChannelWorker {
     if (!data.password) {
       return resp_func('Missing password');
     }
-    if (this.require_email && !email_regex.test(data.email)) {
+    if (this.require_email && !EMAIL_REGEX.test(data.email)) {
       return resp_func('Email invalid');
     }
     if (!validDisplayName(data.display_name)) {
@@ -667,10 +692,10 @@ export class DefaultUserWorker extends ChannelWorker {
     if (!validDisplayName(public_data.display_name)) { // If from external auth
       public_data.display_name = random_names.get();
     }
+    public_data.creation_time = Date.now();
     private_data.password = data.password;
     private_data.email = data.email;
     private_data.creation_ip = data.ip;
-    private_data.creation_time = Date.now();
     private_data.login_ip = data.ip;
     private_data.login_ua = data.ua;
     private_data.login_time = Date.now();
@@ -679,6 +704,7 @@ export class DefaultUserWorker extends ChannelWorker {
     metrics.add('user.create', 1);
     return resp_func(null, this.getChannelData('public'));
   }
+
   handleSetChannelData(src, key, value) {
     let err = this.defaultHandleSetChannelData(src, key, value);
     if (err) {
@@ -784,10 +810,11 @@ export class DefaultUserWorker extends ChannelWorker {
   handleCSRAdminToUser(src, pak, resp_func) {
     let access = pak.readJSON();
     let cmd = pak.readString();
+    let desired_client_id = pak.readAnsiString();
     if (!this.exists()) {
       return void resp_func('ERR_INVALID_USER');
     }
-    if (!src.sysadmin) {
+    if (!src.sysadmin && !src.csr) {
       return void resp_func('ERR_ACCESS_DENIED');
     }
     // first, try running here on a (potentially offline) user
@@ -803,10 +830,15 @@ export class DefaultUserWorker extends ChannelWorker {
       // not found
       // find a client worker for this user
       let to_use;
-      for (let channel_id in this.my_clients) {
-        to_use = channel_id;
-        if (channel_id !== src.channel_id) {
-          break;
+      let desired_channel_id = desired_client_id ? `client.${desired_client_id}` : '';
+      if (desired_channel_id && this.my_clients[desired_channel_id]) {
+        to_use = desired_channel_id;
+      } else {
+        for (let channel_id in this.my_clients) {
+          to_use = channel_id;
+          if (channel_id !== src.channel_id) {
+            break;
+          }
         }
       }
       if (!to_use) {

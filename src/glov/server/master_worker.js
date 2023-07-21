@@ -749,6 +749,7 @@ export function masterInitApp(channel_server, app, argv) {
   }
   app.get('/api/ready', function (req, res, next) {
     // Note: not necessarily called in the same process as the master worker itself
+    res.header('Cache-Control', 'no-store');
 
     let plat = req.query.plat ?? null;
     let ver = req.query.ver ?? null;

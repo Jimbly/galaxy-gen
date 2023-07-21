@@ -173,6 +173,11 @@ module.exports = {
         "object",
         "type",
       ],
+      "pathGroups": [{
+        "pattern": "glov/**",
+        "group": "internal"
+      }],
+      "pathGroupsExcludedImportTypes": ["type"],
       "warnOnUnassignedImports": true,
       "alphabetize": {
         "order": "asc",
@@ -562,6 +567,67 @@ module.exports = {
           "allowExpressions": true,
         }],
         "@typescript-eslint/explicit-module-boundary-types": "error",
+        // TODO: resolve issues on existing files, or disable, enforce this going forward:
+        // "@typescript-eslint/naming-convention": [
+        //   "error",
+        //   // exceptions
+        //   {
+        //     selector: ['property'],
+        //     format: ['snake_case'],
+        //     leadingUnderscore: 'allow',
+        //     trailingUnderscore: 'forbid',
+        //     filter: {
+        //       regex: '^_opaque$',
+        //       match: true,
+        //     },
+        //   },
+        //   // function parameters, variables: strictly snake_case
+        //   {
+        //     selector: ['default', 'parameter', 'parameterProperty', 'variable'],
+        //     format: ['snake_case'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        //   // variables: unless const, then UPPER_CASE
+        //   {
+        //     selector: ['variable'],
+        //     format: ['snake_case', 'UPPER_CASE'],
+        //     modifiers: ['const'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        //   // properties, same as variables, but cannot tell if they're "const", so allow both
+        //   {
+        //     selector: ['property'],
+        //     format: ['snake_case', 'UPPER_CASE'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        //   {
+        //     selector: ['function', 'method', 'classMethod', 'typeMethod'],
+        //     format: ['camelCase'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        //   {
+        //     selector: ['enumMember'],
+        //     format: ['PascalCase', 'UPPER_CASE'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        //   {
+        //     selector: ['class', 'enum', 'interface', 'typeAlias', 'typeParameter'],
+        //     format: ['PascalCase'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        //   {
+        //     selector: ['objectLiteralMethod'],
+        //     format: ['snake_case', 'camelCase'],
+        //     leadingUnderscore: 'forbid',
+        //     trailingUnderscore: 'forbid',
+        //   },
+        // ],
       }
     },
   ]

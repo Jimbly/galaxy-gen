@@ -25,11 +25,20 @@ const { dynGeomQueueSprite } = require('./dyn_geom.js');
 const engine = require('./engine.js');
 const geom = require('./geom.js');
 const { cos, max, min, round, sin } = Math;
-const textures = require('./textures.js');
-const { cmpTextureArray } = textures;
-const shaders = require('./shaders.js');
+const {
+  textureCmpArray,
+  textureBindArray,
+  textureLoad,
+  textureFilterKey,
+} = require('./textures.js');
+const {
+  SEMANTIC,
+  shaderCreate,
+  shadersBind,
+  shadersPrelink,
+} = require('./shaders.js');
 const { deprecate, nextHighestPowerOfTwo } = require('glov/common/util.js');
-const { vec2, vec4 } = require('glov/common/vmath.js');
+const { vec2, vec4, v4set } = require('glov/common/vmath.js');
 
 deprecate(exports, 'clip', 'spriteClip');
 deprecate(exports, 'clipped', 'spriteClipped');
@@ -435,6 +444,7 @@ export function queuesprite(
   sprite, x, y, z, w, h, rot, uvs, color, shader, shader_params, nozoom,
   pixel_perfect, blend,
 ) {
+  assert(!sprite.lazy_load); // Would be pretty easy to add support if needed
   color = color || sprite.color;
   qsp.sprite = sprite;
   qsp.x = x;
@@ -619,7 +629,7 @@ function commitAndFlush() {
     let batch = batches[ii];
     let { state, start, end } = batch;
     if (last_bound_shader !== state.shader || state.shader_params) {
-      shaders.bind(sprite_vshader,
+      shadersBind(sprite_vshader,
         state.shader || sprite_fshader,
         state.shader_params || sprite_shader_params);
       last_bound_shader = state.shader;
@@ -627,7 +637,7 @@ function commitAndFlush() {
     if (last_blend_mode !== state.blend) {
       blendModeSet(state.blend);
     }
-    textures.bindArray(state.texs);
+    textureBindArray(state.texs);
     ++geom_stats.draw_calls_sprite;
     gl.drawElements(sprite_geom.mode, (end - start) * 3 / 2, gl.UNSIGNED_SHORT, start * 3);
   }
@@ -653,9 +663,9 @@ function drawSetup() {
 
   if (!sprite_geom) {
     sprite_geom = geom.create([
-      [shaders.semantic.POSITION, gl.FLOAT, 2, false],
-      [shaders.semantic.COLOR, gl.FLOAT, 4, false],
-      [shaders.semantic.TEXCOORD, gl.FLOAT, 2, false],
+      [SEMANTIC.POSITION, gl.FLOAT, 2, false],
+      [SEMANTIC.COLOR, gl.FLOAT, 4, false],
+      [SEMANTIC.TEXCOORD, gl.FLOAT, 2, false],
     ], [], null, geom.QUADS);
     sprite_buffer = new Float32Array(1024);
     sprite_buffer_len = sprite_buffer.length / 8;
@@ -695,7 +705,7 @@ function drawElem(elem) {
     count++;
   } else {
     if (!batch_state ||
-      cmpTextureArray(elem.texs, batch_state.texs) ||
+      textureCmpArray(elem.texs, batch_state.texs) ||
       elem.shader !== batch_state.shader ||
       elem.shader_params !== batch_state.shader_params ||
       elem.blend !== batch_state.blend
@@ -830,18 +840,22 @@ export function buildRects(ws, hs, tex) {
 }
 
 function Sprite(params) {
+  this.lazy_load = null;
+
   if (params.texs) {
     this.texs = params.texs;
   } else {
     let ext = params.ext || '.png';
     this.texs = [];
     if (params.tex) {
+      assert(!params.lazy_load);
       this.texs.push(params.tex);
     } else if (params.layers) {
       assert(params.name);
+      assert(!params.lazy_load); // Not currently supported for multi-layer sprites
       this.texs = [];
       for (let ii = 0; ii < params.layers; ++ii) {
-        this.texs.push(textures.load({
+        this.texs.push(textureLoad({
           url: `img/${params.name}_${ii}${ext}`,
           filter_min: params.filter_min,
           filter_mag: params.filter_mag,
@@ -849,17 +863,25 @@ function Sprite(params) {
           wrap_t: params.wrap_t,
         }));
       }
-    } else if (params.name) {
-      this.texs.push(textures.load({
-        url: `img/${params.name}${ext}`,
-        filter_min: params.filter_min,
-        filter_mag: params.filter_mag,
-        wrap_s: params.wrap_s,
-        wrap_t: params.wrap_t,
-      }));
     } else {
-      assert(params.url);
-      this.texs.push(textures.load(params));
+      let tex_param;
+      if (params.name) {
+        tex_param = {
+          url: `img/${params.name}${ext}#${textureFilterKey(params)}`,
+          filter_min: params.filter_min,
+          filter_mag: params.filter_mag,
+          wrap_s: params.wrap_s,
+          wrap_t: params.wrap_t,
+        };
+      } else {
+        assert(params.url);
+        tex_param = params;
+      }
+      if (params.lazy_load) {
+        this.lazy_load = tex_param;
+      } else {
+        this.texs.push(textureLoad(tex_param));
+      }
     }
   }
 
@@ -867,22 +889,68 @@ function Sprite(params) {
   this.size = params.size || vec2(1, 1);
   this.color = params.color || vec4(1,1,1,1);
   this.uvs = params.uvs || vec4(0, 0, 1, 1);
-  if (!params.uvs) {
-    // Fix up non-power-of-two textures
-    this.texs[0].onLoad((tex) => {
-      this.uvs[2] = tex.src_width / tex.width;
-      this.uvs[3] = tex.src_height / tex.height;
-    });
-  }
-
   if (params.ws) {
     this.uidata = buildRects(params.ws, params.hs);
-    this.texs[0].onLoad((tex) => {
-      this.uidata = buildRects(params.ws, params.hs, tex);
-    });
   }
   this.shader = params.shader || null;
+
+  let tex_on_load = (tex) => {
+    if (!params.uvs) {
+      // Fix up non-power-of-two textures
+      this.uvs[2] = tex.src_width / tex.width;
+      this.uvs[3] = tex.src_height / tex.height;
+    }
+    if (params.ws) {
+      this.uidata = buildRects(params.ws, params.hs, tex);
+    }
+  };
+  if (this.texs.length) {
+    this.texs[0].onLoad(tex_on_load);
+  } else {
+    this.tex_on_load = tex_on_load;
+  }
 }
+
+Sprite.prototype.lazyLoadInit = function () {
+  let tex = textureLoad({
+    ...this.lazy_load,
+    auto_unload: () => {
+      this.texs = [];
+    },
+  });
+  this.texs.push(tex);
+  this.loaded_at = 0;
+  if (tex.loaded) {
+    // already completely loaded
+    this.tex_on_load(tex);
+  } else {
+    tex.onLoad(() => {
+      this.loaded_at = engine.frame_timestamp;
+      this.tex_on_load(tex);
+    });
+  }
+};
+
+Sprite.prototype.lazyLoad = function () {
+  if (!this.texs.length) {
+    this.lazyLoadInit();
+  }
+  if (!this.texs[0].loaded) {
+    return 0;
+  }
+  if (!this.loaded_at) {
+    return 1;
+  }
+  let dt = engine.frame_timestamp - this.loaded_at;
+  let alpha = dt / 250;
+  if (alpha >= 1) {
+    this.loaded_at = 0;
+    return 1;
+  }
+  return alpha;
+};
+
+let temp_color = vec4();
 
 // params:
 //   required: x, y
@@ -891,10 +959,19 @@ Sprite.prototype.draw = function (params) {
   if (params.w === 0 || params.h === 0) {
     return null;
   }
+  let color = params.color || this.color;
+  if (this.lazy_load) {
+    let alpha = this.lazyLoad();
+    if (!alpha) {
+      return null;
+    }
+    if (alpha !== 1) {
+      color = v4set(temp_color, color[0], color[1], color[2], color[3] * alpha);
+    }
+  }
   let w = (params.w || 1) * this.size[0];
   let h = (params.h || 1) * this.size[1];
   let uvs = (typeof params.frame === 'number') ? this.uidata.rects[params.frame] : (params.uvs || this.uvs);
-  let color = params.color || this.color;
   qsp.sprite = this;
   qsp.x = params.x;
   qsp.y = params.y;
@@ -923,9 +1000,29 @@ Sprite.prototype.drawDualTint = function (params) {
   return this.draw(params);
 };
 
+let temp_color_ul = vec4();
+let temp_color_ll = vec4();
+let temp_color_ur = vec4();
+let temp_color_lr = vec4();
 Sprite.prototype.draw4Color = function (params) {
   if (params.w === 0 || params.h === 0) {
     return null;
+  }
+  qsp.color_ul = params.color_ul;
+  qsp.color_ll = params.color_ll;
+  qsp.color_lr = params.color_lr;
+  qsp.color_ur = params.color_ur;
+  if (this.lazy_load) {
+    let alpha = this.lazyLoad();
+    if (!alpha) {
+      return null;
+    }
+    if (alpha !== 1) {
+      qsp.color_ul = v4set(temp_color_ul, qsp.color_ul[0], qsp.color_ul[1], qsp.color_ul[2], qsp.color_ul[3] * alpha);
+      qsp.color_ll = v4set(temp_color_ll, qsp.color_ll[0], qsp.color_ll[1], qsp.color_ll[2], qsp.color_ll[3] * alpha);
+      qsp.color_ur = v4set(temp_color_ur, qsp.color_ur[0], qsp.color_ur[1], qsp.color_ur[2], qsp.color_ur[3] * alpha);
+      qsp.color_lr = v4set(temp_color_lr, qsp.color_lr[0], qsp.color_lr[1], qsp.color_lr[2], qsp.color_lr[3] * alpha);
+    }
   }
   let w = (params.w || 1) * this.size[0];
   let h = (params.h || 1) * this.size[1];
@@ -938,10 +1035,6 @@ Sprite.prototype.draw4Color = function (params) {
   qsp.h = h;
   qsp.rot = params.rot;
   qsp.uvs = uvs;
-  qsp.color_ul = params.color_ul;
-  qsp.color_ll = params.color_ll;
-  qsp.color_lr = params.color_lr;
-  qsp.color_ur = params.color_ur;
   qsp.shader = params.shader || this.shader;
   qsp.shader_params = params.shader_params;
   qsp.nozoom = params.nozoom;
@@ -971,9 +1064,9 @@ export function spriteStartup() {
   geom_stats = geom.stats;
   clip_space[2] = -1;
   clip_space[3] = 1;
-  sprite_vshader = shaders.create('shaders/sprite.vp');
-  sprite_fshader = shaders.create('shaders/sprite.fp');
-  sprite_dual_fshader = shaders.create('shaders/sprite_dual.fp');
-  shaders.prelink(sprite_vshader, sprite_fshader);
-  shaders.prelink(sprite_vshader, sprite_dual_fshader);
+  sprite_vshader = shaderCreate('shaders/sprite.vp');
+  sprite_fshader = shaderCreate('shaders/sprite.fp');
+  sprite_dual_fshader = shaderCreate('shaders/sprite_dual.fp');
+  shadersPrelink(sprite_vshader, sprite_fshader);
+  shadersPrelink(sprite_vshader, sprite_dual_fshader);
 }

@@ -45,7 +45,7 @@ export enum ALIGN {
 
 export function fontSetDefaultSize(h: number): void;
 export function intColorFromVec4Color(v: Vec4): RGBA;
-export function vec4ColorFromIntColor(v: Vec4, c: RGBA): void;
+export function vec4ColorFromIntColor(v: Vec4, c: RGBA): Vec4;
 
 interface FontDrawOpts {
   style?: FontStyle;
@@ -59,7 +59,7 @@ interface FontDrawOpts {
   text: string | LocalizableString;
 }
 
-type FontLineWrapCallback = (x0: number, linenume: number, line: string, x1: number) => void;
+type FontLineWrapCallback = (x0: number, linenum: number, line: string, x1: number) => void;
 type Text = string | LocalizableString;
 
 export interface Font {
@@ -121,7 +121,9 @@ export interface Font {
     line_cb: FontLineWrapCallback
   ): number;
   numLines(style: FontStyle | null, w: number, indent: number, size: number, text: Text): number;
-  dims(style: FontStyle | null, w: number, indent: number, size: number, text: Text): { w: number; h: number };
+  dims(style: FontStyle | null, w: number, indent: number, size: number, text: Text): {
+    w: number; h: number; numlines: number;
+  };
 
   getCharacterWidth(style: FontStyle | null, x_size: number, c: number): number;
 
@@ -129,14 +131,14 @@ export interface Font {
 
   // Constants and utility functions are replicated on all font instances as well:
   ALIGN: typeof ALIGN;
-  style: typeof fontStyle;
-  styleAlpha: typeof fontStyleAlpha;
-  styleColored: typeof fontStyleColored;
+  style(base: FontStyle | null, param: FontStyleParam): FontStyle;
+  styleAlpha(base: FontStyle | null, alpha: number): FontStyle;
+  styleColored(base: FontStyle | null, color: RGBA): FontStyle;
 }
 
 export function fontCreate(font_info: unknown, texture_name: string): Font;
 
 // Legacy interfaces
-export const style: typeof fontStyle;
-export const styleAlpha: typeof fontStyleAlpha;
-export const styleColored: typeof fontStyleColored;
+export function style(base: FontStyle | null, param: FontStyleParam): FontStyle;
+export function styleAlpha(base: FontStyle | null, alpha: number): FontStyle;
+export function styleColored(base: FontStyle | null, color: RGBA): FontStyle;

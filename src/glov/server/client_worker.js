@@ -18,7 +18,6 @@ let permission_flags_map;
 
 let permission_flags;
 function applyCustomIds(ids, user_data_public) {
-  // FRVR - maybe generalize this
   delete ids.elevated;
   let perm = user_data_public?.permissions;
   for (let ii = 0; ii < permission_flags.length; ++ii) {

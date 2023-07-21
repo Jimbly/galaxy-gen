@@ -1,7 +1,7 @@
 import assert from 'assert';
+import * as cmd_parse_mod from 'glov/common/cmd_parse';
 import { ErrorCallback } from 'glov/common/types';
 import { setAbilityReload } from './client_config';
-import { cmd_parse } from './cmds';
 import { netForceDisconnect } from './net';
 import * as urlhash from './urlhash';
 
@@ -53,6 +53,7 @@ export function getExternalTextureURL(url: string): string {
 
 export function environmentsInit<T extends EnvironmentConfig>(
   environments: Array<T>,
+  cmd_parse: ReturnType<typeof cmd_parse_mod.create> | null,
   default_environment_name?: string | undefined | null,
 ): void {
   all_environments = {};
@@ -72,23 +73,25 @@ export function environmentsInit<T extends EnvironmentConfig>(
   if (!all_names.some((name) => name.toLowerCase() === 'default')) {
     all_names.push('default');
   }
-  cmd_parse.registerValue('environment', {
-    type: cmd_parse.TYPE_STRING,
-    help: 'Display or set the current client environment',
-    usage: 'Display the current client environment\n  Usage: /environment\n' +
-      `Set the current client environment (${all_names.join(', ')})\n  Usage: /environment <environment_name>`,
-    label: 'Environment',
-    get: () => JSON.stringify(getCurrentEnvironment() || 'default', null, 2),
-    set: setCurrentEnvironment,
-    access_show: ['sysadmin'],
-  });
+  if (cmd_parse) {
+    cmd_parse.registerValue('environment', {
+      type: cmd_parse.TYPE_STRING,
+      help: 'Display or set the current client environment',
+      usage: 'Display the current client environment\n  Usage: /environment\n' +
+        `Set the current client environment (${all_names.join(', ')})\n  Usage: /environment <environment_name>`,
+      label: 'Environment',
+      get: () => JSON.stringify(getCurrentEnvironment() || 'default', null, 2),
+      set: setCurrentEnvironment,
+      access_show: ['sysadmin'],
+    });
 
-  cmd_parse.register({
-    cmd: 'env',
-    help: 'Alias for /environment',
-    access_show: ['sysadmin'],
-    func: function (str: string, resp_func: ErrorCallback<string>) {
-      cmd_parse.handle(this, `environment ${str}`, resp_func);
-    },
-  });
+    cmd_parse.register({
+      cmd: 'env',
+      help: 'Alias for /environment',
+      access_show: ['sysadmin'],
+      func: function (str: string, resp_func: ErrorCallback<string>) {
+        cmd_parse.handle(this, `environment ${str}`, resp_func);
+      },
+    });
+  }
 }

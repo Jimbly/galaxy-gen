@@ -178,6 +178,7 @@ const { is_firefox, is_mac_osx } = require('./browser.js');
 const camera2d = require('./camera2d.js');
 const { cmd_parse } = require('./cmds.js');
 const engine = require('./engine.js');
+const { renderNeeded } = require('./engine.js');
 const in_event = require('./in_event.js');
 const local_storage = require('./local_storage.js');
 const { abs, max, min, sqrt } = Math;
@@ -221,6 +222,10 @@ cmd_parse.registerValue('mouse_log', {
 
 export function inputTouchMode() {
   return touch_mode;
+}
+
+export function inputPadMode() {
+  return pad_mode;
 }
 
 export function inputEatenMouse() {
@@ -347,15 +352,34 @@ function eventlog(event) {
   console.log(`${engine.frame_index} ${event.type} ${pointerLocked()?'ptrlck':'unlckd'} ${pairs.join(',')}`);
 }
 
+let allow_all_events = false;
+export function inputAllowAllEvents(allow) {
+  allow_all_events = allow;
+}
+
+function isInputElement(target) {
+  return target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
+    target.tagName === 'LABEL' || target.tagName === 'VIDEO');
+}
+
 function letWheelEventThrough(event) {
   // *not* checking for `noglov`, as links have these, and we want to capture scroll events even if mouse is over links
-  return event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' ||
-    event.target.tagName === 'LABEL');
+  return allow_all_events || isInputElement(event.target);
 }
 
 function letEventThrough(event) {
-  return event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' ||
-    event.target.tagName === 'LABEL' || String(event.target.className).includes('noglov'));
+  if (!event.target || allow_all_events || event.glov_do_not_cancel) {
+    return true;
+  }
+  // Going to an input or related element
+  return isInputElement(event.target) ||
+    String(event.target.className).includes('noglov');
+  /* Not doing this: this causes legitimate clicks (e.g. when an edit box is focused)
+      to be lost, instead, relying on `allow_all_events` when an HTML UI is active.
+    // or, one of those is focused, and going away from it (e.g. input elem focused, clicking on canvas)
+    document.activeElement && event.target !== document.activeElement &&
+    (isInputElement(document.activeElement) ||
+      String(document.activeElement.className).includes('noglov'));*/
 }
 
 function ignored(event) {
@@ -391,6 +415,7 @@ export function inputLastTime() {
 function onUserInput() {
   soundResume();
   last_input_time = Date.now();
+  renderNeeded();
 }
 
 function releaseAllKeysDown(evt) {
@@ -403,6 +428,7 @@ function releaseAllKeysDown(evt) {
 }
 
 function onKeyUp(event) {
+  renderNeeded();
   protectUnload(event.ctrlKey);
   let code = event.keyCode;
   if (!letEventThrough(event)) {
@@ -473,6 +499,7 @@ let last_abs_move_time = 0;
 let last_move_x = 0;
 let last_move_y = 0;
 function onMouseMove(event, no_stop) {
+  renderNeeded();
   /// eventlog(event);
   // Don't block mouse button 3, that's the Back button
   if (!letEventThrough(event) && !no_stop && event.button !== 3) {
@@ -629,6 +656,7 @@ function onMouseUp(event) {
 }
 
 function onWheel(event) {
+  renderNeeded();
   let saved = mouse_moved; // don't trigger mouseMoved()
   onMouseMove(event, true);
   mouse_moved = saved;
@@ -669,6 +697,7 @@ function onTouchChange(event) {
 
   let new_count = ct.length;
   let old_count = 0;
+  let first_valid_touch;
   // Look for press and movement
   for (let ii = 0; ii < ct.length; ++ii) {
     let touch = ct[ii];
@@ -682,6 +711,9 @@ function onTouchChange(event) {
       // getting "Permission denied to access property "pageX" rarely on Firefox, simply ignore
       --new_count;
       continue;
+    }
+    if (!first_valid_touch) {
+      first_valid_touch = touch;
     }
 
     let last_touch = touches[touch.identifier];
@@ -741,11 +773,10 @@ function onTouchChange(event) {
       v2copy(mouse_pos, released_touch.cur_pos);
       mouse_pos_is_touch = true;
     } else if (new_count === 1) {
-      let touch = ct[0];
       if (!old_count) {
         mouse_down[0] = true;
       }
-      v2set(mouse_pos, touch.pageX, touch.pageY);
+      v2set(mouse_pos, first_valid_touch.pageX, first_valid_touch.pageY);
       mouse_pos_is_touch = true;
     } else if (new_count > 1) {
       // multiple touches, release mouse_down without emitting click
@@ -755,6 +786,7 @@ function onTouchChange(event) {
 }
 
 function onBlurOrFocus(evt) {
+  renderNeeded();
   protectUnload(false);
   releaseAllKeysDown(evt);
 }

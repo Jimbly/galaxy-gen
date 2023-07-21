@@ -198,12 +198,20 @@ function setCrossOriginHeadersUponRequest(req, res, next) {
   }
 }
 
+function disableCrossOriginHeadersUponRequest(req, res, next) {
+  if (!req.query.nocoop) {
+    setCrossOriginHeadersAlways(req, res, next);
+  } else {
+    next();
+  }
+}
+
 export function setupRequestHeaders(app, { dev, allow_map }) {
   if (!allow_map) {
     allowMapFromLocalhostOnly(app);
   }
   if (dev) {
-    app.use(setCrossOriginHeadersAlways);
+    app.use(disableCrossOriginHeadersUponRequest);
   } else {
     app.use(setCrossOriginHeadersUponRequest);
   }

@@ -5,23 +5,32 @@ const path = require('path');
 const { asyncEachSeries } = require('glov-async');
 const gb = require('glov-build');
 const babel = require('glov-build-babel');
+const gbcache = require('glov-build-cache');
+const imagemin = require('glov-build-imagemin');
 const preresolve = require('glov-build-preresolve');
 const sourcemap = require('glov-build-sourcemap');
+const imagemin_optipng = require('imagemin-optipng');
+const imagemin_zopfli = require('imagemin-zopfli');
 const argv = require('minimist')(process.argv.slice(2));
 const Replacer = require('regexp-sourcemaps');
 
+const alphafix = require('./alphafix.js');
 const appBundle = require('./app-bundle.js');
+const autosound = require('./autosound.js');
 const compress = require('./compress.js');
-const config = require('./config.js');
 const eslint = require('./eslint.js');
 const exec = require('./exec.js');
 const gulpish_tasks = require('./gulpish-tasks.js');
 const json5 = require('./json5.js');
+const testRunner = require('./test-runner.js');
+const { texPackExtractPNG, texPackRecombinePNG } = require('./texpack.js');
+const texproc = require('./texproc.js');
 const typescript = require('./typescript.js');
 const uglify = require('./uglify.js');
 const uglifyrc = require('./uglifyrc.js');
 const warnMatch = require('./warn-match.js');
 const webfs = require('./webfs_build.js');
+const yamlproc = require('./yamlproc.js');
 
 require('./checks.js')(__filename);
 
@@ -30,6 +39,8 @@ process.env.BROWSERSLIST_IGNORE_OLD_DATA = 1;
 
 const targets = {
   dev: path.join(__dirname, '../dist/game/build.dev'),
+  test_server: path.join(__dirname, '../dist/game/build.test/server'),
+  test_client: path.join(__dirname, '../dist/game/build.test/client'),
   prod: path.join(__dirname, '../dist/game/build.prod'),
 };
 const SOURCE_DIR = path.join(__dirname, '../src/');
@@ -39,6 +50,9 @@ gb.configure({
   targets,
   log_level: gb.LOG_INFO,
 });
+
+// eslint-disable-next-line import/order
+const config = require('./config.js')(gb);
 
 // Gets applied to the entire bundle
 const max_mangle = argv['max-mangle'];
@@ -61,14 +75,6 @@ function copy(job, done) {
   job.out(job.getFile());
   done();
 }
-
-gb.task({
-  name: 'client_static',
-  input: config.client_static,
-  type: gb.SINGLE,
-  target: 'dev',
-  func: copy,
-});
 
 gb.task({
   name: 'client_css',
@@ -100,8 +106,19 @@ gb.task({
 
 gb.task({
   name: 'server_js_glov_preresolve',
-  target: 'dev',
   ...preresolve({ ...config.preresolve_params, source: 'server_js' }),
+});
+
+gb.task({
+  name: 'server_js_notest',
+  target: 'dev',
+  input: [
+    'server_js_glov_preresolve:**',
+    'server_js_glov_preresolve:!**/test.js*',
+    'server_js_glov_preresolve:!**/tests/**',
+  ],
+  type: gb.SINGLE,
+  func: copy,
 });
 
 gb.task({
@@ -149,9 +166,38 @@ gb.task({
   ...json5({ beautify: true })
 });
 
-for (let ii = 0; ii < config.client_register_cbs.length; ++ii) {
-  config.client_register_cbs[ii](gb);
-}
+gb.task({
+  name: 'client_png',
+  input: config.client_png,
+  ...gbcache({
+    key: 'alphafix',
+    version: 1,
+  }, alphafix(config.client_png_alphafix)),
+});
+
+gb.task({
+  name: 'client_texopt',
+  input: ['client/img/**/*.texopt'],
+  ...yamlproc(),
+});
+
+gb.task({
+  name: 'client_texproc',
+  input: 'client_png:**',
+  deps: ['client_texopt'],
+  ...texproc(),
+});
+
+gb.task({
+  name: 'client_texproc_output',
+  input: [
+    'client_texproc:**',
+    'client_texproc:!**/*.tflag',
+  ],
+  type: gb.SINGLE,
+  target: 'dev',
+  func: copy,
+});
 
 gb.task({
   name: 'server_static',
@@ -291,9 +337,16 @@ gb.task({
 
 let server_process_container = {};
 
+const WORKER_BAN_DEPS = {
+  'Cannot reference window/document from WebWorkers': [
+    'glov/client/engine',
+    'glov/client/urlhash',
+    'glov/client/worker_comm',
+  ],
+};
 let bundle_tasks = [];
 function registerBundle(param) {
-  const { entrypoint, deps, is_worker, do_version, do_reload } = param;
+  const { entrypoint, deps, is_worker, do_version, do_reload, ban_deps } = param;
   let name = `client_bundle_${entrypoint.replace('/', '_')}`;
   let out = `client/${entrypoint}.bundle.js`;
   appBundle({
@@ -309,6 +362,7 @@ function registerBundle(param) {
     task_accum: bundle_tasks,
     do_version,
     bundle_uglify_opts: argv['dev-mangle'] ? prod_uglify_opts : null,
+    ban_deps: ban_deps || (is_worker ? WORKER_BAN_DEPS : null),
   });
   if (do_reload) {
     // Add an early sync task, letting the server know we should reload these files
@@ -325,7 +379,7 @@ function registerBundle(param) {
       func: function (job, done) {
         if (server_process_container.proc) {
           let updated = job.getFilesUpdated();
-          updated = updated.map((a) => a.relative.replace(/^client\//, ''));
+          updated = updated.map((a) => a.relative);
           server_process_container.proc.send({ type: 'file_change', paths: updated });
         }
         done();
@@ -336,9 +390,47 @@ function registerBundle(param) {
 }
 config.bundles.forEach(registerBundle);
 
+gb.task({
+  name: 'server_fsdata',
+  input: config.server_fsdata,
+  target: 'dev',
+  type: gb.SINGLE,
+  func: function (job, done) {
+    let file = job.getFile();
+    let server_name = file.relative.replace(/^client\//, 'server/');
+    job.out({
+      relative: server_name,
+      contents: file.contents,
+    });
+
+    done();
+  }
+});
+
+let server_hotreload_updated = null;
+gb.task({
+  name: 'server_hotreload',
+  input: 'server_fsdata:**',
+  type: gb.SINGLE,
+  init: function (next) {
+    server_hotreload_updated = [];
+    next();
+  },
+  func: function (job, done) {
+    server_hotreload_updated.push(job.getFile().relative);
+    done();
+  },
+  finish: function () {
+    if (server_process_container.proc) {
+      server_process_container.proc.send({ type: 'file_change', paths: server_hotreload_updated });
+    }
+    server_hotreload_updated = null;
+  },
+});
+
 const server_input_globs = [
   'server_static:**',
-  'server_js_glov_preresolve:**',
+  'server_js_notest:**',
   'server_json:**',
 ];
 
@@ -347,6 +439,11 @@ let server_port_https = argv.sport || process.env.sport || (server_port + 100);
 
 gb.task({
   name: 'run_server',
+  deps: [
+    // do not run until after these are done, but does not cause a hard reload
+    'server_fsdata',
+    'server_hotreload',
+  ],
   input: server_input_globs,
   ...exec({
     cwd: '.',
@@ -377,9 +474,52 @@ gb.task({
   input: config.client_fsdata,
   target: 'dev',
   ...webfs({
+    embed: config.fsdata_embed,
+    strip: config.fsdata_strip,
     base: 'client',
     output: 'client/fsdata.js',
   })
+});
+
+gb.task({
+  name: 'client_static',
+  input: config.client_static,
+  type: gb.SINGLE,
+  target: 'dev',
+  func: copy,
+});
+
+gb.task({
+  name: 'client_single_min_pre',
+  input: config.client_single_min,
+  ...uglify({ no_sourcemap: true }, {}),
+});
+
+gb.task({
+  name: 'client_single_min',
+  input: 'client_single_min_pre:**',
+  type: gb.SINGLE,
+  target: 'dev',
+  func: function (job, done) {
+    let file = job.getFile();
+    let min_name = file.relative.replace(/^(.*\/)([^/]+)\.js$/, 'client/$2.min.js');
+    job.out({
+      relative: min_name,
+      contents: file.contents,
+    });
+
+    done();
+  },
+});
+
+gb.task({
+  name: 'client_autosound',
+  input: config.client_autosound,
+  target: 'dev',
+  ...gbcache({
+    key: 'autosound',
+    version: 1,
+  }, autosound(config.client_autosound_config)),
 });
 
 function addStarStar(a) {
@@ -394,7 +534,10 @@ function addStarStarJSON(a) {
 
 let client_tasks = [
   ...config.extra_client_tasks,
+  'client_autosound',
   'client_static',
+  'client_single_min',
+  'client_texproc_output',
   'client_css',
   'client_fsdata',
   ...bundle_tasks,
@@ -426,9 +569,9 @@ gb.task({
       assert(old_open);
       utils.opnWrapper = (url, name, instance) => {
         if (instance.options.get('open') === 'target') {
-          url = bs_target;
+          url = `${bs_target}${config.browsersync_queryparams}`;
         } else if (instance.options.get('open') === 'target_https') {
-          url = bs_target_https;
+          url = `${bs_target_https}${config.browsersync_queryparams}`;
         }
         old_open(url, name, instance);
       };
@@ -445,7 +588,7 @@ gb.task({
       bs.init({
         // informs browser-sync to proxy our app which would run at the following location
         proxy: {
-          target: bs_target,
+          target: `${bs_target}${config.browsersync_queryparams}`,
           ws: true,
           proxyReq: [
             function (proxyReq) {
@@ -476,12 +619,12 @@ gb.task({
         // Very first run, but server is already up, make sure they know the
         //   client has been updated, if it was changed between the server
         //   being started and this task being run.
-        server_process_container.proc.send({ type: 'file_change', paths: ['app.ver.json'] });
+        server_process_container.proc.send({ type: 'file_change', paths: ['client/app.ver.json'] });
       }
 
     } else {
       let updated = job.getFilesUpdated();
-      updated = updated.map((a) => a.relative.replace(/^client\//, ''));
+      updated = updated.map((a) => a.relative);
       if (server_process_container.proc) {
         server_process_container.proc.send({ type: 'file_change', paths: updated });
       }
@@ -500,6 +643,14 @@ gb.task({
 });
 
 gb.task({
+  name: 'test',
+  ...testRunner({
+    input_server: 'server_js_glov_preresolve',
+    input_client: 'client_intermediate',
+  }),
+});
+
+gb.task({
   name: 'nop',
   type: gb.SINGLE,
   input: 'does_not_exist',
@@ -513,12 +664,14 @@ gb.task({
     // 'client_js_babel', // dep'd from client_bundle*
 
     'server_static',
-    'server_js_glov_preresolve',
+    'server_fsdata',
+    'server_js_notest',
     'server_json',
     ...client_tasks,
     (argv.nolint || argv.lint === false) ? 'nop' : 'eslint',
     // 'gulpish-eslint', // example, superseded by `eslint`
     (argv.nolint || argv.lint === false) ? 'nop' : 'check_typescript',
+    (argv.nolint || argv.lint === false) ? 'nop' : 'test',
     'gulpish-client_html',
     'client_js_warnings',
   ],
@@ -550,6 +703,85 @@ function noBundleTasks(elem) {
   return true;
 }
 
+function noTextureTask(elem) {
+  if (elem.split(':')[0] === 'client_texproc_output') {
+    return false;
+  }
+  return true;
+}
+
+gb.task({
+  name: 'build.prod.pngextract',
+  input: [
+    'client_texproc_output:**/*.txp',
+  ],
+  ...texPackExtractPNG(),
+});
+
+gb.task({
+  name: 'build.prod.png',
+  input: [
+    'client_texproc_output:**/*.png',
+    'build.prod.pngextract:**',
+  ],
+  ...gbcache({
+    key: 'imagemin',
+    version: 1,
+  }, imagemin({
+    plugins: [
+      imagemin_optipng(config.optipng),
+      imagemin_zopfli(config.zopfli),
+    ],
+  })),
+});
+
+gb.task({
+  name: 'build.prod.pngpack',
+  input: [
+    'build.prod.png:**',
+  ],
+  ...texPackRecombinePNG(),
+});
+
+// Texture pipeline summary:
+//   client_png
+//     -> combines all source pngs from source data, generated, combined, etc, does alpha fixing
+//   client_texproc - input of client_png
+//     -> based on .texopt settings, generates compressed and packed textures plus tflags
+//     -> passes through other png files
+//   client_texproc_output
+//     -> filters out the tflags and outputs all these to dev
+// (Production build only pipeline)
+//   build.prod.pngextract
+//     -> extracts TXPs to individual PNGs for optimization
+//   build.prod.png
+//     -> compresses all PNGs (either individuals or those extracted in previous task)
+//   build.prod.pngpack
+//     -> repacks PNGs to TXPs, passes through other pngs
+//   build.prod.texfinal
+//     -> gathers all final images needed for prod zip tasks an also outputs to prod:
+//       all outputs from build.prod.pngpack
+//       all non-txp, non-png, non-tflag outputs of client_texproc (gpu textures, maybe jpegs later, etc)
+//         Or, maybe they should be pass-through from build.prod.pngextract->etc?
+//         There are not yet any of these, all `texproc()` outputs are currently PNGs or PNG-containing TXPs
+
+gb.task({
+  name: 'build.prod.texfinal',
+  input: [
+    // All final compressed .PNGs, all re-packed .TXPs
+    'build.prod.pngpack:**',
+    // all non-txp, non-png, non-tflag outputs of client_texproc (gpu textures, maybe jpegs later, etc)
+    'client_texproc:**',
+    'client_texproc:!**/*.png',
+    'client_texproc:!**/*.txp',
+    'client_texproc:!**/*.tflag',
+  ],
+  target: 'prod',
+  type: gb.SINGLE,
+  func: copy,
+});
+
+
 let zip_tasks = [];
 config.extra_index.forEach(function (elem) {
   if (!elem.zip) {
@@ -560,7 +792,8 @@ config.extra_index.forEach(function (elem) {
   gb.task({
     name,
     input: [
-      ...client_input_globs_base.filter(noBundleTasks),
+      ...client_input_globs_base.filter(noBundleTasks).filter(noTextureTask),
+      'build.prod.texfinal:**',
       ...bundle_tasks.map(addStarStarJSON), // things excluded in build.prod.uglify
       'build.prod.uglify:**',
       ...config.extra_client_html,
@@ -579,7 +812,6 @@ gb.task({
   name: 'build.zip',
   deps: zip_tasks,
 });
-
 
 const package_files = ['package.json', 'package-lock.json'];
 function timestamp(list) {
@@ -621,7 +853,7 @@ gb.task({
   input: [
     ...bundle_tasks.map(addStarStarJSON), // things excluded in build.prod.uglify
     'build.prod.uglify:**',
-    ...client_input_globs.filter(noBundleTasks),
+    ...client_input_globs.filter(noBundleTasks).filter(noTextureTask),
     ...config.extra_prod_inputs,
   ],
   target: 'prod',
@@ -630,7 +862,10 @@ gb.task({
 
 gb.task({
   name: 'build.prod.server',
-  input: server_input_globs,
+  input: [
+    ...server_input_globs,
+    'server_fsdata:**',
+  ],
   target: 'prod',
   type: gb.SINGLE,
   func: copy,
@@ -638,11 +873,11 @@ gb.task({
 
 gb.task({
   name: 'build.prod.client',
-  deps: ['build.prod.compress', 'build.zip'],
+  deps: ['build.prod.compress', 'build.prod.texfinal', 'build.zip'],
 });
 gb.task({
   name: 'build',
-  deps: ['build.prod.package', 'build.prod.server', 'build.prod.compress', 'build.zip'],
+  deps: ['build.prod.package', 'build.prod.server', 'build.prod.client'],
 });
 
 // Default development task

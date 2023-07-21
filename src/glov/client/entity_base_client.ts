@@ -7,7 +7,7 @@ import {
   ActionDataAssignments,
   ActionMessageParam,
   EntityBaseCommon,
-  EntityID,
+  EntityBaseDataCommon,
 } from 'glov/common/entity_base_common';
 import { DataObject, NetErrorCallback } from 'glov/common/types';
 import {
@@ -21,8 +21,8 @@ type DataOverride = {
   data: Partial<Record<string, unknown>>;
 };
 
-export interface ClientActionMessageParam extends ActionMessageParam {
-  ent: EntityBaseClient;
+export interface ClientActionMessageParam<Entity extends EntityBaseClient=EntityBaseClient> extends ActionMessageParam {
+  ent: Entity;
 }
 
 interface BatchUpdateParam extends ActionMessageParam {
@@ -37,21 +37,19 @@ export class EntityBaseClient extends EntityBaseCommon {
   data_overrides: DataOverride[];
   fade: number | null;
   last_update_timestamp: number;
-  private is_me: boolean;
 
-  constructor(ent_id: EntityID, entity_manager: ClientEntityManagerInterface) {
-    super(ent_id, entity_manager);
+  constructor(data: EntityBaseDataCommon) {
+    super(data);
     this.fade = null;
     this.fading_out = false;
     this.fading_in = false;
     this.data_overrides = [];
     this.seq_id = 0;
     this.last_update_timestamp = engine.frame_timestamp;
-    this.is_me = ent_id === entity_manager.my_ent_id;
   }
 
   isMe(): boolean {
-    return this.is_me;
+    return this.id === this.entity_manager.getMyEntID();
   }
 
   getData<T>(field: string, deflt: T): T;
@@ -74,8 +72,8 @@ export class EntityBaseClient extends EntityBaseCommon {
   }
   setDataOverride(field: string, data: Partial<Record<string, unknown>>): string | undefined {
     let field_start = this.getData<string>(field);
-    let sub_id_prefix = this.entity_manager.sub_id_prefix;
-    let field_new = `${sub_id_prefix}${++this.seq_id}`;
+    let sub_id = this.entity_manager.getSubscriptionId();
+    let field_new = `${sub_id}:${++this.seq_id}`;
     // Also predict this change
     data[field] = field_new;
     this.data_overrides.push({
@@ -153,12 +151,13 @@ export class EntityBaseClient extends EntityBaseCommon {
     }
   }
 
-  actionSend<T=unknown>(action: ActionMessageParam, resp_func: NetErrorCallback<T>): void {
+  actionSend<T=unknown>(action: ActionMessageParam, resp_func?: NetErrorCallback<T>): void {
     (action as ClientActionMessageParam).ent = this;
-    this.entity_manager.actionSendQueued(action as ClientActionMessageParam, resp_func as NetErrorCallback<unknown>);
+    this.entity_manager.actionSendQueued(action as ClientActionMessageParam,
+      resp_func as NetErrorCallback<unknown> | undefined);
   }
 
-  applyBatchUpdate<T=unknown>(update: BatchUpdateParam, resp_func: NetErrorCallback<T>): void {
+  applyBatchUpdate<T=unknown>(update: BatchUpdateParam, resp_func?: NetErrorCallback<T>): void {
     let { field, action_id, payload, data_assignments } = update;
     assert(data_assignments);
     assert(!update.predicate);
@@ -170,6 +169,12 @@ export class EntityBaseClient extends EntityBaseCommon {
     this.actionSend(action_data, resp_func);
   }
 
+  hasPendingBatchUpdate(): boolean {
+    for (let key in this.data_overrides) {
+      return true;
+    }
+    return false;
+  }
 
   // Expected to be overridden by app
   onDelete(reason: string): number {
@@ -183,7 +188,7 @@ export class EntityBaseClient extends EntityBaseCommon {
   //   just seeing now) as opposed to a brand new entity
   onCreate(is_initial: boolean): number {
     // Returns how many milliseconds to keep the entity in a fading_in state
-    return is_initial && !this.entity_manager.received_ent_ready ? 0 : 250;
+    return is_initial && !this.entity_manager.isReady() ? 0 : 250;
   }
 
 }

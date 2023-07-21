@@ -7,6 +7,7 @@ export interface SimpleMenu {
 
   getSelectedIndex(): number;
   getSelectedItem(): MenuItem;
+  getItem(index: number): MenuItem;
 }
 
 export function simpleMenuCreate(params?: SelectionBoxOpts): SimpleMenu;

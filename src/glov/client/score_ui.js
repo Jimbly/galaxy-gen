@@ -1,5 +1,10 @@
+const assert = require('assert');
 const { min, round } = Math;
-const score_system = require('./score.js');
+const {
+  scoreFormatName,
+  scoreGetPlayerName,
+  scoreUpdatePlayerName,
+} = require('./score.js');
 const { scrollAreaCreate } = require('./scroll_area.js');
 const ui = require('./ui.js');
 
@@ -25,9 +30,10 @@ export function drawCellDefault({
   font.drawSizedAligned(use_style, x, y, z, size, align, w, h, str);
 }
 export function scoresDraw({
+  score_system,
   x, y, z,
   width, height,
-  level_id,
+  level_index,
   size, line_height,
   columns,
   scoreToRow,
@@ -36,14 +42,16 @@ export function scoresDraw({
   style_header,
   color_me_background,
   color_line,
+  allow_rename,
 }) {
+  assert(color_me_background[3] === 1);
   if (!font) {
     ({ font } = ui);
   }
   const pad = size;
   const hpad = pad/2;
   const scroll_max_y = y + height - (ui.button_height + pad);
-  let scores = score_system.high_scores[level_id];
+  let scores = score_system.getHighScores(level_index);
   if (!scores) {
     font.drawSizedAligned(style_score, x, y, z, size, font.ALIGN.HVCENTERFIT, width, height,
       'Loading...');
@@ -103,8 +111,8 @@ export function scoresDraw({
   let found_me = false;
   function drawScoreEntry(ii, s, use_style) {
     let row = [
-      `#${ii+1}`,
-      score_system.formatName(s),
+      ii === null ? '--' : `#${ii+1}`,
+      scoreFormatName(s),
     ];
     scoreToRow(row, s.score);
     drawSet(row, use_style);
@@ -113,7 +121,7 @@ export function scoresDraw({
     let s = scores[ii % scores.length];
     let use_style = style_score;
     let drawme = false;
-    if (s.name === score_system.player_name && !found_me) {
+    if (s.name === scoreGetPlayerName() && !found_me) {
       use_style = style_me;
       found_me = true;
       drawme = true;
@@ -136,34 +144,50 @@ export function scoresDraw({
       y += line_height;
     }
   }
+  if (!found_me && score_system.getScore(level_index)) {
+    let my_score = score_system.getScore(level_index);
+    let y_save2 = y;
+    if (y < scroll_min_visible_y) {
+      y = scroll_min_visible_y;
+    } else if (y > scroll_max_visible_y) {
+      y = scroll_max_visible_y;
+    }
+    z += 20;
+    ui.drawRect(x, y, x + width + 1, y + line_height - 1, z - 1, color_me_background);
+    drawScoreEntry(null, { name: scoreGetPlayerName(), score: my_score }, style_me);
+    z -= 20;
+    y = y_save2 + line_height;
+  }
   let set_pad = size / 2;
   y += set_pad/2;
   scores_scroll.end(y);
   x = x_save;
   y = y_save + min(scores_scroll_h, y);
   y += set_pad/2;
-  if (found_me && score_system.player_name.indexOf('Anonymous') === 0) {
-    if (!scores_edit_box) {
-      scores_edit_box = ui.createEditBox({
-        z,
-        w: width / 2,
-      });
-      scores_edit_box.setText(score_system.player_name);
-    }
+  if (found_me && scoreGetPlayerName().indexOf('Anonymous') === 0) {
+    if (allow_rename) {
+      if (!scores_edit_box) {
+        scores_edit_box = ui.createEditBox({
+          z,
+          w: width / 2,
+        });
+        scores_edit_box.setText(scoreGetPlayerName());
+      }
 
-    if (scores_edit_box.run({
-      x,
-      y,
-    }) === scores_edit_box.SUBMIT || ui.buttonText({
-      x: x + scores_edit_box.w + size,
-      y: y - size * 0.25,
-      z,
-      w: size * 13,
-      h: ui.button_height,
-      text: 'Update Player Name'
-    })) {
-      if (scores_edit_box.text) {
-        score_system.updatePlayerName(scores_edit_box.text);
+      if (scores_edit_box.run({
+        x,
+        y,
+      }) === scores_edit_box.SUBMIT || ui.buttonText({
+        x: x + scores_edit_box.w + size,
+        y: y - size * 0.25,
+        z,
+        w: size * 13,
+        h: ui.button_height,
+        text: 'Update Player Name'
+      })) {
+        if (scores_edit_box.text) {
+          scoreUpdatePlayerName(scores_edit_box.text);
+        }
       }
     }
     y += size;

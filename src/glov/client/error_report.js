@@ -1,12 +1,12 @@
 /* global location */
 
 export let session_uid = `${String(Date.now()).slice(-8)}${String(Math.random()).slice(2,8)}`;
+let error_report_details = {};
+let error_report_dynamic_details = {};
 
-/* eslint-disable import/order */
 import { getAPIPath } from 'glov/client/environments';
-
-const { fetch } = require('./fetch.js');
-const { PLATFORM } = require('./client_config.js');
+import { PLATFORM } from './client_config';
+import { fetch } from './fetch';
 
 let error_report_disabled = false;
 
@@ -19,8 +19,6 @@ export function errorReportIgnoreUncaughtPromises() {
   ignore_promises = true;
 }
 
-let error_report_details = {};
-let error_report_dynamic_details = {};
 export function errorReportSetDetails(key, value) {
   if (value) {
     error_report_details[key] = escape(String(value));
@@ -87,12 +85,45 @@ export function glovErrorReportSetCrashCB(cb) {
 }
 
 // Errors from plugins that we don't want to get reported to us, or show the user!
-// The exact phrase "Script error.\n  at (0:0)" comes from our bootstap.js when we
-//   receive the message 'Script Error.' and no stack.  This happens on the Mi Browser on Redmi phones
-//   and doesn't seem to be indicative of any actual problem.
-// Ignoring null at null for similar reasons and because we get nothing useful from the reports.
-// eslint-disable-next-line no-regex-spaces
-let filtered_errors = /avast_submit|vc_request_action|^Error: Script error\.$|^Error: Script error\.\n  at \(0:0\)$|^Error: null$|^Error: null\n  at null\(null:null\)$|getElementsByTagName\('video'\)|document\.getElementById\("search"\)|change_ua|chrome-extension|setConnectedRobot|Failed to (?:start|stop) the audio device|zaloJSV2|getCookie is not defined|originalPrompt|_AutofillCallbackHandler|sytaxError|bannerNight|privateSpecialRepair|__gCrWeb|\$wrap is not/;
+let filtered_errors = new RegExp([
+  // Generic error that shows up with no context, not useful, and probably coming from internal or extension scripts
+  '^Error: Script error\\.$',
+  // The exact phrase "Script error.\n  at (0:0)" comes from our bootstap.js when we
+  //   receive the message 'Script Error.' and no stack.  This happens on the Mi Browser on Redmi phones
+  //   and doesn't seem to be indicative of any actual problem.
+  '^Error: Script error\\.\n  at \\(0:0\\)$',
+  '^Error: null$',
+  // Ignoring null at null for similar reasons and because we get nothing useful from the reports.
+  '^Error: null\n  at null\\(null:null\\)$',
+  'avast_submit',
+  'vc_request_action',
+  'getElementsByTagName\\(\'video\'\\)',
+  'document\\.getElementById\\("search"\\)',
+  'change_ua',
+  'chrome-extension',
+  'setConnectedRobot',
+  'Failed to (?:start|stop) the audio device',
+  'zaloJSV2',
+  'getCookie is not defined',
+  'originalPrompt',
+  '_AutofillCallbackHandler',
+  'sytaxError',
+  'bannerNight',
+  'privateSpecialRepair',
+  '__gCrWeb',
+  '\\$wrap is not',
+  'wsWhitelisted',
+  '#darkcss',
+  'chrome://userjs',
+  'worker-hammerhead',
+  'ammerhead-browser',
+  'hammerhead',
+  'isFeatureBroken',
+  'PureRead',
+  'uv\\.handler\\.js',
+  'dashawn\\.cf',
+].join('|'));
+
 export function glovErrorReport(is_fatal, msg, file, line, col) {
   console.error(msg);
   if (on_crash_cb) {
@@ -126,6 +157,13 @@ export function glovErrorReport(is_fatal, msg, file, line, col) {
     `&msg=${escape(msg)}${errorReportDetailsString()}`;
   if (submit_errors) {
     fetch({ method: 'POST', url }, () => { /* nop */ });
+
+    if (window.gtag) {
+      window.gtag('event', 'exception', {
+        description: msg,
+        fatal: is_fatal,
+      });
+    }
   }
   if (ignore_promises && msg.match(/Uncaught \(in promise\)/)) {
     return false;

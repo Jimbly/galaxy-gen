@@ -1,8 +1,8 @@
 import assert from 'assert';
 import { createHmac } from 'crypto';
+import { executeWithRetry } from 'glov/common/execute_with_retry';
 import { DataObject, ErrorCallback } from 'glov/common/types';
 import request from 'request';
-import { executeWithRetry } from './execute_with_retry';
 import { serverConfig } from './server_config';
 
 export interface FacebookGraphError {
