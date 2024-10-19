@@ -4,10 +4,14 @@
 export const PRESENCE_OFFLINE = 0; // for invisible, etc
 export const PRESENCE_ACTIVE = 1;
 export const PRESENCE_INACTIVE = 2;
-
-export const ID_PROVIDER_APPLE = 'apl';
-export const ID_PROVIDER_FB_GAMING = 'fbg';
-export const ID_PROVIDER_FB_INSTANT = 'fbi';
+// when invisible *and* idle; client -> server only, other clients should never see
+export const PRESENCE_OFFLINE_INACTIVE = 3;
+export function presenceActive(presence_value: number): boolean {
+  return !(presence_value === PRESENCE_INACTIVE || presence_value === PRESENCE_OFFLINE_INACTIVE);
+}
+export function presenceVisible(presence_value: number): boolean {
+  return !(presence_value === PRESENCE_OFFLINE || presence_value === PRESENCE_OFFLINE_INACTIVE);
+}
 
 export type NumberEnum<K extends string, V extends number> = Record<K, V> & Partial<Record<string, V | string>>;
 export type StringEnum<K extends string, V extends string> = Record<K, V>;
@@ -33,17 +37,5 @@ export function isValidStringEnumValue<K extends string, V extends string>(
   return false;
 }
 
-export enum Platform {
-  Android = 'android',
-  FBInstant = 'fbinstant',
-  IOS = 'ios',
-  MSStart = 'msstart',
-  Web = 'web',
-  Yandex = 'yandex',
-}
-export function getPlatformValues(): Platform[] {
-  return getStringEnumValues(Platform);
-}
-export function isValidPlatform(v: string | undefined | null): boolean {
-  return isValidStringEnumValue(Platform, v);
-}
+export const CHAT_FLAG_EMOTE = 1;
+export const CHAT_FLAG_USERCHAT = 2; // Only used on client, not communicated

@@ -26,6 +26,19 @@ export function debugmsg(msg, clear) {
   sendmsg('debugmsg', { msg, clear });
 }
 
+function consoleLogForward(...args) {
+  sendmsg('log', args.join(' '));
+}
+
+if (!self.console) {
+  self.console = {
+    log: consoleLogForward,
+    info: consoleLogForward,
+    warn: consoleLogForward,
+    error: consoleLogForward,
+  };
+}
+
 // Catch errors not happening inside handlers' try/catch
 self.addEventListener('error', function (evt) {
   if (evt.error) {
@@ -87,7 +100,7 @@ export function endWork() {
   }
 }
 
-onmessage = function (evt) {
+self.onmessage = function (evt) {
   // start work, end yield/idle
   startWork();
   evt = evt.data;

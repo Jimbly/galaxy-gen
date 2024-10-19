@@ -20,12 +20,15 @@ const FLAG_PACKET_INTERNAL = PACKET_DEBUG | PACKET_RESERVED1 | PACKET_RESERVED2;
 // Internal, runtime-only (not serialized) flags < 8 bits
 const PACKET_UNOWNED_BUFFER = 1 << 8;
 
-/* eslint-disable import/order */
-const assert = require('assert');
+import assert from 'assert';
+import {
+  base64Decode,
+  base64Encode,
+} from './base64';
+import { deprecate, isInteger, log2 } from './util';
+// import { isInteger, log2 } from '../../build.dev/common/glov/util';
+
 const { max } = Math;
-const { deprecate, isInteger, log2 } = require('./util.js');
-// const { isInteger, log2 } = require('../../build.dev/common/glov/util.js');
-const { base64Encode, base64Decode } = require('./base64.js');
 
 deprecate(exports, 'default_flags');
 
@@ -358,6 +361,27 @@ Packet.prototype.readU8 = function () {
 // 253 negative 64-bit
 // 254 unused
 // 255 negative byte
+export function packetSizeInt(v) {
+  assert(isInteger(v));
+  let neg = (v < 0) ? 1 : 0;
+  if (neg) {
+    v = -v;
+  }
+  if (v < 248) { // || neg && v < 256 would also decode right
+    if (neg) {
+      return 2;
+    }
+    return 1;
+  } else {
+    if (v < 65536) {
+      return 3;
+    } else if (v < 4294967296) {
+      return 5;
+    } else {
+      return 9;
+    }
+  }
+}
 Packet.prototype.writeInt = function (v) {
   assert(isInteger(v));
   let offs = this.fit(9, true); // 9 is max size of a packed int
@@ -425,6 +449,64 @@ Packet.prototype.zeroInt = function () {
     this.buf.u8[this.buf_offs++] = 0;
   }
 };
+
+// Actual Node.js Buffer, not Uint8Array/DataView
+// Speculative read, if there's enough data
+export function packetReadIntFromBuffer(buf, offs, buf_len) {
+  if (buf_len - offs < 1) {
+    return null;
+  }
+  let b1 = buf[offs++];
+  if (b1 < 248) {
+    return { v: b1, offs };
+  }
+  let sign = 1;
+  switch (b1) {
+    case 249:
+      sign = -1;
+    case 248: { // eslint-disable-line no-fallthrough
+      if (buf_len - offs < 2) {
+        return null;
+      }
+      let v = sign * buf.readUInt16LE(offs);
+      offs += 2;
+      return { v, offs };
+    }
+    case 251:
+      sign = -1;
+    case 250: { // eslint-disable-line no-fallthrough
+      if (buf_len - offs < 4) {
+        return null;
+      }
+      let v = sign * buf.readUInt32LE(offs);
+      offs += 4;
+      return { v, offs };
+    }
+    case 253:
+      sign = -1;
+    case 252: { // eslint-disable-line no-fallthrough
+      if (buf_len - offs < 8) {
+        return null;
+      }
+      let low_bits = buf.readUInt32LE(offs);
+      offs += 4;
+      let high_bits = buf.readUInt32LE(offs);
+      offs += 4;
+      let v = sign * (high_bits * 4294967296 + low_bits);
+      return { v, offs };
+    }
+    case 255: {
+      if (buf_len - offs < 1) {
+        return null;
+      }
+      let v = -buf[offs++];
+      return { v, offs };
+    }
+    default:
+      throw new Error('PKTERR_PACKED_INT');
+  }
+}
+
 Packet.prototype.readInt = function () {
   let b1 = this.buf.u8[this.advance(1)];
   if (b1 < 248) {
@@ -600,6 +682,9 @@ Packet.prototype.readAnsiString = function () {
   }
   return String.fromCharCode.apply(undefined, string_assembly);
 };
+export function packetSizeAnsiString(v) {
+  return packetSizeInt(v.length) + v.length;
+}
 
 // high-level write/read functions
 Packet.prototype.writeJSON = function (v) {
@@ -643,6 +728,12 @@ Packet.prototype.readBuffer = function (do_copy) {
   } else {
     let { buf } = this;
     return new Uint8Array(buf.buffer, buf.byteOffset + offs, len);
+  }
+};
+Packet.prototype.appendBuffer = function (v) {
+  if (v.length) {
+    let offs = this.fit(v.length);
+    this.buf.u8.set(v, offs);
   }
 };
 Packet.prototype.writeBool = function (v) {
@@ -858,6 +949,7 @@ PacketDebug.prototype.zeroInt = function () {
   'totalSize',
   'updateFlags',
   'writeFlags', // *not* wrapped in debug headers
+  'appendBuffer', // low-level
 ].forEach((fname) => {
   let fn = Packet.prototype[fname];
   PacketDebug.prototype[fname] = function () {
@@ -954,7 +1046,7 @@ function packetFromBuffer(buf, buf_len, need_copy) {
     assert(buf.buffer instanceof ArrayBuffer);
     let pak = packetCreate(flags, buf_len);
     if (buf.byteLength !== buf_len) {
-      buf = Buffer.from(buf.buffer, 0, buf_len);
+      buf = Buffer.from(buf.buffer, buf.byteOffset, buf_len);
     }
     pak.getBuffer().set(buf);
     pak.setReadable();

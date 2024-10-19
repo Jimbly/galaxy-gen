@@ -19,7 +19,11 @@ import {
 import * as engine from './engine';
 import { fetch } from './fetch';
 import { filewatchOn } from './filewatch';
-import * as local_storage from './local_storage';
+import {
+  localStorageGetJSON,
+  localStorageSetJSON,
+} from './local_storage';
+import { locateAsset } from './locate_asset';
 import * as settings from './settings';
 import { shadersSetGLErrorReportDetails } from './shaders';
 import * as urlhash from './urlhash';
@@ -61,6 +65,10 @@ export const TEXTURE_FORMAT = {
 export function textureDefaultFilters(min, mag) {
   default_filter_min = min;
   default_filter_mag = mag;
+}
+
+export function textureDefaultIsNearest() {
+  return default_filter_mag === gl.NEAREST;
 }
 
 let bound_unit = null;
@@ -209,10 +217,14 @@ function Texture(params) {
   this.gpu_mem = 0;
   this.soft_error = params.soft_error || false;
   this.last_use = frame_timestamp;
-  this.auto_unload = params.auto_unload || false;
+  this.auto_unload = params.auto_unload ? [] : null;
+  if (typeof params.auto_unload === 'function') {
+    this.auto_unload.push(params.auto_unload);
+  }
   if (this.auto_unload) {
     auto_unload_textures.push(this);
   }
+  this.load_filter = params.load_filter || null;
 
   this.format = params.format || TEXTURE_FORMAT.RGBA8;
 
@@ -228,7 +240,7 @@ function Texture(params) {
     if (params.url) {
       this.format = TEXTURE_FORMAT.RGBA8;
       this.url = params.url;
-      this.loadURL(params.url);
+      this.loadURL(params.url, this.load_filter);
     }
   }
 }
@@ -365,7 +377,7 @@ Texture.prototype.updateData = function updateData(w, h, data, per_mipmap_data) 
     gl.texImage2D(this.target, 0, this.format.internal_type, this.width, this.height, 0,
       this.format.internal_type, this.format.gl_type, null);
   }
-  if (data instanceof Uint8Array) {
+  if (data instanceof Uint8Array || data instanceof Uint8ClampedArray) {
     assert(!per_mipmap_data); // not implemented
     assert(data.length >= w * h * this.format.count);
     assert(!this.is_cube);
@@ -481,7 +493,41 @@ Texture.prototype.onLoad = function (cb) {
   }
 };
 
+let has_content_security_policy = localStorageGetJSON('has_csp', false);
+document.addEventListener('securitypolicyviolation', function () {
+  localStorageSetJSON('has_csp', true);
+  has_content_security_policy = true;
+});
+
 const createImageBitmap = callbackify(window.createImageBitmap);
+
+let blob_supported;
+function blobSupported() {
+  if (blob_supported !== undefined) {
+    return blob_supported;
+  }
+  if (typeof window.Blob === 'undefined') {
+    blob_supported = false;
+    return false;
+  }
+  try {
+    let view = new Uint8Array(4);
+    let url_object = URL.createObjectURL(new Blob([view], { type: 'image/png' }));
+    URL.revokeObjectURL(url_object);
+    blob_supported = true;
+  } catch (e) {
+    blob_supported = false;
+  }
+  return blob_supported;
+}
+
+function removeHash(url) {
+  let idx = url.indexOf('#');
+  if (idx === -1) {
+    return url;
+  }
+  return url.slice(0, idx);
+}
 
 const TEX_RETRY_COUNT = 4;
 Texture.prototype.loadURL = function loadURL(url, filter) {
@@ -493,15 +539,30 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
   function tryLoad(next) {
     profilerStart('Texture:tryLoad');
 
-    tflags = 0;
     let url_use = url;
+    let did_next = false;
+    function done(err, img) {
+      profilerStart('Texture:onload');
+      if (!did_next) {
+        did_next = true;
+        next(err, img, url_use);
+      }
+      profilerStop();
+    }
 
-    if (!url_use.includes(':')) {
+    tflags = 0;
+
+    if (url_use.includes(':')) {
+      url_use = locateAsset(removeHash(url_use));
+    } // note: above line may make the below clause _also_ true
+    let is_external = url_use.includes(':');
+    if (!is_external) {
       // Additional logic for non-external textures
       // Fetching tflags in each load attempt, they may have changed/been reloaded in development
       let ext_idx = url_use.lastIndexOf('.');
       assert(ext_idx !== -1);
       let filename_no_ext = url_use.slice(0, ext_idx);
+      let png_name = `${filename_no_ext}.png`;
       let tflag_file = `${filename_no_ext}.tflag`;
       if (webFSExists(tflag_file)) {
         tflags = webFSGetFile(tflag_file, 'jsobj');
@@ -510,23 +571,44 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
           url_use = `${filename_no_ext}.txp`;
         }
       }
+
+      if (webFSExists(png_name) && blobSupported()) {
+        assert(!(tflags & FORMAT_PACK)); // not supported/tested, but should be trivial?
+
+        let view = webFSGetFile(png_name);
+        let url_object = URL.createObjectURL(new Blob([view], { type: 'image/png' }));
+        let img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url_object);
+          done(null, img);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url_object);
+          done('img decode error');
+        };
+        img.src = url_object;
+        profilerStop();
+        return;
+      }
+
+      url_use = locateAsset(removeHash(url_use));
       // When our browser's location has been changed from 'site.com/foo/' to
       //  'site.com/foo/bar/7' our relative image URLs are still relative to the
       //  base.  Maybe should set some meta tag to do this instead?
       url_use = `${urlhash.getURLBase()}${url_use}`;
     }
 
-    let did_next = false;
-    function done(err, img) {
-      profilerStart('Texture:onload');
-      if (!did_next) {
-        did_next = true;
-        next(err, img);
-      }
+    if (tflags & FORMAT_PACK) {
+      fetch({
+        url: url_use,
+        response_type: 'arraybuffer',
+      }, done);
       profilerStop();
+      return;
     }
 
-    if (tflags & FORMAT_PACK) {
+    if (is_external && blobSupported() && has_content_security_policy) {
+      // Use `fetch` to get around content security policy
       fetch({
         url: url_use,
         response_type: 'arraybuffer',
@@ -539,10 +621,9 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
     img.onload = function () {
       done(null, img);
     };
-    function fail() {
+    img.onerror = function () {
       done('error', null);
-    }
-    img.onerror = fail;
+    };
     img.crossOrigin = 'anonymous';
     img.src = url_use;
     profilerStop();
@@ -605,6 +686,22 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
     });
   }
 
+  function decodeFetchedImage(arraybuffer, next) {
+    assert(arraybuffer instanceof ArrayBuffer);
+    let img_out = new Image();
+    let view = new Uint8Array(arraybuffer);
+    let url_object = URL.createObjectURL(new Blob([view], { type: 'image/png' }));
+    img_out.onload = function () {
+      URL.revokeObjectURL(url_object);
+      next(null, img_out);
+    };
+    img_out.onerror = function () {
+      URL.revokeObjectURL(url_object);
+      next('img load error');
+    };
+    img_out.src = url_object;
+  }
+
   // next(err, img, mipmaps)
   function prepImage(err, img, next) {
     if (err || !img) {
@@ -613,10 +710,14 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
     if (tflags & FORMAT_PACK) {
       return void decodeTexturePack(img, next);
     }
+    let unpack_mips = tex.is_array && tex.packed_mips;
+    if (img instanceof ArrayBuffer) {
+      assert(!unpack_mips);
+      return void decodeFetchedImage(img, next);
+    }
     if (filter) {
       img = filter(tex, img);
     }
-    let unpack_mips = tex.is_array && tex.packed_mips;
     if (!unpack_mips) {
       return void next(null, img);
     }
@@ -670,13 +771,18 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
 
   ++load_count;
   let retries = 0;
-  function handleLoad(err, img) {
+  function handleLoad(err, img, url_use_debug) {
     if (tex.load_gen !== load_gen || tex.destroyed) {
       // someone else requested this texture to be loaded!  Or, it was already unloaded
       --load_count;
       return;
     }
     prepImage(err, img, function (err_prep, img_new, mipmaps) {
+      if (tex.load_gen !== load_gen || tex.destroyed) {
+        // someone else requested this texture to be loaded!  Or, it was already unloaded
+        --load_count;
+        return;
+      }
       img = img_new;
       let err_details = '';
       if (err_prep) {
@@ -689,11 +795,11 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
           // Samsung Galaxy S6 gets 1281 on texture arrays
           // Note: Any failed image load (partial read of a bad png, etc) also results in 1281!
           if (tex.is_array && (err === 'GLError(1282)' || err === 'GLError(1281)') && engine.webgl2 && !engine.DEBUG) {
-            local_storage.setJSON('webgl2_disable', {
+            localStorageSetJSON('webgl2_disable', {
               ua: navigator.userAgent,
               ts: Date.now(),
             });
-            console.error(`Error loading array texture "${url}": ${err_details}, reloading without WebGL2..`);
+            console.error(`Error loading array texture "${url_use_debug}": ${err_details}, reloading without WebGL2..`);
             engine.reloadSafe();
             return;
           }
@@ -705,7 +811,7 @@ Texture.prototype.loadURL = function loadURL(url, filter) {
           return;
         }
       }
-      let err_url = url && url.length > 200 ? `${url.slice(0, 200)}...` : url;
+      let err_url = url_use_debug && url_use_debug.length > 200 ? `${url_use_debug.slice(0, 200)}...` : url_use_debug;
       let err = `Error loading texture "${err_url}": ${err_details}`;
       retries++;
       if (retries > TEX_RETRY_COUNT) {
@@ -734,6 +840,7 @@ Texture.prototype.allocFBO = function (w, h) {
   gl.texImage2D(this.target, 0, fbo_format, w, h, 0, fbo_format, gl.UNSIGNED_BYTE, null);
 
   this.fbo = gl.createFramebuffer();
+  assert(this.fbo); // If this is firing, it's probably due to context loss
   gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.handle, 0);
 
@@ -759,6 +866,9 @@ Texture.prototype.captureStart = function (w, h) {
   this.capture = { w, h };
   if (this.fbo) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+  } else {
+    assert(w); // will assert in captureEnd:copyTexImage
+    assert(h);
   }
 };
 
@@ -814,8 +924,10 @@ Texture.prototype.destroy = function () {
   this.width = this.height = 0;
   this.updateGPUMem();
   this.destroyed = true;
-  if (typeof auto_unload === 'function') {
-    auto_unload();
+  if (auto_unload) {
+    for (let ii = 0; ii < auto_unload.length; ++ii) {
+      auto_unload[ii]();
+    }
   }
   profilerStop('Texture:destroy');
 };
@@ -867,6 +979,11 @@ export function textureLoad(params) {
   let tex = textures[key];
   if (!tex) {
     tex = create(params);
+  } else {
+    if (typeof params.auto_unload === 'function') {
+      assert(tex.auto_unload);
+      tex.auto_unload.push(params.auto_unload);
+    }
   }
   tex.last_use = frame_timestamp;
   return tex;
@@ -908,14 +1025,6 @@ export function textureUnloadDynamic() {
   }
 }
 
-function removeHash(url) {
-  let idx = url.indexOf('#');
-  if (idx === -1) {
-    return url;
-  }
-  return url.slice(0, idx);
-}
-
 function textureReload(filename) {
   let ret = false;
   let cname = textureCname(filename);
@@ -923,7 +1032,7 @@ function textureReload(filename) {
     let tex = textures[key];
     if (tex.cname === cname && tex.url) {
       tex.for_reload = true;
-      tex.loadURL(`${removeHash(tex.url)}?rl=${Date.now()}`);
+      tex.loadURL(`${removeHash(tex.url)}?rl=${Date.now()}`, tex.load_filter);
       ret = true;
     }
   }

@@ -28,6 +28,10 @@ declare module 'gl-mat4/perspective' {
   import type { Mat4 } from 'glov/common/vmath';
   export default function perspective(out: Mat4, fov_y: number, aspect: number, znear: number, zfar: number): Mat4;
 }
+declare module 'gl-mat4/scale' {
+  import type { Mat4, ROVec3 } from 'glov/common/vmath';
+  export default function scale(out: Mat4, a: Readonly<Mat4>, v: ROVec3): Mat4;
+}
 declare module 'gl-mat4/translate' {
   import type { Mat4, ROVec3 } from 'glov/common/vmath';
   export default function translate(out: Mat4, a: Readonly<Mat4>, v: ROVec3): Mat4;

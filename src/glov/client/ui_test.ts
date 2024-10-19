@@ -2,13 +2,27 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 import assert from 'assert';
-import { vec4 } from 'glov/common/vmath';
-import { colorPicker } from './color_picker.js';
+import { ROVec4, vec4 } from 'glov/common/vmath';
+import { collapsagoriesHeader, collapsagoriesStart, collapsagoriesStop } from './collapsagories';
+import { colorPicker } from './color_picker';
 import { EditBox, editBoxCreate } from './edit_box';
-import * as engine from './engine.js';
+import * as engine from './engine';
 import { ALIGN, Font, FontStyle, fontStyle, fontStyleAlpha } from './font';
-import * as input from './input.js';
-import { linkText } from './link.js';
+import { fscreenActive, fscreenEnter, fscreenExit } from './fscreen';
+import * as input from './input';
+import {
+  mouseOver,
+} from './input';
+import { linkText } from './link';
+import {
+  MDDrawBlock,
+  MDDrawParam,
+  MDLayoutBlock,
+  MDLayoutCalcParam,
+  markdownAuto,
+} from './markdown';
+import { RenderableContent } from './markdown_parse';
+import { markdownImageRegister, markdownLayoutFit } from './markdown_renderables';
 import { ScrollArea, scrollAreaCreate } from './scroll_area';
 import {
   SelectionBox,
@@ -16,11 +30,23 @@ import {
   selectionBoxCreate,
 } from './selection_box';
 import { SimpleMenu, simpleMenuCreate } from './simple_menu';
-import { slider } from './slider.js';
-import * as ui from './ui.js';
-import { getURLBase } from './urlhash.js';
+import { slider } from './slider';
+import { Sprite, spriteCreate } from './sprites';
+import { TEXTURE_FORMAT } from './textures';
+import * as ui from './ui';
+import {
+  uiButtonHeight,
+  uiButtonWidth,
+  uiTextHeight,
+} from './ui';
+import {
+  uiStyleAlloc,
+  uiStylePop,
+  uiStylePush,
+} from './uistyle';
+import { getURLBase } from './urlhash';
 
-const { ceil, max, random } = Math;
+const { abs, ceil, max, random, round, sin } = Math;
 
 let demo_menu: SimpleMenu;
 let demo_menu_up = false;
@@ -35,8 +61,10 @@ let test_dropdown: SelectionBox;
 let test_dropdown_large: SelectionBox;
 let test_scroll_area: ScrollArea;
 let slider_value = 0.75;
+let check_value = false;
 let test_lines = 10;
 let test_color = vec4(1,0,1,1);
+let test_markdown_sprite: Sprite;
 
 function init(x: number, y: number, column_width: number): void {
   edit_box1 = editBoxCreate({
@@ -74,12 +102,14 @@ function init(x: number, y: number, column_width: number): void {
   });
 
   test_select1 = selectionBoxCreate({
-    items: ['Apples', 'Bananas', 'Chameleon'],
+    display: { use_markdown: true },
+    items: ['Apples', 'Ba*nan*as', 'Chameleon'],
     z: Z.UI,
     width: column_width - 8,
   });
   test_dropdown = dropDownCreate({
-    items: ['Apples', 'Bananas', 'Chameleon', { name: 'Disabled', disabled: true }],
+    display: { use_markdown: true },
+    items: ['Apples', 'Ba*nan*as', 'Chameleon', { name: 'Disabled', disabled: true }],
     z: Z.UI,
     width: column_width - 8,
   });
@@ -95,13 +125,53 @@ function init(x: number, y: number, column_width: number): void {
   });
 
   test_scroll_area = scrollAreaCreate();
+
+  // Create test texture for markdown use
+  {
+    const TEX_W = 32;
+    let data = new Uint8Array(TEX_W * TEX_W);
+    for (let yy = 0, idx=0; yy < TEX_W; ++yy) {
+      let fy = 1 - abs((yy - TEX_W/2) / (TEX_W/2));
+      for (let xx = 0; xx < TEX_W; ++xx, ++idx) {
+        let fx = 1 - abs((xx - TEX_W/2) / (TEX_W/2));
+        data[idx] = Math.max(fx, fy) * 255;
+      }
+    }
+    test_markdown_sprite = spriteCreate({
+      url: 'ui_test_tex',
+      width: TEX_W,
+      height: TEX_W,
+      format: TEXTURE_FORMAT.R8,
+      data,
+      filter_min: gl.LINEAR,
+      filter_mag: gl.LINEAR,
+      wrap_s: gl.CLAMP_TO_EDGE,
+      wrap_t: gl.CLAMP_TO_EDGE,
+    });
+
+    markdownImageRegister('test', {
+      sprite: test_markdown_sprite,
+    });
+  }
 }
+
+const style_half_height = uiStyleAlloc({ text_height: '50%' });
+
+let markdown_text: string;
+let markdown_cache = {};
+let md_text_height: number = 8;
+let md_line_height: number = 8;
+let last_md_text_height: number = 8;
+let last_md_line_height: number = 8;
 
 export function run(x: number, y: number, z: number): void {
   const font: Font = ui.font;
   z = z || Z.UI;
-  let line_height = ui.button_height + 2;
-  let column_width = ui.button_width + 8;
+  const text_height = uiTextHeight();
+  const button_height = uiButtonHeight();
+  const button_width = uiButtonWidth();
+  let line_height = button_height + 2;
+  let column_width = button_width + 8;
   if (inited !== `${x}_${y}_${column_width}`) {
     init(x, y, column_width);
     inited = `${x}_${y}_${column_width}`;
@@ -109,7 +179,7 @@ export function run(x: number, y: number, z: number): void {
 
   if (demo_menu_up) {
     demo_result = '';
-    demo_menu.run({ x: x + ui.button_width, y: y + line_height, z: Z.MODAL });
+    demo_menu.run({ x: x + button_width, y: y + line_height, z: Z.MODAL });
     if (demo_menu.isSelected()) {
       if (demo_menu.isSelected('opt2')) {
         demo_result = 'Selected the second option';
@@ -152,7 +222,7 @@ export function run(x: number, y: number, z: number): void {
     edit_box2.setText('');
   }
 
-  if (ui.buttonText({ x: edit_box2.x + edit_box2.w + pad, y, z, text: '...', w: ui.button_height })) {
+  if (ui.buttonText({ x: edit_box2.x + edit_box2.w + pad, y, z, text: '...', w: button_height })) {
     ui.modalTextEntry({
       title: 'Type something',
       edit_text: edit_box2.getText(),
@@ -176,21 +246,244 @@ export function run(x: number, y: number, z: number): void {
     color: test_color,
   });
 
+  let scroll_area_h = text_height * 16 + pad;
+  let scroll_area_w = 100;
   test_scroll_area.begin({
     x: x + column_width + 4 + line_height,
-    y: y + 4,
+    y: y - 2,
     z,
-    w: 100,
-    h: ui.font_height * 8 + pad,
+    w: scroll_area_w,
+    h: scroll_area_h,
   });
-  let internal_y = 2;
-  internal_y += font.drawSizedAligned(font_style, 2, internal_y, z + 1,
-    ui.font_height, ALIGN.HWRAP|ALIGN.HFIT, 100 - test_scroll_area.barWidth() - 2, 0,
-    `Edit Box Text: ${edit_box1.getText()}+${edit_box2.getText()}`) + pad;
-  ui.print(font_style, 2, internal_y, z + 1, `Result: ${demo_result}`);
-  internal_y += ui.font_height + pad;
-  ui.print(font_style, 2, internal_y, z + 1, `Dropdown: ${test_dropdown.getSelected().name}`);
-  internal_y += ui.font_height + pad;
+  let internal_y = 0;
+  scroll_area_w -= test_scroll_area.barWidth();
+
+  let header_h = 13;
+  collapsagoriesStart({
+    key: 'ui_test_cats',
+    x: 0, z, w: scroll_area_w,
+    num_headers: 4 + (engine.defines.MD ? -1 : 0),
+    view_y: test_scroll_area.getScrollPos(),
+    view_h: scroll_area_h,
+    header_h,
+    parent_scroll: test_scroll_area,
+  });
+
+  if (!engine.defines.MD) {
+    collapsagoriesHeader({
+      y: internal_y,
+      text: 'Values',
+      text_height,
+    });
+    internal_y += header_h + pad;
+
+    internal_y += font.drawSizedAligned(font_style, 2, internal_y, z + 1,
+      text_height, ALIGN.HWRAP|ALIGN.HFIT, scroll_area_w - 2, 0,
+      `Edit Box Text: ${edit_box1.getText()}+${edit_box2.getText()}`) + pad;
+    ui.print(font_style, 2, internal_y, z + 1, `Result: ${demo_result}`);
+    internal_y += text_height + pad;
+    markdownAuto({
+      font_style, x: 2, y: internal_y, z: z + 1,
+      text: `Dropdown: ${test_dropdown.getSelected().name}`
+    });
+    internal_y += text_height + pad;
+
+    ui.progressBar({
+      x: 2,
+      y: internal_y, z,
+      w: 60, h: button_height,
+      progress: slider_value,
+    });
+    internal_y += button_height + pad;
+  }
+
+  collapsagoriesHeader({
+    y: internal_y,
+    text: 'Markdown',
+    text_height,
+  });
+  internal_y += header_h;
+
+  font.draw({
+    x: 16,
+    y: internal_y + 2,
+    z: Z.UI + 20,
+    text: 'text_height',
+    color: 0x00000080,
+  });
+  font.draw({
+    x: button_width + 1,
+    y: internal_y + 2,
+    text: `${md_text_height}`,
+  });
+  md_text_height = round(slider(md_text_height, {
+    x: 0,
+    y: internal_y,
+    min: 1,
+    max: 16,
+    step: 1,
+  }));
+  if (md_text_height !== last_md_text_height) {
+    last_md_text_height = md_text_height;
+    md_line_height = max(md_line_height, md_text_height);
+    markdown_cache = {};
+  }
+  internal_y += button_height;
+
+  font.draw({
+    x: 16,
+    y: internal_y + 2,
+    z: Z.UI + 20,
+    text: 'line_height',
+    color: 0x00000080,
+  });
+  font.draw({
+    x: button_width + 1,
+    y: internal_y + 2,
+    text: `${md_line_height}`,
+  });
+  md_line_height = round(slider(md_line_height, {
+    x: 0,
+    y: internal_y,
+    min: 1,
+    max: 16,
+    step: 1,
+  }));
+  if (md_line_height !== last_md_line_height) {
+    last_md_line_height = md_line_height;
+    markdown_cache = {};
+  }
+  internal_y += button_height;
+  internal_y += pad;
+
+  internal_y += markdownAuto({
+    font_style,
+    x: 2,
+    y: internal_y,
+    z: z + 1,
+    w: scroll_area_w - 2,
+    text_height: md_text_height,
+    line_height: md_line_height,
+    align: ALIGN.HWRAP|ALIGN.HFIT,
+    text: `Edit Box MD: ${edit_box1.getText()}+${edit_box2.getText()}`,
+  }).h + pad;
+
+  internal_y += markdownAuto({
+    font_style,
+    x: 2,
+    y: internal_y,
+    z: z + 1,
+    w: scroll_area_w - 2,
+    text_height: md_text_height,
+    line_height: md_line_height,
+    align: ALIGN.HWRAP|ALIGN.HFIT,
+    text: 'A[foo=bar text="Foo Bar"]B',
+    cache: markdown_cache,
+    custom: {
+      foo: {
+        type: 'blinker',
+        data: true
+      },
+    },
+    renderables: {
+      // Not super efficient example: optimally first two functions should
+      //   return an instance of a class, but this is heavily cached, so doesn't
+      //   matter much except for type clarity.
+      blinker: (content: RenderableContent, data: unknown): MDLayoutBlock | null => {
+        if (!data) {
+          // this is not a valid generic renderable, only allowed via the custom tab with associated data
+          return null;
+        }
+        let text = String(content.param?.text || content.key);
+        return {
+          layout: (layout_param: MDLayoutCalcParam): MDDrawBlock[] => {
+            let w = font.getStringWidth(null, layout_param.text_height, text) +
+              layout_param.text_height * 0.25;
+            let dims = {
+              w,
+              h: layout_param.line_height,
+            };
+            assert(markdownLayoutFit(layout_param, dims));
+            let dims2 = dims; // workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+            return [{
+              dims,
+              draw: (draw_param: MDDrawParam): void => {
+                let rect = {
+                  x: draw_param.x + dims2.x,
+                  y: draw_param.y + dims2.y,
+                  w: dims.w,
+                  h: dims.h,
+                };
+                let color: ROVec4;
+                let v = sin(engine.getFrameTimestamp() * 0.01) * 0.5 + 0.5;
+                if (mouseOver(rect)) {
+                  color = [0.5 + v * 0.5, v*0.7, 0, draw_param.alpha];
+                } else {
+                  color = [v* 0.5, 0, v, draw_param.alpha];
+                }
+                test_markdown_sprite.draw({
+                  ...rect,
+                  z: draw_param.z,
+                  color,
+                });
+                font.draw({
+                  alpha: draw_param.alpha,
+                  ...rect,
+                  z: draw_param.z + 0.1,
+                  align: ALIGN.HVCENTERFIT,
+                  size: layout_param.text_height,
+                  text: text,
+                });
+              },
+            }];
+          },
+        };
+      },
+    },
+  }).h + pad;
+
+  if (!markdown_text) {
+    // For perf testing: set to 300000
+    markdown_text = new Array(3).join(`# Lorem Markdownum
+
+## Qua [img=test] *promissa*
+
+Lorem mark[img=test]downum vestrae geminique asque comas; **muu siq**,
+inconsumpta? Quod siquid ferroque labores Cererisque praevia exacta patitur arge
+nec arborei timentem, ut crimina vidit.
+`);
+  }
+  internal_y += markdownAuto({
+    font_style,
+    x: 2,
+    y: internal_y,
+    z: z + 1,
+    w: scroll_area_w - 2,
+    text_height: md_text_height,
+    line_height: md_line_height,
+    align: ALIGN.HWRAP|ALIGN.HFIT,
+    text: markdown_text,
+  }).h + pad;
+
+  internal_y += markdownAuto({
+    font_style,
+    x: 2,
+    y: internal_y,
+    z: z + 1,
+    w: scroll_area_w - 2,
+    text_height: md_text_height,
+    line_height: md_line_height,
+    align: ALIGN.HWRAP|ALIGN.HFIT|ALIGN.HCENTER,
+    text: markdown_text,
+  }).h + pad;
+
+  collapsagoriesHeader({
+    y: internal_y,
+    text: 'Widgets',
+    text_height,
+  });
+  internal_y += header_h + pad;
+
   linkText({ x: 2, y: internal_y, text: 'Ext URL', url: 'https://github.com/jimbly/glovjs' });
   if (linkText({ x: column_width/2, y: internal_y, text: 'Int URL',
     internal: true,
@@ -198,24 +491,53 @@ export function run(x: number, y: number, z: number): void {
   ) {
     engine.defines.SPOT_DEBUG = !engine.defines.SPOT_DEBUG;
   }
-  internal_y += ui.font_height + pad;
+  internal_y += text_height + pad;
   internal_y += test_dropdown_large.run({ x: 2, y: internal_y, z: z + 1 }) + pad;
   if (ui.buttonText({ x: 2, y: internal_y, z, text: 'Disabled', tooltip: 'A disabled button', disabled: true })) {
     assert(false);
   }
-  internal_y += ui.button_height + pad;
+  internal_y += button_height + pad;
+
+  check_value = ui.checkbox(check_value, {
+    x: 2, y: internal_y, z, text: 'A _checkbox_',
+    markdown: true,
+    tooltip: `This checkbox is *${check_value ? '' : 'un'}checked*`,
+    tooltip_markdown: true,
+  });
+  internal_y += button_height + pad;
+
+  collapsagoriesHeader({
+    y: internal_y, w: 8, x: 7, z: 7,
+    text: 'Misc',
+    text_height,
+  });
+  internal_y += header_h + pad;
+
+  ui.label({ x: 2, y: internal_y, size: text_height * 0.5, text: 'Small text param size' });
+  internal_y += text_height * 0.5;
+  ui.label({ x: 2, y: internal_y, style: style_half_height, text: 'Small text param style' });
+  internal_y += style_half_height.text_height;
+  uiStylePush(style_half_height);
+  ui.label({ x: 2, y: internal_y, style: style_half_height, text: 'Small text push style' });
+  internal_y += uiTextHeight();
+  uiStylePop();
+
   for (let ii = 0; ii < test_lines; ++ii) {
     ui.print(font_style, 2, internal_y, z + 1, `Line #${ii}`);
-    internal_y += ui.font_height + pad;
+    internal_y += text_height + pad;
   }
   if (ui.buttonText({ x: 2, y: internal_y, z: z + 1, text: 'Add Line', key: 'add_line' })) {
     ++test_lines;
   }
-  internal_y += ui.button_height + pad;
+  internal_y += button_height + pad;
   if (ui.buttonText({ x: 2, y: internal_y, z: z + 1, text: 'Remove Line', key: 'remove_line' })) {
     --test_lines;
   }
-  internal_y += ui.button_height + pad;
+  internal_y += button_height + pad;
+  ui.buttonText({ x: 2, y: internal_y, z: z + 1, text: 'Fullscreen',
+    in_event_cb: fscreenActive() ? fscreenExit : fscreenEnter });
+  internal_y += button_height + pad;
+  collapsagoriesStop();
   test_scroll_area.end(internal_y);
   ui.panel({ x: test_scroll_area.x - pad, y: test_scroll_area.y - pad, z: z - 1,
     w: test_scroll_area.w + pad * 2, h: test_scroll_area.h + pad * 2 });
@@ -225,20 +547,14 @@ export function run(x: number, y: number, z: number): void {
   y += test_select1.run({ x, y, z });
   y += test_dropdown.run({ x, y, z });
 
-  y = max(y, test_scroll_area.y + test_scroll_area.h + pad);
+  //y = max(y, test_scroll_area.y + test_scroll_area.h + pad);
   slider_value = slider(slider_value, {
     x, y, z,
     min: 0,
     max: 2,
   });
-  ui.print(null, x + ui.button_width + pad, y, z, `${slider_value.toFixed(2)}`);
-  ui.progressBar({
-    x: x + ui.button_width + pad * 2 + ui.font_height * 2,
-    y, z,
-    w: 60, h: ui.button_height,
-    progress: slider_value,
-  });
-  y += ui.button_height;
+  ui.print(null, x + button_width + pad, y, z, `${slider_value.toFixed(2)}`);
+  y += button_height;
 }
 
 export function runFontTest(x: number, y: number): void {
@@ -248,8 +564,9 @@ export function runFontTest(x: number, y: number): void {
   const COLOR_INVISIBLE = 0x00000000;
   let z = Z.UI;
   const font: Font = ui.font;
+  const text_height = uiTextHeight();
 
-  let font_size = ui.font_height * 2;
+  let font_size = text_height * 2;
   font.drawSized(null, x, y, z, font_size, `Default ${font_size} ${random().toFixed(7)}`);
   y += font_size;
   font.drawSized(null, x, y, z, font_size / 2, `Default ${font_size / 2} Lorem ipsum dolor sit amet <[A|B]>`);
@@ -306,7 +623,9 @@ export function runFontTest(x: number, y: number): void {
     glow_xoffs: 4, glow_yoffs: 4, glow_inner: -2.5, glow_outer: 5, glow_color: COLOR_GREEN,
     color: COLOR_WHITE
   });
-  font.drawSized(font_style_shadow, x, y, z, font_size, 'Glow (Shadow) O0O1Il');
+  xx = x;
+  xx += font.drawSized(font_style_shadow, xx, y, z, font_size, 'Glow (Shadow) O0O1Il');
+  font.drawSized(null, xx, y, z, font_size, 'Aligned');
   y += font_size;
 
   const font_style_both = fontStyle(null, {
@@ -336,7 +655,8 @@ export function runFontTest(x: number, y: number): void {
   xx += font.drawSized(fontStyleAlpha(font_style_both, 0.25), xx, y, z, font_size, 'h ');
   xx += font.drawSized(font_style_both_soft_on_hard, xx, y, z, font_size, 'SoH ');
   xx += font.drawSized(font_style_both_hard_on_soft, xx, y, z, font_size, 'HoH ');
-  font.drawSized(font_style_both_soft_on_soft, xx, y, z, font_size, 'SoS 0O0');
+  xx += font.drawSized(font_style_both_soft_on_soft, xx, y, z, font_size, 'SoS 0O0 ');
+  font.drawSized(null, xx, y, z, font_size, 'A');
   y += font_size;
 
   let font_size2 = 32;
@@ -345,7 +665,7 @@ export function runFontTest(x: number, y: number): void {
     glow_xoffs: 0.25, glow_yoffs: 0.25, glow_inner: 0, glow_outer: 5, glow_color: 0x7F7F7Fff,
     color: COLOR_WHITE
   });
-  font.drawSizedAligned(font_style_both2, x, y, z, font_size2, ALIGN.HFIT, ui.button_width * 2, 0,
+  font.drawSizedAligned(font_style_both2, x, y, z, font_size2, ALIGN.HFIT, uiButtonWidth() * 2, 0,
     'ALIGN.HFIT The quick brown fox jumps over the lazy dog');
   y += font_size2;
 
@@ -380,12 +700,14 @@ export function runFontTest(x: number, y: number): void {
       color: COLOR_WHITE
     });
     for (let ii = 1; ii <= 4; ii++) {
-      font.drawSizedAligned(
+      xx = x;
+      xx += font.drawSizedAligned(
         fontStyle(font_style_glow2, {
           // glow_inner: ii * 2 - 1,
           glow_outer: ii * 2,
         }), x, y, z, font_size2, ALIGN.HLEFT, 400, 0,
         `Glow outer ${ii * 2}`);
+      font.drawSized(null, xx, y, z, font_size2, 'A');
       y += font_size2;
     }
 

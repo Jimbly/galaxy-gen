@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { CmdRespFunc } from 'glov/common/types';
+import { BlockList } from 'net';
 import { merge } from 'glov/common/util';
 import { ChannelServerWorker } from './channel_server_worker';
 import { GlobalWorker } from './global_worker';
@@ -7,6 +7,8 @@ import {
   serverGlobalsReady,
   serverGlobalsRegister,
 } from './server_globals';
+
+import type { CmdRespFunc } from 'glov/common/cmd_parse';
 
 const { floor } = Math;
 
@@ -36,11 +38,10 @@ function banSummary(entry: IPBanEntry): string {
 const IPBAN_KEY = 'public.ipban.banlist';
 
 function cmdIPBan(this: GlobalWorker, str: string, resp_func: CmdRespFunc): void {
-  // eslint-disable-next-line @typescript-eslint/no-shadow
-  let banlist = this.getChannelData(IPBAN_KEY, {});
+  let banlist = this.getChannelData<IPBanList>(IPBAN_KEY, {});
   let msgs = [];
   for (let ip in banlist) {
-    let entry = banlist[ip];
+    let entry = banlist[ip]!;
     if (entry.expires < Date.now()/1000) {
       msgs.push(`Auto-removed expired ban for ${ip} ${banSummary(entry)}`);
       this.setChannelData(`${IPBAN_KEY}.${escapeDots(ip)}`, undefined);
@@ -48,7 +49,7 @@ function cmdIPBan(this: GlobalWorker, str: string, resp_func: CmdRespFunc): void
   }
   if (!str) {
     for (let ip in banlist) {
-      msgs.push(`Ban ${ip} ${banSummary(banlist[ip])}`);
+      msgs.push(`Ban ${ip} ${banSummary(banlist[ip]!)}`);
     }
     if (!msgs.length) {
       msgs.push('No active IP bans');
@@ -76,11 +77,12 @@ function cmdIPBan(this: GlobalWorker, str: string, resp_func: CmdRespFunc): void
         entry = {
           expires: floor(expy/1000),
           created_at: floor(Date.now()/1000),
-          created_by: this.cmd_parse_source.user_id,
+          created_by: this.cmd_parse_source.user_id!,
         };
         this.setChannelData(`${IPBAN_KEY}.${escapeDots(ip)}`, entry);
         msgs.push(`Added ban for ${ip} ${banSummary(entry)}`);
       }
+      this.logSrc(this.cmd_parse_source, msgs.join('\n'));
     }
   }
   resp_func(null, msgs.join('\n'));
@@ -90,12 +92,21 @@ function cmdIPBan(this: GlobalWorker, str: string, resp_func: CmdRespFunc): void
 // Functions exported and ran in the context of a ChannelServerWorker
 
 let banlist: IPBanList;
+let banranges: BlockList;
 
 export function ipBanned(ip: string): boolean {
   assert(ip);
   assert(banlist);
+  let split = ip.split(',');
+  if (split.length > 1) {
+    return split.some(ipBanned);
+  }
   let entry = banlist[ip];
-  return Boolean(entry && entry.expires*1000 > Date.now());
+  if (entry && entry.expires*1000 > Date.now()) {
+    return true;
+  }
+  let family = ip.includes(':') ? 'ipv6' as const : 'ipv4' as const;
+  return banranges.check(ip, family);
 }
 
 export function ipBanReady(): boolean {
@@ -106,6 +117,21 @@ function ipBanOnData(csworker: ChannelServerWorker, data: IPBanList | undefined)
   // Make as object with null prototype so it is safe to query
   banlist = Object.create(null);
   merge(banlist, data);
+  banranges = new BlockList();
+  let now = Date.now();
+  for (let key in banlist) {
+    let entry = banlist[key]!;
+    if (entry.expires*1000 > now) {
+      let m = key.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+      if (m) {
+        banranges.addSubnet(m[1], Number(m[2]));
+      }
+      m = key.match(/^(\d+\.\d+\.\d+\.\d+)-(\d+\.\d+\.\d+\.\d+)$/);
+      if (m) {
+        banranges.addRange(m[1], m[2]);
+      }
+    }
+  }
 
   csworker.channel_server.ws_server.checkAllIPBans();
 }
@@ -120,8 +146,9 @@ export function ipBanInit(): void {
       cmd: 'ipban',
       help: '(CSR) List or add to IP bans',
       usage: 'List bans: /ipban\n' +
-        'Add an IP ban: /ipban IP [DAYS]\n' +
+        'Add an IP ban: /ipban IP|RANGE [DAYS]\n' +
         '    DAYS defaults to 90, can be fractional (e.g. 0.25 = 6 hours)\n' +
+        '    RANGE can be 1.2.3.0/24 or 1.2.3.0-1.2.3.255\n' +
         'Delete an IP ban: /ipban IP -1\n',
       prefix_usage_with_help: true,
       access_run: ['csr'],

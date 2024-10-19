@@ -1,11 +1,10 @@
-/* eslint global-require:off */
-/* eslint-disable import/order */
+import assert from 'assert';
+import fs from 'fs';
+import { BlockList } from 'net';
+import path from 'path';
+import { defaultsDeep } from 'glov/common/util';
+import json5 from 'json5';
 const argv = require('minimist')(process.argv.slice(2));
-const assert = require('assert');
-const fs = require('fs');
-const json5 = require('json5');
-const path = require('path');
-const { defaultsDeep } = require('glov/common/util.js');
 
 let server_config;
 
@@ -20,6 +19,26 @@ export let default_config_options = {
   permission_flags: ['sysadmin'],
   // What permission flags grant ability to use reserved words when renaming user and logging in
   display_name_bypass_flags: ['sysadmin'],
+  // Modules to import before creating exchanges
+  // Using string template so that glov-build-preresolve doesn't munge it
+  exchange_providers: [`glov${'/server/exchange_gmx_client'}`],
+  // How often to log and bucket perf_counters
+  perf_counter_bucket_time: 10000,
+  // How often to display channelserver STATUS message
+  status_time: 5000,
+  // Which log categories should be disabled from being shown by default
+  log: {
+    // Level shown to console / sent to Stackdriver / etc
+    level: 'debug',
+    cat: {
+      ping: null,
+      redundant: null,
+      clientlist: false,
+      entverbose: false,
+      load: false,
+      quiet: false, // do not show 'quiet' category messages by default
+    },
+  },
 };
 
 let default_env_options = {
@@ -116,6 +135,39 @@ export function serverConfigStartup(code_defaults) {
     server_config = defaultsDeep(server_config, default_env_options[env]);
   }
   server_config = defaultsDeep(server_config, code_defaults);
+
+  if (server_config.forward_depth_override) {
+    for (let jj = 0; jj < server_config.forward_depth_override.length; ++jj) {
+      let override_config = server_config.forward_depth_override[jj];
+      assert.equal(typeof override_config.add, 'number');
+      assert(override_config.add >= 1);
+      assert(override_config.config);
+      let config_data;
+      if (typeof override_config.config === 'string') {
+        let override_path = path.join(__dirname, '../../server/config/', override_config.config);
+        // console.debug(`Loading forward_depth_override data from "${override_path}"`);
+        config_data = json5.parse(fs.readFileSync(override_path, 'utf8'));
+      } else {
+        config_data = override_config.config;
+      }
+      assert(config_data);
+      assert(config_data.ipv4_cidrs && Array.isArray(config_data.ipv4_cidrs));
+      assert(config_data.ipv6_cidrs && Array.isArray(config_data.ipv6_cidrs));
+      let blocklist = override_config.blocklist = new BlockList();
+      for (let ii = 0; ii < config_data.ipv4_cidrs.length; ++ii) {
+        let entry = config_data.ipv4_cidrs[ii];
+        let m = entry.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+        assert(m, entry);
+        blocklist.addSubnet(m[1], Number(m[2]), 'ipv4');
+      }
+      for (let ii = 0; ii < config_data.ipv6_cidrs.length; ++ii) {
+        let entry = config_data.ipv6_cidrs[ii];
+        let m = entry.match(/^([\d:a-fA-F]+)\/(\d+)$/);
+        assert(m, entry);
+        blocklist.addSubnet(m[1], Number(m[2]), 'ipv6');
+      }
+    }
+  }
 }
 
 export function serverConfig() {

@@ -12,6 +12,7 @@ export const FACE_CUSTOM = 1<<4;
 
 
 const DYN_VERT_SIZE = 4*3;
+const MAX_VERT_ELEM_COUNT = 65532 * DYN_VERT_SIZE; // strictly less than 65536, as index 65535 is special in WebGL2
 
 const assert = require('assert');
 const mat4LookAt = require('gl-mat4/lookAt');
@@ -27,10 +28,12 @@ const {
   vec3,
   zero_vec,
 } = require('glov/common/vmath.js');
+const { cmd_parse } = require('./cmds.js');
 const engine = require('./engine.js');
 const { engineStartupFunc, setGlobalMatrices } = engine;
 const geom = require('./geom.js');
 const { ceil, max, min } = Math;
+const settings = require('./settings.js');
 const {
   SEMANTIC,
   shaderCreate,
@@ -44,6 +47,21 @@ const {
   blendModeSet,
 } = sprites;
 const { textureCmpArray, textureBindArray } = require('./textures.js');
+
+settings.register({
+  gl_polygon_offset_a: {
+    default_value: 0.1,
+    type: cmd_parse.TYPE_FLOAT,
+    range: [0,100],
+    access_show: ['sysadmin'],
+  },
+  gl_polygon_offset_b: {
+    default_value: 4,
+    type: cmd_parse.TYPE_FLOAT,
+    range: [0,100],
+    access_show: ['sysadmin'],
+  },
+});
 
 let mat_vp;
 let mat_view = mat4();
@@ -118,6 +136,7 @@ const VERT_POOL_MAX_SIZE = vert_pool.map((a, idx) => min(POOL_UPPER_LIMIT, 1<<(1
 const TRI_POOL_MAX_SIZE = vert_pool.map((a, idx) => min(POOL_UPPER_LIMIT, 1<<(17-idx)));
 
 DynGeomData.prototype.allocVerts = function (num_verts) {
+  assert(num_verts * DYN_VERT_SIZE < MAX_VERT_ELEM_COUNT);
   this.num_verts = num_verts;
   let vert_pool_idx = log2(this.num_verts);
   assert(vert_pool_idx > 0);
@@ -341,7 +360,6 @@ let sprite_buffer_idx_batch_start = 0;
 let do_blending;
 let last_bound_shader;
 let last_bound_vshader;
-const MAX_VERT_ELEM_COUNT = 65532 * DYN_VERT_SIZE; // strictly less than 65536, as index 65535 is special in WebGL2
 let batches = [];
 function commit() {
   if (sprite_buffer_idx_cur === sprite_buffer_idx_batch_start) {
@@ -424,7 +442,7 @@ function drawElem(elem) {
     // batch_state left alone
     if (sprite_buffer_vert.length !== MAX_VERT_ELEM_COUNT) {
       let cur_tris = sprite_buffer_vert.length / DYN_VERT_SIZE / 3;
-      let new_length = min(ceil(cur_tris * 1.25) * 3 * DYN_VERT_SIZE, MAX_VERT_ELEM_COUNT);
+      let new_length = min(max(num_floats, ceil(cur_tris * 1.25) * 3 * DYN_VERT_SIZE), MAX_VERT_ELEM_COUNT);
       sprite_buffer_vert = new Float32Array(new_length);
     }
   }
@@ -512,7 +530,7 @@ export function dynGeomDrawOpaque() {
     gl.enable(gl.BLEND);
     gl.depthMask(false); // no depth writes
     gl.enable(gl.POLYGON_OFFSET_FILL);
-    gl.polygonOffset(-2, 1);
+    gl.polygonOffset(-settings.gl_polygon_offset_a, -settings.gl_polygon_offset_b);
     queueDraw(true, queue, 0, queue.length);
     queue.length = 0;
     gl.disable(gl.POLYGON_OFFSET_FILL);

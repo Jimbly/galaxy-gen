@@ -13,7 +13,7 @@ let trans_lookup = {};
 const unicode_replacement_chars = {};
 function cannonizeCharacter(c) {
   c = unicode_replacement_chars[c] || c;
-  return trans_lookup[c] || c;
+  return trans_lookup[c] || '';
 }
 function canonize(str) {
   return str.split('').map(cannonizeCharacter).join('');
@@ -87,11 +87,15 @@ export function profanitySetReplacementChars(replacement_chars) {
   }
 }
 
-export function reservedStartup(reserved_txt) {
+let reserved_substrings = [];
+export function reservedStartup(reserved_txt, reserved_substrings_in) {
   let data = reserved_txt.split('\n').filter((a) => a);
   for (let i = 0; i < data.length; ++i) {
     let string = canonize(data[i]);
     reserved[string] = 1;
+  }
+  for (let ii = 0; ii < reserved_substrings_in.length; ++ii) {
+    reserved_substrings.push(canonize(reserved_substrings_in[ii]));
   }
 }
 
@@ -150,8 +154,14 @@ export function isProfane(user_str) {
 
 let is_reserved;
 function checkReserved(word_src) {
-  if (reserved[canonize(word_src)]) {
+  word_src = canonize(word_src);
+  if (reserved[word_src]) {
     is_reserved = true;
+  }
+  for (let ii = 0; ii < reserved_substrings.length; ++ii) {
+    if (word_src.includes(reserved_substrings[ii])) {
+      is_reserved = true;
+    }
   }
 }
 
@@ -159,5 +169,11 @@ export function isReserved(user_str) {
   assert(inited);
   is_reserved = false;
   user_str.replace(trans_src_regex, checkReserved);
+  let no_whitespace = canonize(user_str.replace(/[\s_.]/g, ''));
+  for (let ii = 0; ii < reserved_substrings.length; ++ii) {
+    if (no_whitespace.includes(reserved_substrings[ii])) {
+      is_reserved = true;
+    }
+  }
   return is_reserved;
 }

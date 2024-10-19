@@ -7,19 +7,26 @@ export let ds_stats = {
   inflight_set: 0,
 };
 
-/* eslint-disable import/order */
-const assert = require('assert');
-const fs = require('fs');
-const FileStore = require('fs-store').FileStore;
-const { createFileStore } = require('fs-store-async');
-const mkdirp = require('mkdirp');
-const path = require('path');
-const { callEach, clone } = require('glov/common/util.js');
+import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import { FileStore } from 'fs-store';
+import { createFileStore } from 'fs-store-async';
+import {
+  callEach,
+  clone,
+} from 'glov/common/util';
+import mkdirp from 'mkdirp';
 
 // Shuffles the ordering of the keys in an Object, to simulate saving to data
 //   stores that do not use JavaScript Objects (which retain order) as a backing
 //   store.
-const DO_SHUFFLE = true;
+let do_shuffle = true;
+
+export function dataStoreDoShuffle(value) {
+  do_shuffle = value;
+}
+
 
 function shuffle(obj) {
   if (!obj) {
@@ -60,7 +67,7 @@ class DataStoreOneFile {
     ++ds_stats.get;
     setImmediate(() => {
       let obj = this.root_store.get(obj_name, default_value);
-      if (DO_SHUFFLE) {
+      if (do_shuffle) {
         obj = shuffle(obj);
       }
       cb(null, obj);
@@ -196,7 +203,7 @@ class DataStore {
               return void cb(err);
             }
             let obj = JSON.parse(buf);
-            if (DO_SHUFFLE) {
+            if (do_shuffle) {
               obj = shuffle(obj);
             }
             cb(null, obj);
@@ -205,7 +212,7 @@ class DataStore {
         let obj = store.get('data', default_value);
         if (obj && obj !== default_value) {
           obj = clone(obj);
-          if (DO_SHUFFLE) {
+          if (do_shuffle) {
             obj = shuffle(obj);
           }
         }

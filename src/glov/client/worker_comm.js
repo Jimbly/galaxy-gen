@@ -6,6 +6,7 @@
 // Do not require anything significant from this file, so it loads super quickly
 // Maybe need to add a separate bootstrap if we need to require much.
 import assert from 'assert';
+import { locateAsset } from './locate_asset';
 import { webFSGetData, webFSSetToWorkerCB } from './webfs';
 
 let workers = [];
@@ -63,7 +64,7 @@ let debug_names;
 
 function allocWorker(idx, worker_filename) {
   let suffix = debug_names && debug_names[idx] && `#${debug_names[idx]}` || '';
-  let worker = new Worker(`${worker_filename || 'worker.bundle.js'}${suffix}`);
+  let worker = new Worker(`${locateAsset(worker_filename || 'worker.bundle.js')}${suffix}`);
   worker.onmessage = workerOnMessage.bind(null, workers.length);
   worker.onerror = workerOnError;
   workers.push(worker);

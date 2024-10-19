@@ -1,7 +1,7 @@
 const assert = require('assert');
 const { PNG } = require('pngjs');
 
-const { min } = Math;
+const { max, min } = Math;
 
 // const PNG_GRAYSCALE = 0;
 const PNG_RGB = 2;
@@ -18,7 +18,7 @@ exports.drawImageBilinear = function drawImageBilinear(
   let ratiox = sw / dw;
   let ratioy = sh / dh;
   for (let jj = 0; jj < dh; ++jj) {
-    let sy = ratioy * (jj + 0.5) - 0.5;
+    let sy = max(0, ratioy * (jj + 0.5) - 0.5);
     let sy_low = sy | 0;
     let sy_high = min(sh - 1, sy_low + 1);
     let sy_w = sy - sy_low;
@@ -29,7 +29,7 @@ exports.drawImageBilinear = function drawImageBilinear(
     sy_low *= source_width * sbpp;
     sy_high *= source_width * sbpp;
     for (let ii = 0; ii < dw; ++ii) {
-      let sx = ratiox * (ii + 0.5) - 0.5;
+      let sx = max(0, ratiox * (ii + 0.5) - 0.5);
       let sx_low = sx | 0;
       let sx_high = min(sw - 1, sx_low + 1);
       let sx_w = sx - sx_low;
@@ -88,7 +88,14 @@ function pngRead(file_contents) {
   }
   let { width, height, data } = img;
   assert.equal(width * height * 4, data.length);
-  return { img };
+  // For some reason `img` doesn't have `.bitblt` - copy to a new png
+  let ret = new PNG({
+    width: img.width,
+    height: img.height,
+    colorType: img.colorType,
+  });
+  ret.data = img.data;
+  return { img: ret };
 }
 exports.pngRead = pngRead;
 

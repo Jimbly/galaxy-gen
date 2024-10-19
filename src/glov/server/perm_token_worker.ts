@@ -8,6 +8,7 @@ import './channel_server'; // importing to enforce import ordering (note the imp
 import { ChannelServer } from './channel_server';
 import { ChannelWorker } from './channel_worker';
 import { requestIsLocalHost } from './request_utils';
+import { wsserverDebugLog } from './wsserver';
 
 // General purpose worker(s) for handling global state
 
@@ -101,5 +102,14 @@ export function permTokenWorkerInit(channel_server: ChannelServer, app: Express)
       }
       res.end(token);
     });
+  });
+
+  app.get('/api/wsdebug', function (req: Request, res: Response, next: NextFunction) {
+    if (!requestIsLocalHost(req)) {
+      return next();
+    }
+
+    let now_on = wsserverDebugLog();
+    res.end(`WS Debug now ${now_on ? 'ON' : 'OFF'}`);
   });
 }

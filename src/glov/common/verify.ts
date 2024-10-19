@@ -35,6 +35,11 @@ namespace verify {
   export function shouldThrow(): boolean {
     return should_throw;
   }
+
+  export function unreachable(x: never): false {
+    verify(false);
+    return false;
+  }
 }
 
 export = verify;

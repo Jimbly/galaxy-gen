@@ -27,6 +27,11 @@ export const ALIGN = {
   HVCENTERFIT: 1 | (1 << 2) | (1 << 4), // to avoid doing bitwise ops elsewhere
 };
 
+// line wrapping epsilon, don't wrap non-deterministically if scale and
+//  character widths are factors of display width.  Also allow a width
+//  calculated from .wrapLines() to be used as a width passed to draw*aligned()
+export const EPSILON = 0.0000000001;
+
 /* eslint-disable import/order */
 const assert = require('assert');
 const camera2d = require('./camera2d.js');
@@ -34,7 +39,7 @@ const { transformX, transformY } = require('./camera2d.js');
 const engine = require('./engine.js');
 const geom = require('./geom.js');
 const { getStringFromLocalizable } = require('./localization.js');
-const { max, min, round } = Math;
+const { cos, sin, max, min, round } = Math;
 // const settings = require('./settings.js');
 const { shaderCreate, shadersPrelink } = require('./shaders.js');
 const sprites = require('./sprites.js');
@@ -145,6 +150,7 @@ GlovFontStyle.prototype.color = 0xFFFFFFff;
 // GlovFontStyle.prototype.colorLR = 0;
 // GlovFontStyle.prototype.colorLL = 0;
 // GlovFontStyle.prototype.color_mode = COLOR_MODE.SINGLE;
+GlovFontStyle.prototype.hash = 0; // filled dynamically
 
 export const font_shaders = {};
 
@@ -186,6 +192,7 @@ export function fontStyle(font_style, fields) {
   }
   ret.color_vec4 = color_vec4; // Restore
   vec4ColorFromIntColor(ret.color_vec4, ret.color);
+  ret.hash = 0;
   return ret;
 }
 
@@ -193,6 +200,40 @@ export function fontStyleColored(font_style, color) {
   return fontStyle(font_style, {
     color
   });
+}
+
+export function fontStyleOutlined(font_style, outline_width, outline_color) {
+  let parent = font_style || glov_font_default_style;
+  outline_color = outline_color || parent.color;
+  return fontStyle(font_style, {
+    outline_width,
+    outline_color,
+  });
+}
+
+export function fontStyleBold(font_style, outline_width) {
+  let parent = font_style || glov_font_default_style;
+  let outline_color = parent.color;
+  if (font_style.outline_width) {
+    // move to glow
+    let glow_w = outline_width + font_style.outline_width;
+    return fontStyle(font_style, {
+      outline_width,
+      outline_color,
+      glow_xoffs: 0,
+      glow_yoffs: 0,
+      glow_color: font_style.outline_color,
+      glow_inner: glow_w - 0.25,
+      glow_outer: glow_w + 0.25,
+    });
+  } else {
+    // just add outline
+    return fontStyle(font_style, {
+      outline_width,
+      outline_color,
+    });
+  }
+
 }
 
 function colorAlpha(color, alpha) {
@@ -207,6 +248,22 @@ export function fontStyleAlpha(font_style, alpha) {
     glow_color: colorAlpha((font_style || glov_font_default_style).glow_color, alpha),
   });
 }
+
+// Returns a Float64, so pretty much anything is fine
+export function fontStyleHash(style) {
+  if (!style.hash) {
+    style.hash = style.color +
+      style.outline_width * 1007 +
+      style.outline_color * 3 +
+      style.glow_xoffs * 10007 +
+      style.glow_yoffs * 100007 +
+      style.glow_inner * 1000007 +
+      style.glow_outer * 10000007 +
+      style.glow_color * 7;
+  }
+  return style.hash;
+}
+
 
 let tech_params = null;
 let tech_params_dirty = false;
@@ -324,6 +381,7 @@ function GlovFont(font_info, texture_name) {
   });
   this.textures = [this.texture];
   this.integral = Boolean(font_info.noFilter); // TODO: often only want this for pixely = strict modes?
+  this.hard_cutoff = this.integral; // Maybe only if also pixely-strict?
 
   this.font_info = font_info;
   this.font_size = font_info.font_size;
@@ -343,7 +401,7 @@ function GlovFont(font_info, texture_name) {
   this.char_infos = [];
   for (let ii = 0; ii < font_info.char_infos.length; ++ii) {
     let char_info = font_info.char_infos[ii];
-    this.char_infos[font_info.char_infos[ii].c] = char_info;
+    this.char_infos[char_info.c] = char_info;
     char_info.xpad = char_info.xpad || 0;
     char_info.yoffs = char_info.yoffs || 0;
     char_info.w_pad_scale = (char_info.w + char_info.xpad) * char_info.scale;
@@ -390,7 +448,7 @@ GlovFont.prototype.drawSizedAligned = function (style, x, y, z, size, align, w, 
   let y_size = size;
   if (align & ALIGN_NEEDS_WIDTH) {
     let width = this.getStringWidth(style, x_size, text);
-    if ((align & ALIGN.HFIT) && width > w) {
+    if ((align & ALIGN.HFIT) && width > w + EPSILON) {
       let scale = w / width;
       x_size *= scale;
       width = w;
@@ -442,6 +500,9 @@ GlovFont.prototype.drawSizedAligned = function (style, x, y, z, size, align, w, 
   return drawn_width;
 };
 
+let tile_state = 0;
+let chained_outside = false;
+
 GlovFont.prototype.drawSizedAlignedWrapped = function (style, x, y, z, indent, size, align, w, h, text) {
   text = getStringFromLocalizable(text);
   assert(w > 0);
@@ -455,8 +516,8 @@ GlovFont.prototype.drawSizedAlignedWrapped = function (style, x, y, z, indent, s
 
   let yoffs = 0;
   let height = size * lines.length;
-  // eslint-disable-next-line default-case
-  switch (align & ALIGN.VMASK) {
+  let valign = align & ALIGN.VMASK;
+  switch (valign) { // eslint-disable-line default-case
     case ALIGN.VCENTER:
       yoffs = (h - height) / 2;
       if (this.integral) {
@@ -469,6 +530,9 @@ GlovFont.prototype.drawSizedAlignedWrapped = function (style, x, y, z, indent, s
   }
   align &= ~ALIGN.VMASK;
 
+  chained_outside = true;
+  tile_state = 0;
+  spriteChainedStart();
   for (let ii = 0; ii < lines.length; ++ii) {
     let line = lines[ii];
     if (line && line.trim()) {
@@ -476,7 +540,9 @@ GlovFont.prototype.drawSizedAlignedWrapped = function (style, x, y, z, indent, s
     }
     yoffs += size;
   }
-  return yoffs;
+  chained_outside = false;
+  spriteChainedStop();
+  return valign === ALIGN.VBOTTOM ? height : yoffs;
 };
 
 // returns height
@@ -494,8 +560,21 @@ export function fontSetDefaultSize(h) {
   default_size = h;
 }
 
+let font_rot = 0;
+let font_rot_cos = 0;
+let font_rot_sin = 0;
+let font_rot_origin_x = 0;
+let font_rot_origin_y = 0;
+export function fontRotate(rot, rot_origin_x, rot_origin_y) {
+  font_rot = rot;
+  font_rot_cos = cos(rot);
+  font_rot_sin = sin(rot);
+  font_rot_origin_x = transformX(rot_origin_x);
+  font_rot_origin_y = transformY(rot_origin_y);
+}
+
 GlovFont.prototype.draw = function (param) {
-  let { style, color, alpha, x, y, z, size, w, h, align, text, indent } = param;
+  let { style, color, alpha, x, y, z, size, w, h, align, text, indent, rot } = param;
   if (color) {
     style = fontStyleColored(style, color);
   }
@@ -505,14 +584,24 @@ GlovFont.prototype.draw = function (param) {
   indent = indent || 0;
   size = size || default_size;
   z = z || Z.UI;
+  if (rot) {
+    // TODO: x/y should be calculated w.r.t. w/h if align is specified
+    fontRotate(rot, x, y);
+  }
+  let ret;
   if (align) {
     if (align & ALIGN.HWRAP) {
-      return this.drawSizedAlignedWrapped(style, x, y, z, indent, size, align & ~ALIGN.HWRAP, w, h, text);
+      ret = this.drawSizedAlignedWrapped(style, x, y, z, indent, size, align & ~ALIGN.HWRAP, w, h, text);
+    } else {
+      ret = this.drawSizedAligned(style, x, y, z, size, align, w || 0, h || 0, text);
     }
-    return this.drawSizedAligned(style, x, y, z, size, align, w || 0, h || 0, text);
   } else {
-    return this.drawSized(style, x, y, z, size, text);
+    ret = this.drawSized(style, x, y, z, size, text);
   }
+  if (rot) {
+    fontRotate(0);
+  }
+  return ret;
 };
 
 // line_cb(x0, int linenum, const char *line, x1)
@@ -607,7 +696,7 @@ GlovFont.prototype.wrapLinesScaled = function (w, indent, xsc, text, align, line
   text = getStringFromLocalizable(text);
   assert(typeof align !== 'function'); // Old API had one less parameter
   const len = text.length;
-  const max_word_w = w - indent;
+  const max_word_w = w - indent + EPSILON;
   // "fit" mode: instead of breaking the too-long word, output it on a line of its own
   const hard_wrap_mode_fit = align & ALIGN.HFIT;
   const x_advance = this.calcXAdvance(xsc);
@@ -642,7 +731,7 @@ GlovFont.prototype.wrapLinesScaled = function (w, indent, xsc, text, align, line
       if (word_start !== idx) {
         let need_line_flush = false;
         // flush word, take care of space on next loop
-        if (word_x0 + word_w <= w) {
+        if (word_x0 + word_w <= w + EPSILON) {
           // fits fine, add to line, start new word
         } else if (word_w > max_word_w && !hard_wrap_mode_fit) {
           // even just this word alone won't fit, needs a hard wrap
@@ -664,7 +753,7 @@ GlovFont.prototype.wrapLinesScaled = function (w, indent, xsc, text, align, line
           }
         } else {
           // won't fit, but fits on next line, soft wrap
-          if (line_end !== -1) {
+          if (line_end !== -1 || indent < 0 && line_x0 !== indent) {
             flushLine();
           }
         }
@@ -682,7 +771,7 @@ GlovFont.prototype.wrapLinesScaled = function (w, indent, xsc, text, align, line
 
         // we're now either still pointing at the space, or rewound to an earlier point
         continue;
-      } else {
+      } else if (c) {
         // process the space
         word_start = idx + 1;
         word_x0 += space_size;
@@ -695,7 +784,7 @@ GlovFont.prototype.wrapLinesScaled = function (w, indent, xsc, text, align, line
       if (char_info) {
         let char_w = char_info.w_pad_scale * xsc + x_advance;
         word_w += char_w;
-        if (word_x0 + word_w <= w) { // would partially fit up to and including this letter
+        if (word_x0 + word_w <= w + EPSILON) { // would partially fit up to and including this letter
           word_slice = idx + 1;
           word_slice_w = word_w;
         }
@@ -704,7 +793,13 @@ GlovFont.prototype.wrapLinesScaled = function (w, indent, xsc, text, align, line
     ++idx;
   } while (idx <= len);
   if (line_end !== -1) {
+    line_x1 = word_x0; // include size of trailing whitespace
     flushLine();
+  } else if (word_x0 !== line_x1) {
+    line_x1 = word_x0; // include size of trailing whitespace, if any
+    if (line_cb) {
+      line_cb(line_x0, linenum, '', line_x1);
+    }
   }
 
   return linenum;
@@ -794,7 +889,9 @@ GlovFont.prototype.drawScaled = function () {
   //   things look almost identical, just crisper
   let x_advance = this.calcXAdvance(xsc);
   let font_texel_scale = this.font_size / 32;
-  let tile_state = 0;
+  if (!chained_outside) {
+    tile_state = 0;
+  }
 
   let applied_style = this.applied_style;
 
@@ -810,12 +907,20 @@ GlovFont.prototype.drawScaled = function () {
   );
   let padding1 = max(0, applied_style.outline_width*font_texel_scale*avg_scale_font);
   const outer_scaled = applied_style.glow_outer*font_texel_scale;
-  padding4[0] = max(outer_scaled*xsc - applied_style.glow_xoffs*font_texel_scale*xsc, padding1);
-  padding4[2] = max(outer_scaled*xsc + applied_style.glow_xoffs*font_texel_scale*xsc, padding1);
-  padding4[1] = max(outer_scaled*ysc - applied_style.glow_yoffs*font_texel_scale*ysc, padding1);
-  padding4[3] = max(outer_scaled*ysc + applied_style.glow_yoffs*font_texel_scale*ysc, padding1);
+  let glow_xoffs = applied_style.glow_xoffs*font_texel_scale*xsc;
+  let glow_yoffs = applied_style.glow_yoffs*font_texel_scale*ysc;
+  padding4[0] = max(outer_scaled*xsc - glow_xoffs, padding1);
+  padding4[2] = max(outer_scaled*xsc + glow_xoffs, padding1);
+  padding4[1] = max(outer_scaled*ysc - glow_yoffs, padding1);
+  padding4[3] = max(outer_scaled*ysc + glow_yoffs, padding1);
 
+  if (this.hard_cutoff) {
+    value[0] *= 512;
+    value[1] = value[1] * 512 - 255.5;
+    value[2] = value[2] * 512 - 255.5;
+  }
   techParamsSet('param0', value);
+
   let value2 = temp_vec4_glow_params;
   // Glow mult
   if (applied_style.glow_outer) {
@@ -824,7 +929,7 @@ GlovFont.prototype.drawScaled = function () {
       ((applied_style.glow_outer - applied_style.glow_inner) * delta_per_source_pixel * font_texel_scale));
   } else {
     // Avoid sending `Infinity` to GPU
-    value2[2] = value[3] = 0;
+    value2[2] = value2[3] = 0;
   }
 
   v4scale(padding_in_font_space, padding4, 1 / avg_scale_font);
@@ -841,7 +946,13 @@ GlovFont.prototype.drawScaled = function () {
   // same Z should be drawn in queue order, so not needed
   const z_advance = applied_style.glow_xoffs < 0 ? -0.0001 : 0; // 0.0001;
   if (!z_advance) {
-    spriteChainedStart();
+    if (!chained_outside) {
+      spriteChainedStart();
+    }
+  } else {
+    if (chained_outside) {
+      spriteChainedStop();
+    }
   }
 
   const has_glow_offs = applied_style.glow_xoffs || applied_style.glow_yoffs;
@@ -858,6 +969,10 @@ GlovFont.prototype.drawScaled = function () {
   let sort_y = transformY(y);
   let color = applied_style.color_vec4;
   let shader = this.shader;
+  let turx;
+  let tury;
+  let tllx;
+  let tlly;
 
   for (let i=0; i<len; i++) {
     const c = text.charCodeAt(i);
@@ -896,9 +1011,9 @@ GlovFont.prototype.drawScaled = function () {
           let h = char_info.h * ysc2 + (padding4[1] + padding4[3]) * rel_y_scale;
 
           let xx = x - rel_x_scale * padding4[0];
-          let yy = y - rel_y_scale * padding4[2] + char_info.yoffs * ysc2;
+          let yy = y - rel_y_scale * padding4[1] + char_info.yoffs * ysc2;
           // Below is inlined/optimized version of:
-          // queueraw(
+          // spriteQueueRaw(
           //   texs,
           //   xx, yy,
           //   z + z_advance * i, w, h,
@@ -910,14 +1025,38 @@ GlovFont.prototype.drawScaled = function () {
           let x1 = xx + w;
           let zz = z + z_advance * i;
 
-          let tx0 = transformX(xx);
-          let ty0 = transformY(yy);
-          let tx1 = transformX(x1);
-          let ty1 = transformY(y1);
+          let tulx = transformX(xx);
+          let tuly = transformY(yy);
+          let tlrx = transformX(x1);
+          let tlry = transformY(y1);
+          if (font_rot) {
+            let tw = tlrx - tulx;
+            let th = tlry - tuly;
+            let relxoffs = tulx - font_rot_origin_x;
+            let relyoffs = tuly - font_rot_origin_y;
+            tulx = font_rot_origin_x + relxoffs * font_rot_cos - relyoffs * font_rot_sin;
+            tuly = font_rot_origin_y + relxoffs * font_rot_sin + relyoffs * font_rot_cos;
+            let cosw = font_rot_cos * tw;
+            let sinw = font_rot_sin * tw;
+            let sinh = font_rot_sin * th;
+            let cosh = font_rot_cos * th;
+            turx = tulx + cosw;
+            tury = tuly + sinw;
+            tllx = tulx - sinh;
+            tlly = tuly + cosh;
+            tlrx = tulx + cosw - sinh;
+            tlry = tuly + sinw + cosh;
+          } else {
+            turx = tlrx;
+            tury = tuly;
+            tllx = tulx;
+            tlly = tlry;
+          }
+
           let elem = spriteDataAlloc(texs, shader, tech_params, blend_mode);
           let data = elem.data;
-          data[0] = tx0;
-          data[1] = ty0;
+          data[0] = tulx;
+          data[1] = tuly;
           data[2] = color[0];
           data[3] = color[1];
           data[4] = color[2];
@@ -925,8 +1064,8 @@ GlovFont.prototype.drawScaled = function () {
           data[6] = u0;
           data[7] = v0;
 
-          data[8] = tx0;
-          data[9] = ty1;
+          data[8] = tllx;
+          data[9] = tlly;
           data[10] = color[0];
           data[11] = color[1];
           data[12] = color[2];
@@ -934,8 +1073,8 @@ GlovFont.prototype.drawScaled = function () {
           data[14] = u0;
           data[15] = v1;
 
-          data[16] = tx1;
-          data[17] = ty1;
+          data[16] = tlrx;
+          data[17] = tlry;
           data[18] = color[0];
           data[19] = color[1];
           data[20] = color[2];
@@ -943,8 +1082,8 @@ GlovFont.prototype.drawScaled = function () {
           data[22] = u1;
           data[23] = v1;
 
-          data[24] = tx1;
-          data[25] = ty0;
+          data[24] = turx;
+          data[25] = tury;
           data[26] = color[0];
           data[27] = color[1];
           data[28] = color[2];
@@ -952,7 +1091,7 @@ GlovFont.prototype.drawScaled = function () {
           data[30] = u1;
           data[31] = v0;
 
-          elem.x = tx0;
+          elem.x = tulx;
           elem.y = sort_y;
           elem.queue(zz);
 
@@ -964,7 +1103,13 @@ GlovFont.prototype.drawScaled = function () {
     }
   }
   if (!z_advance) {
-    spriteChainedStop();
+    if (!chained_outside) {
+      spriteChainedStop();
+    }
+  } else {
+    if (chained_outside) {
+      spriteChainedStart();
+    }
   }
   profilerStopFunc();
   return x - _x;

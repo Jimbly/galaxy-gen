@@ -1,6 +1,7 @@
 /* eslint-disable import/order */
 const camera2d = require('./camera2d.js');
 const engine = require('./engine.js');
+const { renderNeeded } = engine;
 const glov_font = require('./font.js');
 const { min } = Math;
 const { scrollAreaCreate } = require('./scroll_area.js');
@@ -21,16 +22,19 @@ Z.BUILD_ERRORS = Z.BUILD_ERRORS || 9900;
 
 function onGBState(state) {
   gbstate = state;
+  renderNeeded();
 }
 
 function onServerError(err) {
   server_error = err;
+  renderNeeded();
 }
 
 function onDataErrors(err_list) {
   for (let ii = 0; ii < err_list.length; ++ii) {
     dataErrorEx(err_list[ii]);
   }
+  renderNeeded();
 }
 
 const PAD = 4;
@@ -81,10 +85,11 @@ function buildUITick() {
   const sub_w = w - PAD - scroll_area.barWidth();
   y = 0;
   z = Z.UI;
+  let indent = 0;
 
   function printLine(type, str) {
     str = str.replace(strip_ansi, '');
-    y += font.drawSizedWrapped(style, x, y, z, sub_w, 0, font_height,
+    y += font.drawSizedWrapped(style, x + indent, y, z, sub_w - indent, 0, font_height,
       `${type}: ${str}`);
   }
 
@@ -92,10 +97,11 @@ function buildUITick() {
     for (let task_name in gbstate.tasks) {
       let task = gbstate.tasks[task_name];
       x = 0;
+      indent = 0;
       font.drawSizedAligned(style_task, x, y, z, font_height, font.ALIGN.HLEFT, sub_w, 0,
         `${task_name}:`);
       y += font_height;
-      x += font_height;
+      indent += font_height;
       let printed_any = false;
       for (let job_name in task.jobs) {
         let job = task.jobs[job_name];
@@ -104,7 +110,7 @@ function buildUITick() {
           if (job_name.startsWith('source:')) {
             job_name = job_name.slice(7);
           }
-          y += font.drawSizedWrapped(style_job, x, y, z, sub_w, 0, font_height,
+          y += font.drawSizedWrapped(style_job, indent, y, z, sub_w, 0, font_height,
             job_name);
         }
         if (warnings) {
@@ -128,7 +134,7 @@ function buildUITick() {
   }
 
   if (server_error) {
-    x = 0;
+    x = indent = 0;
     font.drawSizedAligned(style_task, x, y, z, font_height, font.ALIGN.HLEFT, sub_w, 0,
       'Server Error:');
     y += font_height;
@@ -145,10 +151,11 @@ function buildUITick() {
   scroll_area.end(y);
   y = scroll_y_start + min(max_h, y);
 
+  let button_h = font_height * 1.5;
   if (ui.buttonText({
-    x: x0 + w - ui.button_height,
+    x: x0 + w - button_h,
     y: y0, z: Z.BUILD_ERRORS + 1,
-    w: ui.button_height,
+    w: button_h, h: button_h,
     text: 'X',
   })) {
     gbstate = null;

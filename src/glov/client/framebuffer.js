@@ -45,10 +45,14 @@ function getTemporaryTexture(w, h, possibly_fbo) {
     let tex = textureCreateForCapture(`temp_${key}_${++last_temp_idx}`);
     if (is_fbo) {
       tex.allocFBO(w, h);
+      assert(tex.fbo);
     }
     temp.list.push(tex);
   }
   let tex = temp.list[temp.idx++];
+  if (is_fbo) {
+    assert(tex.fbo);
+  }
   return tex;
 }
 
@@ -153,6 +157,7 @@ export function framebufferStart(opts) {
   } else if (!final) {
     cur_tex = framebufferCaptureStart(null, width, height, true);
     if (settings.use_fbos) {
+      assert(cur_tex.fbo);
       if (need_depth) {
         if (need_depth === 'texture') {
           cur_depth = bindTemporaryDepthbufferTexture(width, height);
@@ -296,6 +301,7 @@ export function framebufferEndOfFrame() {
 
 export function framebufferUpdateCanvasForCapture() {
   if (cur_tex && settings.use_fbos) {
+    assert(cur_tex.fbo);
     let saved_tex = cur_tex;
     let saved_viewport = engine.viewport.slice(0);
     // copy to canvas

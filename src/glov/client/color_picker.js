@@ -7,7 +7,11 @@ const { hsvToRGB, rgbToHSV } = require('./hsv.js');
 const input = require('./input.js');
 const { min } = Math;
 const ui = require('./ui.js');
-const { LINE_CAP_SQUARE } = ui;
+const {
+  LINE_CAP_SQUARE,
+  uiButtonHeight,
+  buttonWasFocused,
+} = ui;
 const { spriteClipped, spriteClipPause, spriteClipResume, spriteCreate } = require('./sprites.js');
 const { TEXTURE_FORMAT } = require('./textures.js');
 const { clamp } = require('glov/common/util.js');
@@ -81,9 +85,9 @@ function initTextures() {
 
 export function colorPicker(param) {
   let state = ui.getUIElemData('colorpicker', param, colorPickerAlloc);
-  let icon_h = param.icon_h || ui.button_height;
+  let icon_h = param.icon_h || uiButtonHeight();
   let icon_w = param.icon_w || icon_h;
-  let picker_h = param.picker_h || ui.button_height * 4;
+  let picker_h = param.picker_h || uiButtonHeight() * 4;
   let pad = param.pad || 3;
   let { x, y, z } = param;
 
@@ -103,7 +107,7 @@ export function colorPicker(param) {
       state.open = false;
     }
   }
-  let handled = ui.button_mouseover;
+  let handled = buttonWasFocused();
 
   if (state.open) {
     let clip_pause = spriteClipped();

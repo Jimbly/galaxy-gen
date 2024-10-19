@@ -12,16 +12,16 @@ function texPackMakeTXP(flags, out) {
 
   let header = Buffer.alloc((num_files + 3) * 4);
   let header_idx = 0;
-  header.writeUint32LE(TEXPACK_MAGIC, header_idx);
+  header.writeUInt32LE(TEXPACK_MAGIC, header_idx);
   header_idx += 4;
-  header.writeUint32LE(num_files, header_idx);
+  header.writeUInt32LE(num_files, header_idx);
   header_idx += 4;
-  header.writeUint32LE(flags, header_idx);
+  header.writeUInt32LE(flags, header_idx);
   header_idx += 4;
   let buffs = [header];
   for (let ii = 0; ii < out.length; ++ii) {
     let buf = out[ii];
-    header.writeUint32LE(buf.length, header_idx);
+    header.writeUInt32LE(buf.length, header_idx);
     header_idx += 4;
     buffs.push(buf);
   }

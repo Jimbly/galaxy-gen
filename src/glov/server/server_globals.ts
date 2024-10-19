@@ -1,9 +1,14 @@
 import assert from 'assert';
 import { dotPropDelete, dotPropGet, dotPropSet } from 'glov/common/dot-prop';
-import { CmdDef } from 'glov/common/types';
 import { ChannelServerWorker } from './channel_server_worker';
-import { globalWorkerAddCmd } from './global_worker';
+import { ClientHandlerFunction } from './channel_worker';
+import {
+  globalWorkerAddCmd,
+  globalWorkerRegisterClientHandler,
+} from './global_worker';
 
+import type { CmdDef } from 'glov/common/cmd_parse';
+import type { TSMap } from 'glov/common/types';
 
 let global_data: Partial<Record<string, unknown>>;
 
@@ -58,6 +63,7 @@ type ServerGlobalsDef<T=unknown> = {
   on_data?: ServerGlobalOnDataCB<T>;
   // Note: commands here are ran in the context of the _GlobalWorker_
   cmds?: CmdDef[];
+  client_handlers?: TSMap<ClientHandlerFunction>;
 };
 
 export function serverGlobalsRegister<T>(prefix: string, param: ServerGlobalsDef<T>): void {
@@ -70,6 +76,11 @@ export function serverGlobalsRegister<T>(prefix: string, param: ServerGlobalsDef
   if (param.cmds) {
     for (let ii = 0; ii < param.cmds.length; ++ii) {
       globalWorkerAddCmd(param.cmds[ii]);
+    }
+  }
+  if (param.client_handlers) {
+    for (let key in param.client_handlers) {
+      globalWorkerRegisterClientHandler(key, param.client_handlers[key]!);
     }
   }
 }

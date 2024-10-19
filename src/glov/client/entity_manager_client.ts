@@ -26,14 +26,19 @@ import {
 } from 'glov/common/entity_base_common';
 import { Packet } from 'glov/common/packet';
 import { EventEmitter } from 'glov/common/tiny-events';
-import { ClientChannelWorker, DataObject, NetErrorCallback } from 'glov/common/types';
+import { DataObject, NetErrorCallback } from 'glov/common/types';
 import { ridx } from 'glov/common/util';
 import * as engine from './engine';
 import {
   ClientActionMessageParam,
   EntityBaseClient,
 } from './entity_base_client';
-import { netClientId, netDisconnected, netSubs } from './net';
+import {
+  ClientChannelWorker,
+  netClientId,
+  netDisconnected,
+  netSubs,
+} from './net';
 const walltime: () => number = require('./walltime.js');
 
 const { max, min, round } = Math;
@@ -662,6 +667,7 @@ class ClientEntityManagerImpl<
     resp_func?: NetErrorCallback<unknown>,
   ): void {
     assert(this.channel?.numSubscriptions());
+    assert(action.ent);
     if (!this.action_list_queue) {
       this.action_list_queue = {
         action_list: [],

@@ -1,4 +1,5 @@
 html, body {
+  touch-action: none; /* disables double-/triple-tap zoom on iOS */
   background-color: black;
   color: white;
   border: 0;
@@ -10,6 +11,26 @@ html, body {
   overflow: hidden;
   position: absolute;
 }
+
+/* replace textarea font with fixed-width
+@font-face {
+  font-family: 'perfectvga';
+  src: url('perfectvga.woff2') format('woff2'),
+       url('perfectvga.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+textarea, input.canvas_render {
+  font-family: perfectvga,"Lucida Console",Courier,monospace;
+}
+input.canvas_render {
+  /* Nudge up a bit, as it doesn't quite line up with parent element for unknown reasons */
+  position: relative;
+  top: -15%;
+}
+*/
+
 
 a {
   color: #DDF;
@@ -44,21 +65,19 @@ a:visited {
   border: 0;
   padding: 0;
   margin: 0;
-  left: env(safe-area-inset-left);
-  right: env(safe-area-inset-right);
-  top: env(safe-area-inset-top);
-  bottom: env(safe-area-inset-bottom);
+  left: var(--discord-safe-area-inset-left, env(safe-area-inset-left));
+  right: var(--discord-safe-area-inset-right, env(safe-area-inset-right));
+  top: var(--discord-safe-area-inset-top, env(safe-area-inset-top));
+  bottom: var(--discord-safe-area-inset-bottom, env(safe-area-inset-bottom));
   position: absolute;
   pointer-events: none;
 }
 
 canvas {
   display: block; /* remove scrollbars */
-  width: 100%; /* for mobile, deals with canvas resize for top bar */
+  width: 100%;
   height: 100%;
   outline: none;
-  /*width: 100vw;
-  height: 100vh;*/
 }
 
 #debug_overlay {
@@ -110,7 +129,6 @@ canvas {
 .glovui_dynamic {
   font-size: 1em;
   position: absolute;
-  text-align: center;
   opacity: 1.0;
   pointer-events: auto;
 }
@@ -122,6 +140,40 @@ canvas {
   box-sizing: border-box;
   background: white;
   border-width: 1px;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.glovui_dynamic .fixed {
+  resize: none;
+  overflow: hidden;
+  text-wrap: nowrap;
+
+  /* potentially useful for better blending if canvas_render is not an option:
+    background: rgba(1,1,1,0);
+    border: none;
+    outline: none;
+    color: #111;
+    caret-color:  #111;
+  */
+}
+.glovui_dynamic .canvas_render {
+  resize: none;
+  background: rgba(1,1,1,0);
+  border: none;
+  outline: none;
+  overflow: hidden;
+  text-wrap: nowrap;
+
+  color: rgba(0,0,0,0);
+  caret-color: rgba(0,0,0,0);
+  /* debug alignment: color: rgba(255,0,255,0.5); */
+  /* debug alignment: caret-color: rgba(255,0,255,0.5); */
+}
+.glovui_dynamic .canvas_render::selection {
+  color: rgba(0,0,0,0);
 }
 
 .glovui_link {

@@ -16,6 +16,9 @@ const Replacer = require('regexp-sourcemaps');
 
 const alphafix = require('./alphafix.js');
 const appBundle = require('./app-bundle.js');
+const assetHasherRewrite = require('./asset-hasher-rewrite.js');
+const assetHasher = require('./asset-hasher.js');
+const autoatlas = require('./autoatlas_build.js');
 const autosound = require('./autosound.js');
 const compress = require('./compress.js');
 const eslint = require('./eslint.js');
@@ -54,6 +57,9 @@ gb.configure({
 // eslint-disable-next-line import/order
 const config = require('./config.js')(gb);
 
+const server_port = argv.port || process.env.port || 3000;
+const server_port_https = argv.sport || process.env.sport || (server_port + 100);
+
 // Gets applied to the entire bundle
 const max_mangle = argv['max-mangle'];
 const prod_uglify_opts = {
@@ -76,13 +82,18 @@ function copy(job, done) {
   done();
 }
 
-gb.task({
-  name: 'client_css',
-  input: config.client_css,
-  type: gb.SINGLE,
-  target: 'dev',
-  func: copy,
-});
+function addStarStar(a) {
+  return `${a}:**`;
+}
+function addStarStarJS(a) {
+  return `${a}:**.js`;
+}
+function addStarStarJSON(a) {
+  return `${a}:**.json`;
+}
+function addStarStarJSMap(a) {
+  return `${a}:**.js.map`;
+}
 
 gb.task({
   name: 'server_js',
@@ -134,7 +145,7 @@ gb.task({
 gb.task({
   name: 'gulpish-client_html_default',
   input: config.client_html,
-  ...gulpish_tasks.client_html_default('dev', config.default_defines)
+  ...gulpish_tasks.client_html_default(true, config.default_defines)
 });
 
 let gulpish_client_html_tasks = ['gulpish-client_html_default'];
@@ -144,13 +155,62 @@ config.extra_index.forEach(function (elem) {
   gb.task({
     name,
     input: config.client_html_index,
-    ...gulpish_tasks.client_html_custom('dev', elem)
+    ...gulpish_tasks.client_html_custom(true, elem)
   });
 });
 
 gb.task({
-  name: 'gulpish-client_html',
-  deps: gulpish_client_html_tasks,
+  name: 'client_html_pre_hash',
+  type: gb.SINGLE,
+  input: gulpish_client_html_tasks.map(addStarStar),
+  func: copy,
+});
+
+gb.task({
+  name: 'html_assethash_rewrite',
+  input: [
+    'client_html_pre_hash:**',
+  ],
+  ...assetHasherRewrite({
+    enabled: config.asset_hashing,
+    hash_dep: 'asset_hash_dev',
+  }),
+});
+
+gb.task({
+  name: 'html_rename',
+  target: 'dev',
+  input: [
+    'html_assethash_rewrite:**',
+  ],
+  type: gb.SINGLE,
+  func: function (job, done) {
+    let file = job.getFile();
+    if (file.relative === 'client/index.html') {
+      job.out({
+        relative: 'client/index_hashed.html',
+        contents: file.contents,
+      });
+    } else {
+      job.out(file);
+    }
+    done();
+  },
+});
+
+gb.task({
+  name: 'html_web_unhashed',
+  target: 'dev',
+  input: [
+    'client_html_pre_hash:client/index.html',
+  ],
+  type: gb.SINGLE,
+  func: copy,
+});
+
+gb.task({
+  name: 'client_html',
+  deps: ['html_rename', 'html_web_unhashed'],
 });
 
 gb.task({
@@ -164,6 +224,12 @@ gb.task({
   input: config.server_json_files,
   target: 'dev',
   ...json5({ beautify: true })
+});
+
+gb.task({
+  name: 'client_autoatlas',
+  input: 'client/atlases/**/*.png',
+  ...autoatlas(),
 });
 
 gb.task({
@@ -363,6 +429,7 @@ function registerBundle(param) {
     do_version,
     bundle_uglify_opts: argv['dev-mangle'] ? prod_uglify_opts : null,
     ban_deps: ban_deps || (is_worker ? WORKER_BAN_DEPS : null),
+    sourcemap_host: `http://localhost:${server_port}/`,
   });
   if (do_reload) {
     // Add an early sync task, letting the server know we should reload these files
@@ -434,9 +501,6 @@ const server_input_globs = [
   'server_json:**',
 ];
 
-let server_port = argv.port || process.env.port || 3000;
-let server_port_https = argv.sport || process.env.sport || (server_port + 100);
-
 gb.task({
   name: 'run_server',
   deps: [
@@ -476,6 +540,23 @@ gb.task({
   ...webfs({
     embed: config.fsdata_embed,
     strip: config.fsdata_strip,
+    sized_embed: config.fsdata_sized_embed,
+    base: 'client',
+    output: 'client/fsdata.js',
+  })
+});
+
+function prodTextureMap(glob) {
+  return glob.replace('client_texproc_output', 'build.prod.texfinal');
+}
+
+gb.task({
+  name: 'build.prod.client_fsdata',
+  input: config.client_fsdata.map(prodTextureMap),
+  ...webfs({
+    embed: config.fsdata_embed,
+    strip: config.fsdata_strip,
+    sized_embed: config.fsdata_sized_embed,
     base: 'client',
     output: 'client/fsdata.js',
   })
@@ -483,7 +564,10 @@ gb.task({
 
 gb.task({
   name: 'client_static',
-  input: config.client_static,
+  input: [
+    ...config.client_static,
+    ...config.client_css,
+  ],
   type: gb.SINGLE,
   target: 'dev',
   func: copy,
@@ -522,33 +606,18 @@ gb.task({
   }, autosound(config.client_autosound_config)),
 });
 
-function addStarStar(a) {
-  return `${a}:**`;
-}
-function addStarStarJS(a) {
-  return `${a}:**.js`;
-}
-function addStarStarJSON(a) {
-  return `${a}:**.json`;
-}
-
 let client_tasks = [
   ...config.extra_client_tasks,
   'client_autosound',
   'client_static',
   'client_single_min',
   'client_texproc_output',
-  'client_css',
   'client_fsdata',
   ...bundle_tasks,
+  'client_html',
 ];
 
-let client_input_globs_base = client_tasks.map(addStarStar);
-
-let client_input_globs = [
-  ...client_input_globs_base,
-  ...gulpish_client_html_tasks.map(addStarStar),
-];
+let client_input_globs = client_tasks.map(addStarStar);
 
 
 let bs_target = `http://localhost:${server_port}`;
@@ -658,6 +727,20 @@ gb.task({
 });
 
 gb.task({
+  name: 'asset_hash_dev',
+  target: 'dev',
+  input: [
+    ...bundle_tasks.map(addStarStarJS),
+    ...config.asset_hashed_files_dev,
+    ...config.asset_hashed_files,
+  ],
+  ...assetHasher({
+    enabled: config.asset_hashing,
+    need_rewrite: config.asset_hashed_files_need_rewrite,
+  }),
+});
+
+gb.task({
   name: 'build_deps',
   deps: [
     // 'client_json', // dep'd from client_bundle*
@@ -668,11 +751,12 @@ gb.task({
     'server_js_notest',
     'server_json',
     ...client_tasks,
+    'asset_hash_dev',
     (argv.nolint || argv.lint === false) ? 'nop' : 'eslint',
     // 'gulpish-eslint', // example, superseded by `eslint`
     (argv.nolint || argv.lint === false) ? 'nop' : 'check_typescript',
     (argv.nolint || argv.lint === false) ? 'nop' : 'test',
-    'gulpish-client_html',
+    'client_html',
     'client_js_warnings',
   ],
 });
@@ -682,6 +766,7 @@ if (argv['prod-uglify'] === false) {
     name: 'build.prod.uglify',
     input: [
       ...bundle_tasks.map(addStarStarJS),
+      ...bundle_tasks.map(addStarStarJSMap),
     ],
     type: gb.SINGLE,
     func: copy,
@@ -705,6 +790,13 @@ function noBundleTasks(elem) {
 
 function noTextureTask(elem) {
   if (elem.split(':')[0] === 'client_texproc_output') {
+    return false;
+  }
+  return true;
+}
+
+function noFSData(elem) {
+  if (elem.split(':')[0] === 'client_fsdata') {
     return false;
   }
   return true;
@@ -751,6 +843,8 @@ gb.task({
 //     -> passes through other png files
 //   client_texproc_output
 //     -> filters out the tflags and outputs all these to dev
+//   client_fsdata (to dev only)
+//     -> embeds any small textures appropriate for embedding
 // (Production build only pipeline)
 //   build.prod.pngextract
 //     -> extracts TXPs to individual PNGs for optimization
@@ -764,6 +858,8 @@ gb.task({
 //       all non-txp, non-png, non-tflag outputs of client_texproc (gpu textures, maybe jpegs later, etc)
 //         Or, maybe they should be pass-through from build.prod.pngextract->etc?
 //         There are not yet any of these, all `texproc()` outputs are currently PNGs or PNG-containing TXPs
+//   build.prod.client_fsdata
+//     -> embeds any small textures appropriate for embedding (sourced from minified textures)
 
 gb.task({
   name: 'build.prod.texfinal',
@@ -776,11 +872,61 @@ gb.task({
     'client_texproc:!**/*.txp',
     'client_texproc:!**/*.tflag',
   ],
-  target: 'prod',
   type: gb.SINGLE,
   func: copy,
 });
 
+function noClientHTML(a) {
+  return !a.startsWith('client_html');
+}
+
+gb.task({
+  name: 'asset_hash_prod',
+  input: [
+    'build.prod.uglify:**.js',
+    ...config.asset_hashed_files_prod,
+    ...config.asset_hashed_files,
+  ],
+  ...assetHasher({
+    enabled: config.asset_hashing,
+    need_rewrite: config.asset_hashed_files_need_rewrite,
+  }),
+});
+
+gb.task({
+  name: 'prod.html_assethash_rewrite',
+  input: [
+    'client_html_pre_hash:**',
+  ],
+  ...assetHasherRewrite({
+    enabled: config.asset_hashing,
+    hash_dep: 'asset_hash_prod',
+  }),
+});
+
+// Everything that goes (on-disk) into a production build (before making .zips)
+gb.task({
+  name: 'prod.posthash',
+  input: [
+    'asset_hash_prod:**',
+    'prod.html_assethash_rewrite:**',
+    'build.prod.uglify:**',
+    ...bundle_tasks.map(addStarStarJSON), // things excluded in build.prod.uglify
+    'build.prod.client_fsdata:**',
+    'build.prod.texfinal:**',
+    ...client_input_globs.filter(noBundleTasks).filter(noTextureTask).filter(noFSData).filter(noClientHTML),
+  ],
+  type: gb.SINGLE,
+  func: copy,
+});
+
+gb.task({
+  name: 'assets_dummy',
+  input: [
+    'prod.posthash:does_not_exist' // not actually a dep, just to make build system happy
+  ],
+  ...assetHasher.dummy(),
+});
 
 let zip_tasks = [];
 config.extra_index.forEach(function (elem) {
@@ -792,10 +938,11 @@ config.extra_index.forEach(function (elem) {
   gb.task({
     name,
     input: [
-      ...client_input_globs_base.filter(noBundleTasks).filter(noTextureTask),
-      'build.prod.texfinal:**',
-      ...bundle_tasks.map(addStarStarJSON), // things excluded in build.prod.uglify
-      'build.prod.uglify:**',
+      'prod.posthash:**',
+      'prod.posthash:!client/a/**',
+      'prod.posthash:!client/assets.js',
+      'prod.posthash:!**/*.html',
+      'assets_dummy:**',
       ...config.extra_client_html,
       ...config.extra_zip_inputs,
       `gulpish-client_html_${elem.name}:**`,
@@ -851,9 +998,7 @@ gb.task({
 gb.task({
   name: 'build.prod.compress',
   input: [
-    ...bundle_tasks.map(addStarStarJSON), // things excluded in build.prod.uglify
-    'build.prod.uglify:**',
-    ...client_input_globs.filter(noBundleTasks).filter(noTextureTask),
+    'prod.posthash:**',
     ...config.extra_prod_inputs,
   ],
   target: 'prod',
@@ -873,7 +1018,7 @@ gb.task({
 
 gb.task({
   name: 'build.prod.client',
-  deps: ['build.prod.compress', 'build.prod.texfinal', 'build.zip'],
+  deps: ['build.prod.compress', 'build.prod.texfinal', 'build.zip', ...config.extra_prod_tasks],
 });
 gb.task({
   name: 'build',

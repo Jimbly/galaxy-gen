@@ -2,22 +2,77 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 import assert from 'assert';
+import fs from 'fs';
 const { max } = Math;
 import * as ack from 'glov/common/ack.js';
 const { ackInitReceiver, ackWrapPakFinish, ackWrapPakPayload } = ack;
-import { isValidPlatform } from 'glov/common/enums';
 import { isPacket } from 'glov/common/packet';
+import { platformIsValid } from 'glov/common/platform';
 import * as events from 'glov/common/tiny-events.js';
 import * as util from 'glov/common/util.js';
+const { merge } = util;
 import * as wscommon from 'glov/common/wscommon.js';
-const { netDelayGet, wsHandleMessage, wsPak, wsPakSendDest } = wscommon;
+const { netDelayGet, wsHandleMessage, wsPak, wsPakSendDest, wsSetSendCB } = wscommon;
 import * as WebSocket from 'ws';
 
 import { ipBanReady, ipBanned } from './ip_ban';
+import { keyMetricsAddTagged } from './key_metrics';
 import { logEx } from './log';
 import { packetLog, packetLogInit } from './packet_log';
 import { ipFromRequest, isLocalHost, requestGetQuery } from './request_utils';
 import { VersionSupport, getVersionSupport, isValidVersion } from './version_management';
+
+const DO_PER_MESSAGE_DEFLATE = true;
+
+const WSS_OPTS = {
+  noServer: true,
+  maxPayload: 1024*1024,
+  perMessageDeflate: DO_PER_MESSAGE_DEFLATE ? {
+    zlibDeflateOptions: {
+      // See zlib defaults.
+      // chunkSize: 1024, - default seems fine, probably 1024?
+      // memLevel: 7, - default seems fine, probably 7?
+      level: 5,
+    },
+    // zlibInflateOptions: {
+    //   chunkSize: 10 * 1024
+    // },
+    // Other options settable:
+    clientNoContextTakeover: true, // Defaults to negotiated value.
+    serverNoContextTakeover: true, // Defaults to negotiated value.
+    // setting these to false takes 3x the CPU, but reduces receive immensely, send slightly
+    // serverMaxWindowBits: 10, // Defaults to negotiated value.
+    // Below options specified as default values.
+    concurrencyLimit: 2, // Limits zlib concurrency for perf. - no impact on CPU/message
+    threshold: 512, // Size (in bytes) below which messages
+    // should not be compressed if context takeover is disabled.
+  } : false,
+};
+
+let ws_debug_log = null;
+
+function wsserverDebugOnSend(buf) {
+  ws_debug_log.write(`["S","${Buffer.from(buf).toString('base64')}"],\n`);
+}
+export function wsserverDebugLog() {
+  if (!ws_debug_log) {
+    console.log('Enabling wsdebug streaming');
+    ws_debug_log = fs.createWriteStream('wsdebug.json', 'utf8');
+    ws_debug_log.write('[\n');
+    wsSetSendCB(wsserverDebugOnSend);
+    return true;
+  } else {
+    console.log('Disabling wsdebug streaming: closing');
+    wsSetSendCB(null);
+    ws_debug_log.write(']\n');
+    ws_debug_log.on('close', function () {
+      console.log('Disabling wsdebug streaming: ended');
+    });
+    ws_debug_log.close();
+    ws_debug_log = null;
+    return false;
+  }
+}
 
 function WSClient(ws_server, socket) {
   events.EventEmitter.call(this);
@@ -35,6 +90,12 @@ function WSClient(ws_server, socket) {
   this.client_plat = query.plat;
   this.client_ver = query.ver;
   this.client_build = query.build;
+  this.client_sesuid = query.sesuid;
+  // Note: client_tags only has client-scoped ABTest tags, not user-scoped (UserWorker gets those in rich presence)
+  this.client_tags = query.abt ? query.abt.split(',') : [];
+  if (this.client_plat) {
+    this.client_tags.push(this.client_plat);
+  }
   this.handlers = ws_server.handlers; // reference, not copy!
   this.connected = true;
   this.disconnected = false;
@@ -53,6 +114,14 @@ WSClient.prototype.ctx = function () {
     ip: this.addr,
     user_id,
   };
+};
+
+WSClient.prototype.clientLogData = function (data) {
+  if (this.client_worker) {
+    merge(data, this.client_worker.ids);
+  }
+  merge(data, this.crash_data);
+  merge(data, this.ctx());
 };
 
 WSClient.prototype.logCtx = function (level, ...args) {
@@ -86,8 +155,8 @@ WSClient.prototype.onClose = function () {
 
 WSClient.prototype.send = wscommon.sendMessage;
 
-WSClient.prototype.pak = function (msg, ref_pak) {
-  return wsPak(msg, ref_pak, this);
+WSClient.prototype.pak = function (msg, ref_pak, msg_debug_name) {
+  return wsPak(msg, ref_pak, this, msg_debug_name);
 };
 
 function WSServer() {
@@ -140,7 +209,7 @@ function logBigFilter(client, msg, data) {
 
 WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
   let ws_server = this;
-  ws_server.wss = new WebSocket.Server({ noServer: true, maxPayload: 1024*1024 });
+  ws_server.wss = new WebSocket.Server(WSS_OPTS);
 
   // Doing my own upgrade handling to early-reject invalid protocol versions
   let onUpgrade = (req, socket, head) => {
@@ -160,7 +229,7 @@ WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
     let query = requestGetQuery(req);
     let plat = query.plat ?? null;
     let ver = query.ver ?? null;
-    let versionSupport = plat !== null && ver !== null && isValidPlatform(plat) && isValidVersion(ver) ?
+    let versionSupport = plat !== null && ver !== null && platformIsValid(plat) && isValidVersion(ver) ?
       getVersionSupport(plat, ver) :
       VersionSupport.Obsolete;
     if (versionSupport !== VersionSupport.Supported) {
@@ -193,6 +262,9 @@ WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
       client.onClose();
     });
     socket.on('message', function (data) {
+      if (ws_debug_log) {
+        ws_debug_log.write(`["R","${data.toString('base64')}"],\n`);
+      }
       if (client.disconnected) {
         // message received after disconnect!
         // ignore
@@ -240,6 +312,8 @@ WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
       ver: client.client_ver,
       build: client.client_build,
     });
+
+    keyMetricsAddTagged('wsconnect', client.client_tags, 1, 'low');
 
     let query = requestGetQuery(req);
     let client_app = query.app || 'app';

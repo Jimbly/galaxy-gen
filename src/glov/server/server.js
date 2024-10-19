@@ -5,6 +5,8 @@ global.profilerStart = global.profilerStop = global.profilerStopStart = function
   // not yet profiling on server
 };
 
+let on_panic = [];
+
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
@@ -14,14 +16,17 @@ import {
   dataErrorQueueGet,
 } from 'glov/common/data_error';
 import { packetEnableDebug } from 'glov/common/packet';
+import { perfCounterSetBucketTime } from 'glov/common/perfcounters';
+import { callEach } from 'glov/common/util';
 import wscommon from 'glov/common/wscommon';
 import minimist from 'minimist';
 const argv = minimist(process.argv.slice(2));
 import glov_channel_server from './channel_server';
 import { dataStoresInit } from './data_stores_init';
 import { errorReportsInit, errorReportsSetAppBuildTimestamp } from './error_reports';
-import glov_exchange from './exchange';
-import exchange_local_bypass from './exchange_local_bypass';
+import { exchangeCreate } from './exchange';
+import { exchangeHashedCreate } from './exchange_hashed';
+import { exchangeLocalBypassCreate } from './exchange_local_bypass';
 import { idmapperWorkerInit } from './idmapper_worker';
 import { ipBanInit } from './ip_ban';
 import log from './log';
@@ -31,11 +36,12 @@ import { metricsInit } from './metrics';
 import { readyDataInit } from './ready_data';
 import { serverConfig } from './server_config';
 import { serverFilewatchTriggerChange } from './server_filewatch';
+import { serverFontInit } from './server_font';
 import { shaderStatsInit } from './shader_stats';
 import glov_wsserver from './wsserver';
 const { netDelaySet } = wscommon;
 
-const STATUS_TIME = 5000;
+let status_time = 5000;
 export let ws_server;
 export let channel_server;
 
@@ -45,7 +51,7 @@ export function getChannelServer() {
 
 let last_status = '';
 function displayStatus() {
-  setTimeout(displayStatus, STATUS_TIME);
+  setTimeout(displayStatus, status_time);
   let status = channel_server.getStatus();
   if (status !== last_status) {
     console.info('STATUS', new Date().toISOString(), status);
@@ -114,12 +120,26 @@ function onDataError(err) {
   sendToBuildClients('data_errors', [err]);
 }
 
+let recent_filewatch = [];
+const FILEWATCH_RECENT_TIME = 10000;
+function filewatchClean() {
+  if (recent_filewatch.length) {
+    let now = Date.now();
+    while (recent_filewatch.length && recent_filewatch[0][0] < now - FILEWATCH_RECENT_TIME) {
+      recent_filewatch.shift();
+    }
+  }
+}
+
 export function startup(params) {
   log.startup();
 
-  let { app, data_stores, exchange, metrics_impl, on_report_load, server, server_https } = params;
+  let { app, data_stores, exchange, metrics_impl, on_report_load, server, server_https, font } = params;
   assert(app);
   assert(server);
+  assert(!exchange, 'Exchange must now be registered by type and specified in default config');
+
+  serverFontInit(font || 'palanquin32');
 
   if (!data_stores) {
     data_stores = {};
@@ -132,13 +152,26 @@ export function startup(params) {
     metricsInit(metrics_impl);
   }
 
-  if (exchange) {
-    if (server_config.do_exchange_local_bypass) {
-      console.log('[EXCHANGE] Using local bypass');
-      exchange = exchange_local_bypass.create(exchange);
+  perfCounterSetBucketTime(server_config.perf_counter_bucket_time);
+  status_time = server_config.status_time || 5000;
+
+  if (!exchange) {
+    if (server_config.exchange_providers) {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      server_config.exchange_providers.map((provider) => require(path.join('../..', provider)));
     }
-  } else {
-    exchange = glov_exchange.create();
+    if (server_config.exchanges) {
+      let exchanges = server_config.exchanges.map(exchangeCreate);
+      console.log(`[EXCHANGE] Hashing between ${exchanges.length} exchanges`);
+      exchange = exchangeHashedCreate(exchanges);
+    } else {
+      exchange = exchangeCreate(server_config.exchange || {});
+    }
+  }
+
+  if (!exchange.no_local_bypass && server_config.do_exchange_local_bypass) {
+    console.log('[EXCHANGE] Using local bypass');
+    exchange = exchangeLocalBypassCreate(exchange);
   }
   channel_server = glov_channel_server.create();
   if (argv.dev) {
@@ -151,9 +184,6 @@ export function startup(params) {
     }
     dataErrorQueueEnable(true);
     dataErrorOnError(onDataError);
-  }
-  if (server_config.log && server_config.log.load_log) {
-    channel_server.load_log = true;
   }
 
   ws_server = glov_wsserver.create(server, server_https, argv.timeout === false, argv.dev);
@@ -198,15 +228,22 @@ export function startup(params) {
     shaderStatsInit(app);
   }
 
-  setTimeout(displayStatus, STATUS_TIME);
+  setTimeout(displayStatus, status_time);
 
   let gbstate;
   if (argv.dev) {
+    ws_server.on('client', function (client) {
+      filewatchClean();
+      for (let ii = 0; ii < recent_filewatch.length; ++ii) {
+        client.send('filewatch', recent_filewatch[ii][1]);
+      }
+    });
     process.on('message', function (msg) {
       if (!msg) {
         return;
       }
       if (msg.type === 'file_change') {
+        filewatchClean();
         let files = msg.paths;
         for (let ii = 0; ii < files.length; ++ii) {
           let filename = files[ii];
@@ -214,6 +251,7 @@ export function startup(params) {
           let shortname;
           if (filename.startsWith('client/')) {
             shortname = filename.replace(/^client\//, '');
+            recent_filewatch.push([Date.now(), shortname]);
             ws_server.broadcast('filewatch', shortname);
           } else {
             assert(filename.startsWith('server/'));
@@ -246,6 +284,10 @@ export function startup(params) {
   updateBuildTimestamp('app', true);
 }
 
+export function onpanic(cb) {
+  on_panic.push(cb);
+}
+
 export function panic(...message) {
   if (message && message.length === 1 && message[0] instanceof Error) {
     console.error(message[0]);
@@ -254,6 +296,7 @@ export function panic(...message) {
     console.error(new Error(message)); // So Stackdriver error reporting catches it
   }
   console.error('Process exiting due to panic');
+  callEach(on_panic);
   process.stderr.write(String(message), () => {
     console.error('Process exiting due to panic (2)'); // May not be seen due to buffering, but useful if it is seen
     process.exit(1);

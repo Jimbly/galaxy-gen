@@ -8,6 +8,16 @@
 exports.createSprite = spriteCreate;
 // eslint-disable-next-line @typescript-eslint/no-use-before-define
 exports.create = spriteCreate;
+// eslint-disable-next-line @typescript-eslint/no-use-before-define
+exports.queueraw4color = spriteQueueRaw4Color;
+// eslint-disable-next-line @typescript-eslint/no-use-before-define
+exports.queueraw4colorBuffer = spriteQueueRaw4ColorBuffer;
+// eslint-disable-next-line @typescript-eslint/no-use-before-define
+exports.queueraw4 = spriteQueueRaw4;
+// eslint-disable-next-line @typescript-eslint/no-use-before-define
+exports.queueraw = spriteQueueRaw;
+// eslint-disable-next-line @typescript-eslint/no-use-before-define
+exports.queuesprite = spriteQueueSprite;
 
 export const BlendMode = {
   BLEND_ALPHA: 0,
@@ -38,7 +48,12 @@ const {
   shadersPrelink,
 } = require('./shaders.js');
 const { deprecate, nextHighestPowerOfTwo } = require('glov/common/util.js');
-const { vec2, vec4, v4set } = require('glov/common/vmath.js');
+const {
+  vec2,
+  vec4,
+  v2set,
+  v4set,
+} = require('glov/common/vmath.js');
 
 deprecate(exports, 'clip', 'spriteClip');
 deprecate(exports, 'clipped', 'spriteClipped');
@@ -172,7 +187,7 @@ export function spriteQueueFn(z, fn) {
 
 // 4 arbitrary positions, colors, uvs
 // coordinates must be in counter-clockwise winding order
-export function queueraw4color(
+export function spriteQueueRaw4Color(
   texs,
   x0, y0, c0, u0, v0,
   x1, y1, c1, u1, v1,
@@ -233,12 +248,12 @@ export function queueraw4color(
 
 // 4 arbitrary positions
 // coordinates must be in counter-clockwise winding order
-export function queueraw4(
+export function spriteQueueRaw4(
   texs, x0, y0, x1, y1, x2, y2, x3, y3, z,
   u0, v0, u1, v1,
   color, shader, shader_params, blend
 ) {
-  return queueraw4color(texs,
+  return spriteQueueRaw4Color(texs,
     x0, y0, color, u0, v0,
     x1, y1, color, u0, v1,
     x2, y2, color, u1, v1,
@@ -271,7 +286,7 @@ export function queueSpriteData(elem, z) {
 
 // Expects a buffer in the form of:
 //   x, y, r, g, b, a, u, v, (x4)
-export function queueraw4colorBuffer(
+export function spriteQueueRaw4ColorBuffer(
   texs, buf,
   z, shader, shader_params, blend
 ) {
@@ -285,13 +300,12 @@ export function queueraw4colorBuffer(
   return elem;
 }
 
-
-export function queueraw(
+export function spriteQueueRaw(
   texs, x, y, z, w, h,
   u0, v0, u1, v1,
   color, shader, shader_params, blend
 ) {
-  return queueraw4color(texs,
+  return spriteQueueRaw4Color(texs,
     x, y, color, u0, v0,
     x, y + h, color, u0, v1,
     x + w, y + h, color, u1, v1,
@@ -440,7 +454,7 @@ function queuesprite4colorObj() {
   return elem;
 }
 
-export function queuesprite(
+export function spriteQueueSprite(
   sprite, x, y, z, w, h, rot, uvs, color, shader, shader_params, nozoom,
   pixel_perfect, blend,
 ) {
@@ -468,7 +482,7 @@ export function queuesprite(
 
 let clip_temp_xy = vec2();
 let clip_temp_wh = vec2();
-function clipCoordsScissor(x, y, w, h) {
+export function clipCoordsScissor(x, y, w, h) {
   camera2d.virtualToCanvas(clip_temp_xy, [x, y]);
   clip_temp_xy[0] = round(clip_temp_xy[0]);
   clip_temp_xy[1] = round(clip_temp_xy[1]);
@@ -495,20 +509,88 @@ function clipCoordsDom(x, y, w, h) {
   return xywh;
 }
 
+let active_scissor = null;
+function scissorSet(scissor) {
+  if (!active_scissor) {
+    gl.enable(gl.SCISSOR_TEST);
+  }
+  gl.scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+  active_scissor = scissor;
+}
+function scisssorClear() {
+  gl.disable(gl.SCISSOR_TEST);
+  active_scissor = null;
+}
+
+let scissor_stack = [];
+export function scissorPush(new_scissor) {
+  scissor_stack.push(active_scissor);
+  if (new_scissor) {
+    scissorSet(new_scissor);
+  } else {
+    scisssorClear();
+  }
+}
+export function scissorPushIntersection(new_scissor) {
+  scissor_stack.push(active_scissor);
+  if (new_scissor) {
+    if (active_scissor) {
+      let x0 = max(active_scissor[0], new_scissor[0]);
+      let x1 = max(x0, min(active_scissor[0] + active_scissor[2], new_scissor[0] + new_scissor[2]));
+      let y0 = max(active_scissor[1], new_scissor[1]);
+      let y1 = max(y0, min(active_scissor[1] + active_scissor[3], new_scissor[1] + new_scissor[3]));
+      let temp_scissor = [x0, y0, x1 - x0, y1 - y0];
+      scissorSet(temp_scissor);
+    } else {
+      scissorSet(new_scissor);
+    }
+  } else {
+    // leave active scissor, or not
+  }
+}
+export function scissorPop() {
+  let prev_scissor = scissor_stack.pop();
+  if (prev_scissor) {
+    scissorSet(prev_scissor);
+  } else {
+    scisssorClear();
+  }
+}
+
 export function spriteClip(z_start, z_end, x, y, w, h) {
   let scissor = clipCoordsScissor(x, y, w, h);
-  spriteQueueFn(z_start - 0.01, () => {
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
-  });
-  spriteQueueFn(z_end - 0.01, () => {
-    gl.disable(gl.SCISSOR_TEST);
-  });
+  spriteQueueFn(z_start - 0.01, scissorSet.bind(null, scissor));
+  spriteQueueFn(z_end - 0.01, scisssorClear);
 }
 
 let clip_stack = [];
-export function spriteClipped() {
-  return clip_stack.length > 0;
+
+export function spriteResetTopOfFrame() {
+  // In case something crashed and leftover from last frame
+  clip_stack.length = 0;
+  sprite_queue_stack.length = 0;
+}
+
+let clip_paused;
+export function spriteClipped(including_paused) {
+  return clip_stack.length > 0 && (including_paused || !clip_paused);
+}
+
+let clipped_viewport_temp_in = vec2();
+let clipped_viewport_temp_pos = vec2();
+let clipped_viewport_temp_wh = vec2();
+export function spriteClippedViewport() {
+  assert(clip_stack.length > 0);
+  let tail = clip_stack[clip_stack.length - 1];
+  camera2d.domToVirtual(clipped_viewport_temp_pos, tail.dom_clip);
+  v2set(clipped_viewport_temp_in, tail.dom_clip[2], tail.dom_clip[3]);
+  camera2d.domDeltaToVirtual(clipped_viewport_temp_wh, clipped_viewport_temp_in);
+  return {
+    x: clipped_viewport_temp_pos[0],
+    y: clipped_viewport_temp_pos[1],
+    w: clipped_viewport_temp_wh[0],
+    h: clipped_viewport_temp_wh[1],
+  };
 }
 
 export function spriteClipPush(z, x, y, w, h) {
@@ -523,10 +605,8 @@ export function spriteClipPush(z, x, y, w, h) {
 }
 
 export function spriteClipPop() {
-  assert(spriteClipped());
-  spriteQueueFn(Z.TOOLTIP - 0.1, () => {
-    gl.disable(gl.SCISSOR_TEST);
-  });
+  assert(spriteClipped(true));
+  spriteQueueFn(Z.TOOLTIP - 0.1, scisssorClear);
   let { z, scissor } = clip_stack.pop();
   let sprites = sprite_queue;
   spriteQueuePop(true);
@@ -537,21 +617,20 @@ export function spriteClipPop() {
     camera2d.setInputClipping(null);
   }
   spriteQueueFn(z, () => {
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+    scissorPush(scissor);
     spriteQueuePush();
     sprite_queue = sprites;
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
     spriteDraw();
     spriteQueuePop();
-    // done at Z.TOOLTIP: gl.disable(gl.SCISSOR_TEST);
+    // already done at Z.TOOLTIP within spriteDraw(): scisssorClear(), but scissorPop() would take care of it
+    scissorPop();
   });
 }
 
-let clip_paused;
 export function spriteClipPause() {
   // Queue back into the root sprite queue
-  assert(spriteClipped());
+  assert(spriteClipped(true));
   assert(!clip_paused);
   clip_paused = true;
   spriteQueuePush(sprite_queue_stack[0]);
@@ -561,11 +640,11 @@ export function spriteClipPause() {
   clip_stack.push({ dom_clip: null });
 }
 export function spriteClipResume() {
-  assert(spriteClipped());
+  assert(spriteClipped(true));
   assert(clip_paused);
   clip_stack.pop(); // remove us
   clip_paused = false;
-  assert(spriteClipped());
+  assert(spriteClipped(true));
   let { dom_clip } = clip_stack[clip_stack.length - 1];
   spriteQueuePop(true);
   camera2d.setInputClipping(dom_clip);
@@ -746,6 +825,13 @@ function finishDraw() {
   blendModeReset();
 }
 
+export function spriteDrawReset() {
+  if (active_scissor) {
+    gl.disable(gl.SCISSOR_TEST);
+    active_scissor = null;
+  }
+}
+
 export function spriteDraw() {
   profilerStart('sprites:draw');
   drawSetup();
@@ -839,6 +925,26 @@ export function buildRects(ws, hs, tex) {
   };
 }
 
+function flipRectHoriz(a) {
+  return vec4(a[0], a[3], a[2], a[1]);
+}
+
+export function spriteFlippedUVsApplyHFlip(spr) {
+  if (!spr.uidata.rects_orig) {
+    spr.uidata.rects_orig = spr.uidata.rects;
+  }
+  if (!spr.uidata.rects_flipped) {
+    spr.uidata.rects_flipped = spr.uidata.rects.map(flipRectHoriz);
+  }
+  spr.uidata.rects = spr.uidata.rects_flipped;
+}
+
+export function spriteFlippedUVsRestore(spr) {
+  if (spr.uidata.rects_orig) {
+    spr.uidata.rects = spr.uidata.rects_orig;
+  }
+}
+
 function Sprite(params) {
   this.lazy_load = null;
 
@@ -861,6 +967,7 @@ function Sprite(params) {
           filter_mag: params.filter_mag,
           wrap_s: params.wrap_s,
           wrap_t: params.wrap_t,
+          load_filter: params.load_filter,
         }));
       }
     } else {
@@ -872,6 +979,8 @@ function Sprite(params) {
           filter_mag: params.filter_mag,
           wrap_s: params.wrap_s,
           wrap_t: params.wrap_t,
+          soft_error: params.soft_error,
+          load_filter: params.load_filter,
         };
       } else {
         assert(params.url);
@@ -911,6 +1020,33 @@ function Sprite(params) {
   }
 }
 
+Sprite.prototype.getAspect = function () {
+  let tex = this.texs[0];
+  if (!tex) {
+    return 1;
+  }
+  return tex.src_width / tex.src_height;
+};
+
+Sprite.prototype.withOrigin = function (new_origin) {
+  let cache_v = String(new_origin[0] + new_origin[1] * 1007);
+  if (!this.origin_cache) {
+    this.origin_cache = {};
+  }
+  if (!this.origin_cache[cache_v]) {
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    let new_sprite = this.origin_cache[cache_v] = spriteCreate({
+      texs: this.texs,
+      origin: new_origin,
+      size: this.size,
+      color: this.color,
+      uvs: this.uvs,
+    });
+    new_sprite.uidata = this.uidata;
+  }
+  return this.origin_cache[cache_v];
+};
+
 Sprite.prototype.lazyLoadInit = function () {
   let tex = textureLoad({
     ...this.lazy_load,
@@ -931,11 +1067,19 @@ Sprite.prototype.lazyLoadInit = function () {
   }
 };
 
+Sprite.prototype.isLazyLoad = function () {
+  return Boolean(this.lazy_load);
+};
+
 Sprite.prototype.lazyLoad = function () {
   if (!this.texs.length) {
     this.lazyLoadInit();
   }
   if (!this.texs[0].loaded) {
+    // Still loading, don't let it be unloaded in the meantime though!
+    for (let ii = 0; ii < this.texs.length; ++ii) {
+      this.texs[ii].last_use = engine.frame_timestamp;
+    }
     return 0;
   }
   if (!this.loaded_at) {
@@ -971,7 +1115,7 @@ Sprite.prototype.draw = function (params) {
   }
   let w = (params.w || 1) * this.size[0];
   let h = (params.h || 1) * this.size[1];
-  let uvs = (typeof params.frame === 'number') ? this.uidata.rects[params.frame] : (params.uvs || this.uvs);
+  let uvs = ((params.frame !== undefined) ? this.uidata.rects[params.frame] : params.uvs) || this.uvs;
   qsp.sprite = this;
   qsp.x = params.x;
   qsp.y = params.y;

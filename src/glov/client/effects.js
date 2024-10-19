@@ -143,6 +143,11 @@ export function effectsPassConsume() {
   --num_passes;
 }
 
+let last_framebuffer_source;
+export function effectsLastFramebuffer() {
+  return last_framebuffer_source;
+}
+
 function doEffect(fn) {
   effectsPassConsume();
   fn();
@@ -417,6 +422,7 @@ export function applyCopy(params) {
   let source = params.source;
   if (!source) {
     source = framebufferEnd({ filter_linear: params.filter_linear, need_depth: params.need_depth });
+    last_framebuffer_source = source;
   }
   params.shader = params.shader || 'copy';
   params.params = params.params ? {
@@ -439,6 +445,7 @@ export function applyPixelyExpand(params) {
   assert(!source); // would need linear/non-wrap sampler state set
   if (!source) {
     source = framebufferEnd({ filter_linear: true });
+    last_framebuffer_source = source;
   }
 
   // do horizontal blur for primary lines
@@ -490,6 +497,7 @@ export function applyGaussianBlur(params) {
     startup();
   }
   let source = framebufferEnd({ filter_linear: true });
+  last_framebuffer_source = source;
   let max_size = params.max_size || 512;
   let min_size = params.min_size || 128;
 
@@ -543,6 +551,7 @@ export function applyColorMatrix(params) {
     startup();
   }
   let source = framebufferEnd({ filter_linear: true });
+  last_framebuffer_source = source;
 
   let matrix = params.colorMatrix;
   let mout = shader_params_color_matrix.colorMatrix;

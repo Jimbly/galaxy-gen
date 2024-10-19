@@ -61,6 +61,17 @@ export class PerEntData {
     this.net_anim_state = {};
     this.anim_state = {};
   }
+
+  toDebug(ent_pos_manager: EntityPositionManager): string {
+    return [
+      `pos: ${ent_pos_manager.vdebug(this.pos)}`,
+      `net_pos: ${ent_pos_manager.vdebug(this.net_pos)}`,
+      `impulse: ${ent_pos_manager.vdebug(this.impulse)}`,
+      `net_speed: ${typeof this.net_speed === 'number' ? this.net_speed.toFixed(3) : this.net_speed}`,
+      `anim_state: ${Object.entries(this.anim_state).map((a) => a.join(':')).join(', ')}`,
+      `net_anim_state: ${Object.entries(this.net_anim_state).map((a) => a.join(':')).join(', ')}`,
+    ].join('\n');
+  }
 }
 
 export type EntityPositionManager = EntityPositionManagerImpl;
@@ -159,6 +170,16 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     return this.per_ent_data[ent_id];
   }
 
+  vdebug(vec: Readonly<Vector>): string {
+    let ret = [];
+    for (let ii = 0; ii < this.dim_pos; ++ii) {
+      ret.push(vec[ii].toFixed(3));
+    }
+    for (let ii = 0; ii < this.dim_rot; ++ii) {
+      ret.push((vec[this.dim_pos + ii] * 180 / PI).toFixed(0));
+    }
+    return ret.join(',');
+  }
   vec(fill?: number): Vector {
     let r = new Float64Array(this.n);
     if (fill) {
@@ -344,27 +365,27 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     }
   }
 
-  private otherEntityChanged(ent_id: EntityID): void {
+  otherEntityChanged(ent_id: EntityID): void {
     let { anim_state_defs } = this;
     let ent = this.entity_manager.getEnt(ent_id);
     assert(ent);
-    let ent_data = ent.data;
+    let ent_pos = ent.getData('pos') as Vector;
     // Relevant fields on ent_data: pos, anything referenced by anim_state_defs
     let ped = this.per_ent_data[ent_id];
     if (!ped) {
       ped = this.per_ent_data[ent_id] = new PerEntData(this);
       for (let key in anim_state_defs) {
-        ped.anim_state[key] = ent_data[key];
+        ped.anim_state[key] = ent.getData(key);
       }
-      this.vcopy(ped.pos, ent_data.pos as number[]);
+      this.vcopy(ped.pos, ent_pos);
     }
     for (let key in anim_state_defs) {
-      ped.net_anim_state[key] = ent_data[key];
+      ped.net_anim_state[key] = ent.getData(key);
     }
 
-    if (!this.vsame(ped.net_pos, ent_data.pos)) {
-      this.vcopy(ped.net_pos, ent_data.pos as number[]);
-      ped.net_speed = ent_data.speed;
+    if (!this.vsame(ped.net_pos, ent_pos)) {
+      this.vcopy(ped.net_pos, ent_pos);
+      ped.net_speed = ent.getData('speed');
 
       // Keep ped.pos[rot] within PI of ped.net_pos, so interpolation always goes the right way
       for (let ii = 0; ii < this.dim_rot; ++ii) {

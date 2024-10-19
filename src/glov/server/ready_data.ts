@@ -1,10 +1,10 @@
 import assert from 'assert';
 import { Express, NextFunction, Request, Response } from 'express';
-import { Platform, getPlatformValues, isValidPlatform } from 'glov/common/enums';
-import { CmdRespFunc } from 'glov/common/types';
-import { ChannelServer } from './channel_server';
-import { ChannelServerWorker } from './channel_server_worker';
-import { GlobalWorker } from './global_worker';
+import {
+  PlatformID,
+  platformGetValidIDs,
+  platformIsValid,
+} from 'glov/common/platform';
 import {
   serverGlobalsReady,
   serverGlobalsRegister,
@@ -20,9 +20,14 @@ import {
   setLatestVersions,
 } from './version_management';
 
+import type { ChannelServer } from './channel_server';
+import type { ChannelServerWorker } from './channel_server_worker';
+import type { GlobalWorker } from './global_worker';
+import type { CmdRespFunc } from 'glov/common/cmd_parse';
+
 interface ReadyData {
-  latest_platform_versions?: Partial<Record<Platform, string>>;
-  fallback_environments?: Partial<Record<Platform, string>>;
+  latest_platform_versions?: Partial<Record<PlatformID, string>>;
+  fallback_environments?: Partial<Record<PlatformID, string>>;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -40,8 +45,8 @@ function cmdSetLatestPlatformVersion(this: GlobalWorker, str: string, resp_func:
     return void resp_func('Invalid parameters');
   }
   let plat = params[0];
-  if (!isValidPlatform(plat)) {
-    return void resp_func(`Invalid platform, must be one of the following:\n${getPlatformValues().join(', ')}`);
+  if (!platformIsValid(plat)) {
+    return void resp_func(`Invalid platform, must be one of the following:\n${platformGetValidIDs().join(', ')}`);
   }
   let ver: string | undefined = params[1];
   if (!ver) {
@@ -65,8 +70,8 @@ function cmdSetFallbackEnvironment(this: GlobalWorker, str: string, resp_func: C
     return void resp_func('Invalid parameters');
   }
   let plat = params[0];
-  if (!isValidPlatform(plat)) {
-    return void resp_func(`Invalid platform, must be one of the following:\n${getPlatformValues().join(', ')}`);
+  if (!platformIsValid(plat)) {
+    return void resp_func(`Invalid platform, must be one of the following:\n${platformGetValidIDs().join(', ')}`);
   }
   let env: string | undefined = params[1];
   if (!env) {
@@ -88,12 +93,12 @@ type ReadyDataCheckReturn = {
   err: string | null;
   extra_data?: ReadyDataExtaData;
 };
-export function readyDataCheck(plat: Platform, ver: string): ReadyDataCheckReturn {
+export function readyDataCheck(plat: PlatformID, ver: string): ReadyDataCheckReturn {
   if (!serverGlobalsReady()) {
     return { err: 'ERR_STARTUP' };
   }
 
-  if (!isValidPlatform(plat) || !isValidVersion(ver)) {
+  if (!platformIsValid(plat) || !isValidVersion(ver)) {
     return { err: 'ERR_CLIENT_INVALID' };
   }
 

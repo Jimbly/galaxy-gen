@@ -76,8 +76,10 @@ module.exports = function (opts) {
         rects: [],
         aspect: [],
       },
-      layers: max_idx ? max_idx + 1 : undefined,
     };
+    if (max_idx) {
+      runtime_data.layers = max_idx + 1;
+    }
 
     // Check input and pack output
     let maxx = 0;

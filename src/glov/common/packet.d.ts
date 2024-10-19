@@ -1,4 +1,4 @@
-import { NetErrorCallback } from './types';
+import type { NetResponseCallbackCalledBySystem } from './types';
 
 export const PACKET_DEBUG = 1;
 
@@ -28,10 +28,11 @@ export interface Packet {
   writeBool(value: boolean): void;
   readBuffer(do_copy: boolean): Uint8Array;
   writeBuffer(value: Uint8Array): void;
+  appendBuffer(value: Uint8Array): void;
 
   append(other: Packet): void;
   appendRemaining(other: Packet): void;
-  send<T=never>(resp_func?: NetErrorCallback<T>): void;
+  send<T=never>(resp_func?: NetResponseCallbackCalledBySystem<T>): void;
   ended(): boolean;
   updateFlags(flags: number): void;
   readFlags(): void;
@@ -47,9 +48,15 @@ export interface Packet {
   ref(): void;
   seek(offs: number): void;
   totalSize(): number;
+
+  no_local_bypass?: true; // Internal-ish: poked by channel_server.js
 }
 
 export function packetCreate(flags?: PacketFlags, init_size?: number): Packet;
-export function packetFromBuffer(buf: Uint8Array, buf_len: number, need_copy?: boolean): Packet;
+export function packetFromBuffer(buf: Uint8Array | Buffer, buf_len: number, need_copy?: boolean): Packet;
 export function packetFromJSON(js_obj: unknown): Packet;
 export function isPacket(thing: unknown): thing is Packet;
+export function packetSizeInt(v: number): number;
+export function packetSizeAnsiString(v: string): number;
+export type PacketSpeculativeReadRet = { v: number; offs: number };
+export function packetReadIntFromBuffer(buf: Buffer, offs: number, buf_len: number): PacketSpeculativeReadRet | null;

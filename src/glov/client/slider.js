@@ -9,7 +9,13 @@ import {
   SPOT_NAV_RIGHT,
   spot,
 } from './spot.js';
-import { Z_MIN_INC, drawHBox, playUISound } from './ui.js';
+import {
+  Z_MIN_INC,
+  drawHBox,
+  playUISound,
+  uiButtonHeight,
+  uiButtonWidth,
+} from './ui.js';
 import * as ui from './ui.js';
 
 const SPOT_DEFAULT_SLIDER = {
@@ -48,8 +54,8 @@ export function slider(value, param) {
   assert(param.min < param.max); // also must be numbers
   // optional params
   param.z = param.z || Z.UI;
-  param.w = param.w || ui.button_width;
-  param.h = param.h || ui.button_height;
+  param.w = param.w || uiButtonWidth();
+  param.h = param.h || uiButtonHeight();
   param.max_dist = param.max_dist || Infinity;
   // below: param.step = param.step || (param.max - param.min)/16;
   let vshrink = param.vshrink || slider_default_vshrink;

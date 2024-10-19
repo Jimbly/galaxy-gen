@@ -50,6 +50,15 @@ class RoundRobinableImpl {
     this.continuer_next = thing;
   }
 
+  // After receiving a START or CONTINUE, call this if we actually did no work
+  // and should allow something else to potentially run this frame (though,
+  // it won't, if we're ran after whatever is next in the queue);
+  noNeed(thing: RoundRobinableItem): void {
+    assert.equal(this.head, thing);
+    assert.equal(this.continuer_next, null); // should not have called stillWorking()
+    this.tick();
+  }
+
   // At any time, bump this thing so it will be the next up (after any in-progress
   // element is done)
   bump(thing: RoundRobinableItem): void {

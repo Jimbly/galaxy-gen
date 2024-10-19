@@ -12,6 +12,7 @@ let debug: MockElementDebug;
 class MockLocation {
   protocol = 'mock';
   href = 'mock';
+  host = 'localhostmock';
 }
 
 class MockDocument {
@@ -21,6 +22,9 @@ class MockDocument {
       debug = new MockElementDebug();
     }
     return debug;
+  }
+  addEventListener(event: string, callback: () => void): void {
+    // ignore
   }
   location = new MockLocation();
 }

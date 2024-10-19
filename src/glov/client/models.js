@@ -13,6 +13,7 @@ const geom = require('./geom.js');
 const glb_parser = require('./glb/parser.js');
 const { ATTRIBUTE_TYPE_TO_COMPONENTS } = require('./glb/gltf-type-utils.js');
 const renderer = require('./engine.js');
+const { locateAsset } = require('./locate_asset.js');
 const { fetch } = require('./fetch.js');
 const {
   SEMANTIC,
@@ -53,7 +54,7 @@ function Model(url) {
 Model.prototype.load = function () {
   ++load_count;
   fetch({
-    url: this.url,
+    url: locateAsset(this.url),
     response_type: 'arraybuffer',
   }, (err, array_buffer) => {
     --load_count;

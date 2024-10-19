@@ -8,6 +8,7 @@ export interface MenuItem {
   name?: Text; // name to display
   state?: EngineStateFunc; // state to set upon selection (SimpleMenu only)
   cb?: () => void; // callback to call upon selection (SimpleMenu only)
+  in_event_cb?: () => void; // callback to call upon selection (SimpleMenu only)
   value?: number | string;
   value_min?: number;
   value_max?: number;
@@ -40,6 +41,7 @@ export interface SelectionBoxDrawItemParams {
   h: number;
   display: SelectionBoxDisplay;
   font_height: number;
+  line_height: number;
   style: FontStyle;
   image_set: Sprite;
   color: Vec4;
@@ -64,6 +66,7 @@ export interface SelectionBoxDisplay {
   tab_stop: number; // default: 0
   xpad: number; // default: 8
   selection_fade: number; // alpha per millisecond; default: Infinity
+  use_markdown: boolean; // default: false
 }
 
 export interface SelectionBoxOptsAll {
@@ -71,13 +74,14 @@ export interface SelectionBoxOptsAll {
   x: number; // default: 0
   y: number; // default: 0
   z: number; // default: Z.UI
-  width: number; // default: glov_ui.button_width
+  width: number; // default: uiButtonWidth()
   items: MenuItemEntry[]; // default: []
   disabled: boolean; // default: false
   display: Partial<SelectionBoxDisplay>; // default: cloneShallow(default_display)
   scroll_height: number; // default: 0
-  font_height: number; // default: glov_ui.font_height
-  entry_height: number; // default: glov_ui.button_height
+  font_height: number; // default: uiTextHeight()
+  line_height: null | number; // null -> font_height (used for inline markdown image size)
+  entry_height: number; // default: uiButtonHeight()
   auto_reset: boolean; // default: true
   reset_selection: boolean; // default: false
   initial_selection: number; // default: 0
@@ -107,5 +111,6 @@ export function dropDownCreate(params?: SelectionBoxOpts): SelectionBox;
 // Pure immediate-mode API; returns a MenuItem only if the selection has changed
 export type DropDownOpts = {
   suppress_return_during_dropdown: boolean;
+  dropdown_visible?: boolean; // output
 };
 export function dropDown(param: SelectionBoxOpts, current: string | number, opts?: DropDownOpts): MenuItem | null;

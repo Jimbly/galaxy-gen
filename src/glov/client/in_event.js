@@ -37,7 +37,7 @@ export function handle(type, event) {
     case 'mousedown': {
       let x = event.pageX;
       let y = event.pageY;
-      let button = event.button;
+      let button = event.button || 0;
       for (let ii = 0; ii < list.length; ++ii) {
         let elem = list[ii];
         let pos = elem[0];

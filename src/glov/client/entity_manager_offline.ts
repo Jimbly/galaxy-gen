@@ -200,7 +200,7 @@ class OfflineEntityManagerImpl<
       assert(false);
     }
 
-    if (countdown_max) {
+    if (countdown_max && ent.fade !== 0) {
       this.fading_ents.push({
         is_out: true,
         ent_id,

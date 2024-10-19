@@ -24,7 +24,7 @@ function mapGBPaths(obj) {
       obj[key] = mapGBPaths(obj[key]);
     }
   } else if (typeof obj === 'string') {
-    if (obj.match(/^[^:]{2,}:[^:]*$/)) {
+    if (obj.match(/^[^:]{2,}:[^:]*$/) && !obj.includes('://')) {
       obj = gb.getDiskPath(obj);
     }
   }

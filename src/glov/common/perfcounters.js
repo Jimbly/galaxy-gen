@@ -1,9 +1,13 @@
-const BUCKET_TIME = 10000;
 const NUM_BUCKETS = 5;
 
 let counters = { time_start: Date.now() };
 let hist = [counters];
-let countdown = BUCKET_TIME;
+let bucket_time = 10000;
+let countdown = bucket_time;
+
+export function perfCounterSetBucketTime(time) {
+  countdown = bucket_time = time;
+}
 
 export function perfCounterAdd(key) {
   counters[key] = (counters[key] || 0) + 1;
@@ -16,7 +20,7 @@ export function perfCounterAddValue(key, value) {
 export function perfCounterTick(dt, log) {
   countdown -= dt;
   if (countdown <= 0) {
-    countdown = BUCKET_TIME;
+    countdown = bucket_time;
     if (hist.length === NUM_BUCKETS) {
       hist.splice(0, 1);
     }

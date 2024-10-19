@@ -10,6 +10,7 @@ const { PI, abs, floor, min, max, random, round, pow, sqrt } = Math;
 const TWO_PI = PI * 2;
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const VALID_USER_ID_REGEX = /^(?:fb\$|[a-z0-9])[a-z0-9_]{1,32}$/;
 
 export function nop(): void {
   // empty
@@ -82,8 +83,12 @@ export function defaultsDeep<A, B>(dest: A, src: B): A & B {
   for (let f in src) {
     if (!has(dest, f)) {
       (dest as DataObject)[f] = src[f];
-    } else if (typeof (dest as DataObject)[f] === 'object') {
-      defaultsDeep((dest as DataObject)[f], src[f]);
+    } else {
+      let vd = (dest as DataObject)[f];
+      let vs = src[f];
+      if (typeof vd === 'object' && !Array.isArray(vd) && typeof vs === 'object' && !Array.isArray(vs)) {
+        defaultsDeep(vd, src[f]);
+      }
     }
   }
   return dest as (A & B);
@@ -202,6 +207,13 @@ export function log2(val: number): number {
 export function ridx(arr: unknown[], idx: number): void {
   arr[idx] = arr[arr.length - 1];
   arr.pop();
+}
+
+export function tail<T>(arr: T[]): T | null {
+  if (!arr.length) {
+    return null;
+  }
+  return arr[arr.length - 1];
 }
 
 export function round100(a: number): number {
@@ -455,11 +467,20 @@ export function secondsSince2020(): number {
   return floor(Date.now() / 1000) - 1577836800;
 }
 
-export function dateToSafeLocaleString(date: Date, date_only: boolean): string {
+export function dateToSafeLocaleString(date: Date, date_only: boolean, options?: {
+  weekday?: 'long' | 'short';
+  year?: 'numeric' | '2-digit';
+  month?: 'numeric' | '2-digit' | 'long' | 'short';
+  day?: 'numeric' | '2-digit';
+  hour?: 'numeric' | '2-digit';
+  minute?: 'numeric' | '2-digit';
+  second?: 'numeric' | '2-digit';
+  timeZoneName?: 'long' | 'short';
+}): string {
   // Uses toString as a fallback since some browsers do not properly detect default locale.
   let date_text;
   try {
-    date_text = date_only ? date.toLocaleDateString() : date.toLocaleString();
+    date_text = date_only ? date.toLocaleDateString(undefined, options) : date.toLocaleString(undefined, options);
   } catch (e) {
     console.error(e, '(Using toString as fallback)');
     date_text = date_only ? date.toDateString() : date.toString();
@@ -626,4 +647,112 @@ export function unpromisify<P extends any[], T=never>(f: (this: T, ...args: P) =
   // eslint-disable-next-line @typescript-eslint/no-invalid-this, prefer-rest-params, @typescript-eslint/no-explicit-any
     nextTick((f as any).apply.bind(f, this, arguments));
   };
+}
+
+export function msToSS2020(milliseconds: number): number {
+  // Integer seconds since Jan 1st, 2020
+  return floor(milliseconds / 1000) - 1577836800;
+}
+
+export function ss2020ToMS(ss2020: number): number {
+  // Integer seconds since Jan 1st, 2020
+  return (ss2020 + 1577836800) * 1000;
+}
+
+const whitespace_regex = /\s/;
+export function trimEnd(s: string): string {
+  let idx = s.length;
+  while (idx > 0 && s[idx-1].match(whitespace_regex)) {
+    --idx;
+  }
+  return s.slice(0, idx);
+}
+
+function isDigit(c: string): boolean {
+  return c >= '0' && c <= '9';
+}
+
+const char_code_0 = '0'.charCodeAt(0);
+export function cmpNumericSmart(a: string, b: string): number {
+  // smart compare numbers within strings
+  let ia = 0;
+  let ib = 0;
+  while (ia < a.length && ib < b.length) {
+    if (isDigit(a[ia])) {
+      if (isDigit(b[ib])) {
+        // compare numbers
+        let va = 0;
+        while (isDigit(a[ia])) {
+          va *= 10;
+          va += a.charCodeAt(ia++) - char_code_0;
+        }
+        let vb = 0;
+        while (isDigit(b[ib])) {
+          vb *= 10;
+          vb += b.charCodeAt(ib++) - char_code_0;
+        }
+        let d = va - vb;
+        if (d) {
+          return d;
+        }
+      } else {
+        // numbers before strings
+        return -1;
+      }
+    } else if (isDigit(b[ib])) {
+      return 1;
+    } else {
+      let d = a[ia].toLowerCase().charCodeAt(0) - b[ib].toLowerCase().charCodeAt(0);
+      if (d) {
+        return d;
+      }
+      ia++;
+      ib++;
+    }
+  }
+  if (ia < a.length) {
+    return 1;
+  } else if (ib < b.length) {
+    return -1;
+  } else {
+    return 0;
+  }
+}
+
+export function mdEscape(text: string): string {
+  return text.replace(/([\\[*_])/g, '\\$1');
+}
+
+type AsyncDictCacheInternal<T> = Partial<Record<string, {
+  in_flight?: Array<(value: T) => void>;
+  value?: T;
+}>>;
+let async_dict_caches: Record<string, Record<never, never>> = {};
+export function asyncDictionaryGet<T>(
+  cache_in: string | Record<never, never>, // {}
+  key: string,
+  get: (key: string, cb: (value: T) => void)=> void,
+  cb: (value: T) => void
+): void {
+  if (typeof cache_in === 'string') {
+    cache_in = async_dict_caches[cache_in] = async_dict_caches[cache_in] || {};
+  }
+  let cache = cache_in as AsyncDictCacheInternal<T>;
+  let elem = cache[key];
+  if (elem) {
+    if (elem.in_flight) {
+      elem.in_flight.push(cb);
+    } else {
+      cb(elem.value!);
+    }
+    return;
+  }
+  cache[key] = elem = {
+    in_flight: [cb],
+  };
+  get(key, function (value: T) {
+    assert(elem); // assert() is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+    elem.value = value;
+    callEach(elem.in_flight, elem.in_flight = undefined, value);
+  });
 }

@@ -1,4 +1,5 @@
-const assert = require('assert');
+import assert from 'assert';
+import { locateAssetDisableHashing } from './locate_asset';
 
 let by_ext = {};
 let by_match = [];
@@ -21,6 +22,7 @@ export function filewatchMessageHandler(cb) {
 
 function onFileChange(filename) {
   console.log(`FileWatch change: ${filename}`);
+  locateAssetDisableHashing();
   let ext_idx = filename.lastIndexOf('.');
   let did_reload = false;
   if (ext_idx !== -1) {

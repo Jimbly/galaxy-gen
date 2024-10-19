@@ -7,6 +7,7 @@ import { getAPIPath, setCurrentEnvironment } from 'glov/client/environments';
 
 const ack = require('glov/common/ack.js');
 const { ackInitReceiver } = ack;
+const verify = require('glov/common/verify.js');
 const assert = require('assert');
 const { errorReportSetDetails, session_uid } = require('./error_report.js');
 const {
@@ -19,7 +20,7 @@ const { perfCounterAdd } = require('glov/common/perfcounters.js');
 const urlhash = require('./urlhash.js');
 const wscommon = require('glov/common/wscommon.js');
 const { netDelaySet, wsHandleMessage } = wscommon;
-const { PLATFORM, getAbilityReload } = require('glov/client/client_config.js');
+const { platformGetID, getAbilityReloadUpdates } = require('glov/client/client_config.js');
 
 // let net_time = 0;
 // export function getNetTime() {
@@ -76,7 +77,7 @@ WSClient.prototype.timeSinceDisconnect = function () {
 };
 
 function getVersionUrlParams() {
-  return `plat=${PLATFORM}&ver=${exports.CURRENT_VERSION}&build=${BUILD_TIMESTAMP}`;
+  return `plat=${platformGetID()}&ver=${exports.CURRENT_VERSION}&build=${BUILD_TIMESTAMP}&sesuid=${session_uid}`;
 }
 
 function jsonParseResponse(response) {
@@ -128,7 +129,7 @@ WSClient.prototype.onBuildTimestamp = function (build_timestamp) {
     if (this.on_build_timestamp_mismatch) {
       this.on_build_timestamp_mismatch();
     } else {
-      if (getAbilityReload()) {
+      if (getAbilityReloadUpdates()) {
         console.error(`App build mismatch (server: ${build_timestamp}, client: ${BUILD_TIMESTAMP}), reloading`);
         whenServerReady(function () {
           if (window.reloadSafe) {
@@ -138,7 +139,7 @@ WSClient.prototype.onBuildTimestamp = function (build_timestamp) {
           }
         });
       } else {
-        // Not allowed to reload
+        // Not allowed to reload, or reloading would not get the new version anyway
         console.warn(`App build mismatch (server: ${build_timestamp}, client: ${BUILD_TIMESTAMP}), ignoring`);
       }
     }
@@ -169,12 +170,17 @@ WSClient.prototype.onConnectAck = function (data, resp_func) {
 };
 
 
-WSClient.prototype.pak = function (msg) {
-  return wscommon.wsPak(msg, null, this);
+WSClient.prototype.pak = function (msg, msg_debug_name) {
+  return wscommon.wsPak(msg, null, this, msg_debug_name);
 };
 
-WSClient.prototype.send = function (msg, data, resp_func) {
-  wscommon.sendMessage.call(this, msg, data, resp_func);
+WSClient.prototype.send = function (msg, data, msg_debug_name, resp_func) {
+  if (!verify(typeof msg_debug_name !== 'function')) {
+    // Old API
+    resp_func = msg_debug_name;
+    msg_debug_name = null;
+  }
+  wscommon.sendMessage.call(this, msg, data, msg_debug_name, resp_func);
 };
 
 WSClient.prototype.onError = function (e) {
@@ -196,7 +202,7 @@ WSClient.prototype.onMsg = function (msg, cb) {
 };
 
 WSClient.prototype.checkForNewAppBuild = function () {
-  if (!getAbilityReload()) {
+  if (!getAbilityReloadUpdates()) {
     // would do nothing with it, don't bother checking
     return;
   }
@@ -264,7 +270,7 @@ WSClient.prototype.connect = function (for_reconnect) {
     let status = response_data?.status;
     let redirect_environment = response_data?.redirect_environment;
     this.update_available = response_data?.update_available;
-    let should_reload = this.update_available && getAbilityReload();
+    let should_reload = this.update_available && getAbilityReloadUpdates();
 
     assert(this.ready_check_in_progress);
     this.ready_check_in_progress = false;
@@ -298,6 +304,25 @@ WSClient.prototype.connect = function (for_reconnect) {
   });
 };
 
+let connect_url_params = '';
+let connect_url_extra = {};
+export function wsclientSetExtraParam(key, value) {
+  if (!value) {
+    delete connect_url_extra[key];
+  } else {
+    connect_url_extra[key] = value;
+  }
+  let pairs = [];
+  for (let walk in connect_url_extra) {
+    pairs.push(`${walk}=${connect_url_extra[walk]}`);
+  }
+  if (pairs.length) {
+    connect_url_params = `&${pairs.join('&')}`;
+  } else {
+    connect_url_params = '';
+  }
+}
+
 WSClient.prototype.connectAfterReady = function (for_reconnect) {
   let client = this;
 
@@ -307,7 +332,7 @@ WSClient.prototype.connectAfterReady = function (for_reconnect) {
     .replace(/api\/$/, 'ws'); // 'wss://foo.com/product/ws';
   path = `${path}?${getVersionUrlParams()}${
     for_reconnect && client.id && client.secret ? `&reconnect=${client.id}&secret=${client.secret}` : ''
-  }&sesuid=${session_uid}`;
+  }${connect_url_params}`;
   let socket = new WebSocket(path);
   socket.binaryType = 'arraybuffer';
   client.socket = socket;

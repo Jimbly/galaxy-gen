@@ -5,7 +5,7 @@
 const assert = require('assert');
 const engine = require('./engine.js');
 
-const { max, round } = Math;
+const { max, floor, round } = Math;
 
 const safearea_pad = new Float32Array(4); // left, right, top, bottom
 // 0: x0_real
@@ -21,7 +21,9 @@ const safearea_pad = new Float32Array(4); // left, right, top, bottom
 // 10: y0
 // 11: x1
 // 12: y1
-export const data = new Float32Array(13);
+// 13: x1_real - x0_real (math done in double precision)
+// 14: y1_real - y0_real (math done in double precision)
+export const data = new Float32Array(15);
 
 let screen_width;
 let screen_height;
@@ -36,13 +38,13 @@ export let render_offset_y_bottom;
 
 function reapply() {
   if (render_width) {
-    data[4] = render_width / (data[2] - data[0]);
-    data[5] = render_height / (data[3] - data[1]);
-    data[7] = (data[2] - data[0]) / render_viewport_w;
-    data[8] = (data[3] - data[1]) / render_viewport_h;
+    data[4] = render_width / data[13];
+    data[5] = render_height / data[14];
+    data[7] = data[13] / render_viewport_w;
+    data[8] = data[14] / render_viewport_h;
   } else {
-    data[4] = screen_width / (data[2] - data[0]);
-    data[5] = screen_height / (data[3] - data[1]);
+    data[4] = screen_width / data[13];
+    data[5] = screen_height / data[14];
   }
 }
 
@@ -83,6 +85,8 @@ export function set(x0, y0, x1, y1, ignore_safe_area) {
     data[10] = data[1] = y0;
     data[11] = data[2] = x1;
     data[12] = data[3] = y1;
+    data[13] = x1 - x0;
+    data[14] = y1 - y0;
   } else {
     data[9] = x0;
     data[10] = y0;
@@ -90,10 +94,16 @@ export function set(x0, y0, x1, y1, ignore_safe_area) {
     data[12] = y1;
     let wscale = (x1 - x0) / safeScreenWidth();
     let hscale = (y1 - y0) / safeScreenHeight();
-    data[0] = x0 - safearea_pad[0] * wscale;
-    data[1] = y0 - safearea_pad[2] * hscale;
-    data[2] = x1 + safearea_pad[1] * wscale;
-    data[3] = y1 + safearea_pad[3] * hscale;
+    let x0_real = x0 - safearea_pad[0] * wscale;
+    let y0_real = y0 - safearea_pad[2] * hscale;
+    let x1_real = x1 + safearea_pad[1] * wscale;
+    let y1_real = y1 + safearea_pad[3] * hscale;
+    data[0] = x0_real;
+    data[1] = y0_real;
+    data[2] = x1_real;
+    data[3] = y1_real;
+    data[13] = x1_real - x0_real;
+    data[14] = y1_real - y0_real;
   }
 
   reapply();
@@ -170,6 +180,46 @@ export function setAspectFixed(w, h) {
     let bot_margin = margin - top_margin;
     set(0, -top_margin, w, h + bot_margin, false);
   }
+}
+
+export function setAspectFixedRespectPixelPerfect(w, h) {
+  if (render_width || !engine.render_pixel_perfect) {
+    return void setAspectFixed(w, h);
+  }
+
+  let pa = engine.pixel_aspect;
+  let inv_aspect = h / pa / w;
+  let screen_w = safeScreenWidth();
+  let screen_h = safeScreenHeight();
+  let inv_desired_aspect = screen_h / screen_w;
+  let my_viewport_w = screen_w;
+  if (inv_aspect > inv_desired_aspect) {
+    my_viewport_w = w * pa / h * screen_h;
+  }
+  let scalar = my_viewport_w / w;
+  let int_scalar = floor(scalar);
+  let fpart = scalar - int_scalar;
+  if (scalar > 1 && fpart <= engine.render_pixel_perfect) {
+    // do pixel perfect
+  } else {
+    return void setAspectFixed(w, h);
+  }
+  // TODO: pixel_aspect is probably not supported correctly
+  scalar = int_scalar;
+  let desired_width = w * scalar;
+  let margin = screen_w - desired_width;
+  let left_margin_screen_px = floor(margin / 2);
+  let virtual_w = screen_w / scalar;
+  let left_margin = left_margin_screen_px / scalar;
+  let right_margin = virtual_w - w - left_margin;
+  let desired_height = round(h * scalar / pa);
+  margin = screen_h - desired_height;
+  let top_margin_screen_px = floor(margin / 2);
+  let virtual_h = screen_h / scalar;
+  let top_margin = top_margin_screen_px / scalar;
+  let bot_margin = virtual_h - h - top_margin;
+
+  set(-left_margin, -top_margin, w + right_margin, h + bot_margin, false);
 }
 
 // Primary drawing area at least W x H
@@ -249,8 +299,9 @@ export function setScreen(no_dpi_aware) {
 // Sets virtual viewport equal to DOM coordinates, for debugging input events/etc
 export function setDOMMapped() {
   if (render_width) {
-    set(render_offset_x, render_offset_y_top,
-      screen_width - render_offset_x, screen_height - render_offset_y_top, true);
+    let f = 1 / engine.dom_to_canvas_ratio;
+    set(render_offset_x * f, render_offset_y_top * f,
+      (screen_width - render_offset_x) * f, (screen_height - render_offset_y_top) * f, true);
   } else {
     set(0, 0, screen_width / engine.dom_to_canvas_ratio, screen_height / engine.dom_to_canvas_ratio, true);
   }
@@ -269,10 +320,10 @@ export function y1Real() {
   return data[3];
 }
 export function wReal() {
-  return data[2] - data[0];
+  return data[13];
 }
 export function hReal() {
-  return data[3] - data[1];
+  return data[14];
 }
 export function x0() {
   return data[9];
@@ -382,11 +433,15 @@ export function virtualToDom(dst, src) {
   }
 }
 
+let font_pixel_scale = 0.84; // approx for palanquin; use 0.970 for PerfectVGA
+export function setDOMFontPixelScale(scale) {
+  font_pixel_scale = scale;
+}
 export function virtualToFontSize(height) {
   if (render_width) {
-    return height / (data[6] * data[8]) * 0.84;
+    return height / (data[6] * data[8]) * font_pixel_scale;
   } else {
-    return height * data[5] / data[6] * 0.84;
+    return height * data[5] / data[6] * font_pixel_scale;
   }
 }
 
@@ -482,6 +537,24 @@ export function tickCamera2D() {
       render_offset_y_bottom = safearea_pad[3] + round(margin);
       render_viewport_w = eff_screen_width;
       render_viewport_h = round(eff_screen_height - margin * 2);
+    }
+    if (engine.render_pixel_perfect) {
+      let scalar = render_viewport_w / render_width;
+      let int_scalar = floor(scalar);
+      let fpart = scalar - int_scalar;
+      if (scalar > 1 && fpart <= engine.render_pixel_perfect) {
+        scalar = int_scalar;
+        let desired_width = render_width * scalar;
+        let xoffs = floor((render_viewport_w - desired_width)*0.5);
+        render_offset_x += xoffs;
+        render_viewport_w = desired_width;
+        let desired_height = round(render_height * scalar / pa);
+        let yoffs = render_viewport_h - desired_height;
+        let yoffs_top = floor(yoffs*0.5);
+        render_offset_y_top += yoffs_top;
+        render_offset_y_bottom += yoffs - yoffs_top;
+        render_viewport_h = desired_height;
+      }
     }
     viewport[2] = render_width;
     viewport[3] = render_height;

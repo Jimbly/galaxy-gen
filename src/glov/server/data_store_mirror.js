@@ -15,6 +15,7 @@ function DataStoreMirror(options) {
       this.getAsyncBuffer = null;
     }
   }
+  this.ignore_mirrored_write_errors = Boolean(options.ignore_mirrored_write_errors);
   if (this.readwrite_ds.search) {
     this.search = this.readwrite_ds.search.bind(this.readwrite_ds);
   } else if (this.write_ds.search) {
@@ -99,18 +100,19 @@ DoubleCall.prototype.onDone = function (idx, err, data) {
 };
 
 DataStoreMirror.prototype.setAsync = function (obj_name, value, cb) {
-  let wrapped = new DoubleCall('set', obj_name, function (err_ret, data_ret) {
+  let wrapped = new DoubleCall('set', obj_name, (err_ret, data_ret) => {
     // Neither is ever expected to error on write
     if (err_ret[0]) {
       console.error(`DATASTOREMIRROR(set:${wrapped.uid}) Write error on readwrite:${obj_name}:`, err_ret[0]);
     }
     if (err_ret[1]) {
       console.error(`DATASTOREMIRROR(set:${wrapped.uid}) Write error on write-only:${obj_name}:`, err_ret[1]);
-      if (!err_ret[0]) {
+      if (!err_ret[0] || this.ignore_mirrored_write_errors) {
         console.warn(`DATASTOREMIRROR(set:${wrapped.uid}) ...but primary succeeded, returning success`);
+        err_ret[1] = undefined;
       }
     }
-    cb(err_ret[0]);
+    cb(err_ret[0] || err_ret[1]);
   });
   this.readwrite_ds.setAsync(obj_name, value, wrapped.onDone.bind(wrapped, 0));
   this.write_ds.setAsync(obj_name, value, wrapped.onDone.bind(wrapped, 1));

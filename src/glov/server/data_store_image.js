@@ -1,8 +1,7 @@
-/* eslint-disable import/order */
-const assert = require('assert');
-const fs = require('fs');
-const mkdirp = require('mkdirp');
-const path = require('path');
+import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import mkdirp from 'mkdirp';
 
 const valid_path_regex = /[a-zA-Z0-9.-_]+/;
 class DataStoreImage {

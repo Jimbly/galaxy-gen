@@ -2,19 +2,18 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 import assert from 'assert';
-import { clamp, merge } from 'glov/common/util.js';
-import verify from 'glov/common/verify.js';
+import { clamp, merge } from 'glov/common/util';
 import { Vec4, vec2, vec4 } from 'glov/common/vmath';
-import * as camera2d from './camera2d.js';
-import * as engine from './engine.js';
-import { renderNeeded } from './engine.js';
+import * as camera2d from './camera2d';
+import * as engine from './engine';
+import { renderNeeded } from './engine';
 import { Box } from './geom_types';
-import * as input from './input.js';
+import * as input from './input';
 import {
   BUTTON_LEFT,
   KEYS,
   PAD,
-} from './input.js';
+} from './input';
 import {
   SPOT_DEFAULT_BUTTON,
   SPOT_STATE_DOWN,
@@ -24,16 +23,18 @@ import {
   spotSubBegin,
   spotSubEnd,
   spotUnfocus,
-} from './spot.js';
-import { spriteClipPop, spriteClipPush } from './sprites.js';
-import * as ui from './ui.js';
+} from './spot';
+import { spriteClipPop, spriteClipPush } from './sprites';
+import { textureDefaultIsNearest } from './textures';
+import * as ui from './ui';
+import { uiTextHeight } from './ui';
 
-const { max, min, round } = Math;
+const { abs, max, min, round } = Math;
 
 // TODO: move FocusableElement to appropriate TS file after conversion (probably input)
-interface FocusableElement {
+export interface FocusableElement {
   focus: () => void;
-  is_focused: boolean;
+  readonly is_focused: boolean;
 }
 
 const MAX_OVERSCROLL = 50;
@@ -84,6 +85,9 @@ export interface ScrollArea extends Readonly<ScrollAreaOptsAll> {
   getScrollPos(): number;
   keyboardScroll(): void;
   end(h: number): void;
+  // h is height of visible area
+  scrollIntoFocus(miny: number, maxy: number, h: number): void;
+  scrollToEnd(): void;
 }
 
 let temp_pos = vec2();
@@ -95,7 +99,7 @@ class ScrollAreaInternal implements ScrollArea {
   z = Z.UI;
   w = 10;
   h = 10;
-  rate_scroll_click = ui.font_height;
+  rate_scroll_click = uiTextHeight();
   pixel_scale = default_pixel_scale;
   top_pad = true;
   color = vec4(1,1,1,1);
@@ -127,6 +131,7 @@ class ScrollAreaInternal implements ScrollArea {
   was_disabled = false;
   scrollbar_visible = false;
   last_max_value = 0;
+  ignore_this_fram_drag = false;
 
   constructor(params?: ScrollAreaOpts) {
     params = params || {};
@@ -168,7 +173,7 @@ class ScrollAreaInternal implements ScrollArea {
   begin(params?: ScrollAreaOpts): void {
     this.applyParams(params);
     let { x, y, w, h, z, id } = this;
-    verify(!this.began); // Checking mismatched begin/end
+    // verify(!this.began); // Checking mismatched begin/end - likely from previous frame crash though!
     this.began = true;
     spotSubBegin({ x, y, w, h, key: id });
     // Set up camera and clippers
@@ -184,6 +189,7 @@ class ScrollAreaInternal implements ScrollArea {
     let camera_new_y1 = camera_new_y0 + camera_orig_y1 - camera_orig_y0;
     camera2d.push();
     camera2d.set(camera_new_x0, camera_new_y0, camera_new_x1, camera_new_y1);
+    this.ignore_this_fram_drag = false;
   }
 
   // Includes overscroll - actual visible scroll pos for this frame
@@ -246,9 +252,14 @@ class ScrollAreaInternal implements ScrollArea {
     }
 
     let maxvalue = max(h - this.h+1, 0);
-    if (this.scroll_pos >= maxvalue) {
-      // internal height must have shrunk
+    if (this.scroll_pos > maxvalue) {
+      // internal height must have shrunk, or we otherwise scrolled farther than allowed
+      let extra = this.scroll_pos - maxvalue;
       this.scroll_pos = max(0, maxvalue);
+      if (this.overscroll < 0) {
+        // Remove any overscroll that corresponds to this extra (e.g. from scrollIntoFocus)
+        this.overscroll = min(this.overscroll + extra, 0);
+      }
     }
 
     let was_at_bottom = this.scroll_pos === this.last_max_value;
@@ -271,6 +282,9 @@ class ScrollAreaInternal implements ScrollArea {
       if (dt >= this.overscroll_delay) {
         this.overscroll_delay = 0;
         this.overscroll *= max(1 - dt * 0.008, 0);
+        if (abs(this.overscroll) < 0.001) {
+          this.overscroll = 0;
+        }
       } else {
         this.overscroll_delay -= dt;
       }
@@ -302,7 +316,10 @@ class ScrollAreaInternal implements ScrollArea {
     let trough_height = this.h - button_h * 2;
     handle_pixel_h = max(handle_pixel_h, min(handle_pixel_min_h, trough_height * 0.75));
     let handle_screenpos = this.y + button_h_nopad + handle_pos * (this.h - button_h_nopad * 2 - handle_pixel_h);
-    // TODO: round handle_screenpos in pixely modes?
+    if (textureDefaultIsNearest()) {
+      // round handle_screenpos in pixely modes?
+      handle_screenpos = round(handle_screenpos);
+    }
     let top_color = this.color;
     let bottom_color = this.color;
     let handle_color = this.color;
@@ -463,7 +480,7 @@ class ScrollAreaInternal implements ScrollArea {
 
       // handle dragging the scroll area background
       let drag = input.drag({ x: this.x, y: this.y, w: this.w - bar_w, h: this.h, button: 0, min_dist: this.min_dist });
-      if (drag) {
+      if (drag && !this.ignore_this_fram_drag) {
         // Drag should not steal focus
         // This also fixes an interaction with chat_ui where clicking on the chat background (which causes
         //   a flicker of a drag) would cause pointer lock to be lost
@@ -511,12 +528,19 @@ class ScrollAreaInternal implements ScrollArea {
     let trough_draw_height = trough_height + trough_draw_pad * 2;
     let trough_v0 = -trough_draw_pad / pixel_scale / scrollbar_trough.uidata.total_h;
     let trough_v1 = trough_v0 + trough_draw_height / pixel_scale / scrollbar_trough.uidata.total_h;
-    scrollbar_trough.draw({
-      x: bar_x0, y: this.y + trough_draw_pad, z: this.z+0.1,
-      w: bar_w, h: trough_draw_height,
-      uvs: [scrollbar_trough.uvs[0], trough_v0, scrollbar_trough.uvs[2], trough_v1],
-      color: trough_color,
-    });
+    if (scrollbar_trough.texs[0].wrap_t === gl.REPEAT) {
+      scrollbar_trough.draw({
+        x: bar_x0, y: this.y + trough_draw_pad, z: this.z+0.1,
+        w: bar_w, h: trough_draw_height,
+        uvs: [scrollbar_trough.uvs[0], trough_v0, scrollbar_trough.uvs[2], trough_v1],
+        color: trough_color,
+      });
+    } else {
+      ui.drawVBox({
+        x: bar_x0, y: this.y + trough_draw_pad, z: this.z+0.1,
+        w: bar_w, h: trough_draw_height,
+      }, scrollbar_trough, trough_color);
+    }
 
     ui.drawVBox({
       x: bar_x0, y: handle_screenpos, z: this.z + 0.3,
@@ -548,6 +572,7 @@ class ScrollAreaInternal implements ScrollArea {
       // Make it smooth/bouncy a bit
       this.overscroll = old_scroll_pos - this.scroll_pos;
     }
+    this.ignore_this_fram_drag = true;
   }
 
   scrollToEnd(): void {

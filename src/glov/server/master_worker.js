@@ -8,7 +8,8 @@ import { callEach, nop, plural } from 'glov/common/util';
 import { LOAD_REPORT_INTERVAL, channelServerSendNoCreate } from './channel_server';
 import { ChannelWorker } from './channel_worker';
 import { loadBiasMap } from './load_bias_map';
-import * as metrics from './metrics';
+import { logCategoryEnabled } from './log';
+import { metricsSet } from './metrics';
 import { readyDataCheck } from './ready_data';
 import { serverConfig } from './server_config';
 
@@ -59,7 +60,8 @@ class MasterWorker extends ChannelWorker {
     // Delay until we finish startup/registration
     channel_server.whenReady(this.sendChannelMessage.bind(this, 'channel_server', 'master_startup'));
     console.log('lifecycle_master_start');
-    metrics.set('server_error', 0); // "Clear" this upon deployment restart so we get new alerts if new errors happen
+    // "Clear" `server_error` upon deployment restart so we get new alerts if new errors happen
+    metricsSet('server_error', 0, 'high');
   }
   getChanServData(id) {
     assert(id);
@@ -161,11 +163,9 @@ class MasterWorker extends ChannelWorker {
     // Reset error counts
     cs.spawn_errors = 0;
 
-    if (this.channel_server.load_log) {
-      this.debug(`load from ${src.id}: ${cs.load_value.toFixed(0)} ` +
-        `(${load_cpu}/${load_host_cpu}/${load_mem}/${free_mem}/${msgs_per_s})` +
-        `${over.length ? ` (${over.join(',')})` : ''}`);
-    }
+    this.debugCat('load', `load from ${src.id}: ${cs.load_value.toFixed(0)} ` +
+      `(${load_cpu}/${load_host_cpu}/${load_mem}/${free_mem}/${msgs_per_s})` +
+      `${over.length ? ` (${over.join(',')})` : ''}`);
 
     resp_func();
 
@@ -218,7 +218,7 @@ class MasterWorker extends ChannelWorker {
           this.debug(`${log_pre}executing deferred request: error ${err}`);
           return void resp_func(err);
         }
-        this.debug(`${log_pre}executing deferred request`);
+        this.debugCat('lifecycle', `${log_pre}executing deferred request`);
         assert(cs.last_load);
         this.handleWorkerCreateInternal(src, channel_type, subid, resp_func);
       });
@@ -261,7 +261,7 @@ class MasterWorker extends ChannelWorker {
       return void resp_func('ERR_NO_KNOWN_SERVERS');
     }
     let csid = best;
-    this.log(`${log_pre}Requesting spawn on ${csid}`);
+    this.logCat('lifecycle', `${log_pre}Requesting spawn on ${csid}`);
 
     let cc = this.channels_creating[channel_id] = {
       csid,
@@ -272,7 +272,7 @@ class MasterWorker extends ChannelWorker {
     let cs = this.known_servers[csid];
     // Register estimated load from spawning a new worker
     cs.load_new_estimate += LOAD_ESTIMATE[channel_type] || LOAD_ESTIMATE.def;
-    let pak = this.pak(`channel_server.${csid}`, 'worker_create');
+    let pak = this.pak(`channel_server.${csid}`, 'worker_create', null, 'lifecycle');
     pak.writeAnsiString(channel_type);
     pak.writeAnsiString(subid);
     pak.send((err) => {
@@ -312,7 +312,7 @@ class MasterWorker extends ChannelWorker {
   handleMasterLock(src, pak, resp_func) {
     let channel_id = src.channel_id;
     let csid = pak.readAnsiString();
-    this.log(`locking ${channel_id} on ${csid}`);
+    this.logCat('lifecycle', `locking ${channel_id} on ${csid}`);
     if (!this.known_servers[csid]) {
       // Won't time out, but otherwise fine, if unexpected?
       // Probably happens if master worker restarts during another workers shutdown
@@ -341,7 +341,7 @@ class MasterWorker extends ChannelWorker {
   }
   handleMasterUnlock(src, pak, resp_func) {
     let channel_id = src.channel_id;
-    this.log(`unlocking ${channel_id}`);
+    this.logCat('lifecycle', `unlocking ${channel_id}`);
     assert(!this.channels_creating[channel_id]);
     let cl = this.channels_locked[channel_id];
     if (!cl) {
@@ -452,6 +452,7 @@ class MasterWorker extends ChannelWorker {
       this.restart_monitor_id = setTimeout(this.monitorRestart.bind(this), 1000);
     } else if (!new_value && this.restart_monitor_id) {
       clearTimeout(this.restart_monitor_id);
+      this.restart_monitor_id = null;
     }
   }
   cmdMasterRestartCountdown(value, resp_func) {
@@ -577,6 +578,18 @@ class MasterWorker extends ChannelWorker {
     });
     resp_func();
   }
+  cmdLogCat(cat, resp_func) {
+    // let source = this.cmd_parse_source;
+    if (!cat) {
+      return void resp_func('Missing category.\nExample: /log_cat load');
+    }
+    let enabled = !logCategoryEnabled(cat);
+    this.sendChannelMessage('channel_server', 'log_cat', {
+      cat,
+      enabled,
+    });
+    resp_func(null, `Log category "${cat}" now ${enabled ? 'enabled' : 'disabled'}`);
+  }
   cmdChannelServerReportLoad(msg, resp_func) {
     this.channel_server.load_report_time = 1;
     resp_func();
@@ -620,7 +633,7 @@ class MasterWorker extends ChannelWorker {
         }
       }
     }
-    metrics.set('master.available', count_available);
+    metricsSet('master.available', count_available, 'high');
     for (let channel_id in this.channels_creating) {
       let cc = this.channels_creating[channel_id];
       if (cc.created) {
@@ -654,11 +667,12 @@ class MasterWorker extends ChannelWorker {
     if (this.master_stats_countdown <= 0) {
       this.master_stats_countdown = MASTER_STATS_PERIOD;
       for (let channel_type in this.total_num_channels) {
-        metrics.set(`master.count.${channel_type}`, this.total_num_channels[channel_type]);
+        metricsSet(`master.count.${channel_type}`, this.total_num_channels[channel_type],
+          channel_type === 'client' ? 'high' : 'med');
       }
       this.sendChannelMessage('channel_server', 'master_stats', {
         num_channels: this.total_num_channels
-      }, null, !this.channel_server.load_log);
+      }, null, !logCategoryEnabled('load'));
     }
   }
 }
@@ -724,6 +738,11 @@ export function init(channel_server) {
       help: 'Broadcast a chat message to all users',
       access_run: ['sysadmin'],
       func: MasterWorker.prototype.cmdAdminBroadcast,
+    }, {
+      cmd: 'log_cat',
+      help: 'Toggles a log category on all servers',
+      access_run: ['sysadmin'],
+      func: MasterWorker.prototype.cmdLogCat,
     }],
     handlers: {
       load: MasterWorker.prototype.handleLoad,
@@ -776,7 +795,7 @@ export function masterInitApp(channel_server, app, argv) {
           }
           ready_cache_err = null;
           ready_check_in_flight = false;
-        });
+        }, 'lifecycle');
       }
     }
 

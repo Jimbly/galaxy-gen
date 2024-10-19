@@ -1,7 +1,17 @@
 import assert from 'assert';
-import { CmdDef, HandlerSource, isClientHandlerSource } from 'glov/common/types';
+import {
+  HandlerSource,
+  TSMap,
+  isClientHandlerSource,
+} from 'glov/common/types';
 import { ChannelServer } from './channel_server';
-import { ChannelWorker } from './channel_worker';
+import {
+  ChannelWorker,
+  ClientHandlerFunction,
+  HandleNewClientOpts,
+} from './channel_worker';
+
+import type { CmdDef } from 'glov/common/cmd_parse';
 
 // General purpose worker(s) for handling global state
 
@@ -10,7 +20,7 @@ export class GlobalWorker extends ChannelWorker {
   //   super(channel_server, channel_id, channel_data);
   // }
 
-  handleNewClient(src: HandlerSource, opts: unknown): string | null {
+  handleNewClient(src: HandlerSource, opts: HandleNewClientOpts): string | null {
     // Do not allow any subscriptions by anyone other than sysadmins to any global
     //   channels by default.
     // sysadmins probably subscribe only to get command completion
@@ -25,6 +35,7 @@ export class GlobalWorker extends ChannelWorker {
     return null;
   }
 }
+GlobalWorker.prototype.require_subscribe = false;
 GlobalWorker.prototype.auto_destroy = true;
 
 let global_worker_cmds: CmdDef[] = [];
@@ -37,6 +48,16 @@ export function globalWorkerAddCmd(cmd_def: CmdDef): void {
   global_worker_cmds.push(cmd_def);
 }
 
+let global_worker_client_handlers: TSMap<ClientHandlerFunction> = {};
+export function globalWorkerRegisterClientHandler<P=never, R=never>(
+  message: string,
+  handler: ClientHandlerFunction<P, R>
+): void {
+  assert(!inited);
+  assert(!global_worker_client_handlers[message]);
+  global_worker_client_handlers[message] = handler as unknown as ClientHandlerFunction;
+}
+
 export function globalWorkerInit(channel_server: ChannelServer): void {
   assert(!inited);
   inited = true;
@@ -44,5 +65,6 @@ export function globalWorkerInit(channel_server: ChannelServer): void {
     autocreate: true,
     subid_regex: /^(global)$/,
     cmds: global_worker_cmds,
+    client_handlers: global_worker_client_handlers,
   });
 }

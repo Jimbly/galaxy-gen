@@ -139,6 +139,12 @@ export function webFSApplyReload(fs_in) {
       }
     }
   }
+  // Detect deleted files (especially e.g. a texture changing size to be large enough not to embed anymore!)
+  for (let key in old_fs) {
+    if (!fs[key]) {
+      filewatchTriggerChange(key);
+    }
+  }
 }
 
 let base_url_for_reload;
@@ -153,7 +159,7 @@ function webFSReload() {
       webFSApplyReload(window.glov_webfs);
     }
   };
-  document.getElementsByTagName('head')[0].appendChild(scriptTag);
+  document.head.appendChild(scriptTag);
 }
 
 export function webFSStartup(fs_in, base_url_for_reload_in) {

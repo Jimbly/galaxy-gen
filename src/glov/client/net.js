@@ -1,6 +1,8 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
+import { callEach } from 'glov/common/util.js';
+
 // eslint-disable-next-line @typescript-eslint/no-use-before-define
 exports.netBuildString = buildString;
 // eslint-disable-next-line @typescript-eslint/no-use-before-define
@@ -15,6 +17,16 @@ const WSClient = wsclient.WSClient;
 
 let client;
 let subs;
+
+let post_net_init = [];
+
+export function netPostInit(cb) {
+  if (post_net_init) {
+    post_net_init.push(cb);
+  } else {
+    cb();
+  }
+}
 
 export function init(params) {
   params = params || {};
@@ -35,6 +47,7 @@ export function init(params) {
   window.subs = subs; // for debugging
   exports.subs = subs;
   exports.client = client;
+  callEach(post_net_init, post_net_init = null);
   filewatchStartup(client);
 
   if (params.engine) {
@@ -89,4 +102,8 @@ export function netUserId() {
 
 export function netSubs() {
   return subs;
+}
+
+export function isChunkedSendFileData(data) {
+  return !data.err;
 }

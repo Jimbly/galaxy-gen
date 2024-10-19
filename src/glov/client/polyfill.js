@@ -82,14 +82,25 @@ if (!String.prototype.includes) {
     value: function (search, start) {
       return this.indexOf(search, start) !== -1;
     },
+    configurable: true, // FRVR SDK polyfill overrides this :(
   });
 }
 
 if (!Array.prototype.includes) {
   Object.defineProperty(Array.prototype, 'includes', {
     value: function (search, start) {
-      return this.indexOf(search, start) !== -1;
+      start = start === undefined ? 0 : start < 0 ? this.length + start : start;
+      for (let ii = start; ii < this.length; ++ii) {
+        if (this[ii] === search) {
+          return true;
+        }
+      }
+      return false;
     },
+    // Doesn't handle `Array(1).includes()==true` expected in frvr-sdk.ie.min.js
+    // value: function (search, start) {
+    //   return this.indexOf(search, start) !== -1;
+    // },
   });
 }
 
@@ -108,6 +119,18 @@ if (!Object.entries) {
     return ret;
   };
 }
+// if (!Object.fromEntries) { // For FRVR SDK
+//   Object.fromEntries = function (iterable) {
+//     let keys = Object.keys(iterable);
+//     let obj = {};
+//     for (let ii = 0; ii < keys.length; ++ii) {
+//       let pair = iterable[keys[ii]];
+//       obj[pair[0]] = pair[1];
+//     }
+//     return obj;
+//   };
+//   Object.fromEntries.is_polyfill = true;
+// }
 
 if (!Object.assign) {
   Object.assign = function assign(target, source1) {

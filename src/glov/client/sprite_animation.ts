@@ -6,7 +6,7 @@ import assert from 'assert';
 const { floor, random } = Math;
 
 export type SpriteAnimationParamEntry = {
-  frames: number | number[];
+  frames: number | string | number[] | string[];
   times: number | number[];
   times_random?: number | number[];
   init_time?: number; // random offset into animation to initialize to
@@ -49,7 +49,7 @@ class SpriteAnimationImpl {
       this.data = params as Partial<Record<string, SpriteAnimationData>>;
       for (let key in this.data) {
         let anim = this.data[key]!;
-        if (typeof anim.frames === 'number') {
+        if (!Array.isArray(anim.frames)) {
           anim.frames = [anim.frames];
         }
         if (typeof anim.times === 'number') {
@@ -154,7 +154,7 @@ class SpriteAnimationImpl {
     }
   }
 
-  getFrame(dt?: number): number {
+  getFrame(dt?: number): number | string {
     if (dt !== undefined) {
       this.update(dt);
     }

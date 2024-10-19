@@ -13,10 +13,18 @@ let startup_funcs = [];
 exports.require = require; // For browser console debugging
 
 const assert = require('assert');
-const { is_ios_safari } = require('./browser.js');
+const {
+  is_ios,
+  is_ios_chrome,
+  is_ios_safari,
+  is_ipad,
+  safari_version_major,
+  safari_version_minor,
+} = require('./browser.js');
 const { buildUIStartup } = require('./build_ui.js');
 const camera2d = require('./camera2d.js');
 const cmds = require('./cmds.js');
+require('./engine_cmds.js');
 const { dataErrorQueueEnable } = require('glov/common/data_error.js');
 const effects = require('./effects.js');
 const { effectsReset, effectsTopOfFrame, effectsIsFinal, effectsPassAdd, effectsPassConsume } = effects;
@@ -57,7 +65,13 @@ const {
 const { shaderDebugUIStartup } = require('./shader_debug_ui.js');
 const { soundLoading, soundStartup, soundTick } = require('./sound.js');
 const { spotEndInput } = require('./spot.js');
-const { blendModeReset, spriteDraw, spriteStartup } = require('./sprites.js');
+const {
+  blendModeReset,
+  spriteDraw,
+  spriteDrawReset,
+  spriteStartup,
+  spriteResetTopOfFrame,
+} = require('./sprites.js');
 const {
   textureBind,
   textureDefaultFilters,
@@ -84,7 +98,8 @@ const { callEach, clamp, nearSame, ridx } = require('glov/common/util.js');
 const verify = require('glov/common/verify.js');
 const {
   mat3, mat4,
-  vec3, vec4, v3mulMat4, v3iNormalize, v4copy, v4same, v4set,
+  mat4isFinite,
+  vec3, vec4, v3mulMat4, v3iNormalize, v4copy, v4same, v4scale, v4set,
 } = require('glov/common/vmath.js');
 const { webFSStartup } = require('./webfs.js');
 const { profanityStartupLate } = require('./words/profanity.js');
@@ -98,6 +113,7 @@ export let height;
 let width_3d;
 let height_3d;
 export let pixel_aspect = 1;
+export let render_pixel_perfect = 0; // 1.0 uses integral pixel scalars, 0.5 does for half of the resolutions, etc
 export let dom_to_canvas_ratio = window.devicePixelRatio || 1;
 export let antialias;
 export let antialias_unavailable;
@@ -173,6 +189,7 @@ export function addViewSpaceGlobal(name) {
 
 let mat_temp = mat4();
 export function setGlobalMatrices(_mat_view) {
+  assert(mat4isFinite(_mat_view));
   mat4Copy(mat_view, _mat_view);
   mat4Mul(mat_vp, mat_projection, mat_view);
   v3iNormalize(light_dir_ws);
@@ -186,6 +203,7 @@ export function setGlobalMatrices(_mat_view) {
 
 // Just set up mat_vp and mat_projection
 export function setMatVP(_mat_view) {
+  assert(mat4isFinite(_mat_view));
   // eslint-disable-next-line @typescript-eslint/no-use-before-define
   setupProjection(fov_y, width_3d, height_3d, ZNEAR, ZFAR);
   mat4Copy(mat_view, _mat_view);
@@ -247,21 +265,23 @@ export function releaseCanvas() {
   }
 }
 
+function reloadDefault() {
+  document.location.reload();
+}
+
+let reload_func = reloadDefault;
+
+export function engineSetReloadFunc(fn) {
+  reload_func = fn;
+}
+
 export function reloadSafe() {
   // Do not report any errors after this point
   errorReportDisable();
   // Release canvas to not leak memory on Firefox
   releaseCanvas();
-  if (window.FBInstant) {
-    try {
-      window.top.location.reload();
-    } catch (e) {
-      // Not good, but better than the alternatives, I guess
-      window.FBInstant.quit();
-    }
-  } else {
-    document.location.reload();
-  }
+
+  reload_func();
 }
 window.reloadSafe = reloadSafe;
 
@@ -289,8 +309,8 @@ export function definesChanged() {
   for (let key in define_change_cbs) {
     let elem = define_change_cbs[key];
     if (defines[key] !== elem.value) {
-      elem.value = defines[key];
       callEach(elem.cbs);
+      elem.value = defines[key];
     }
   }
   shadersHandleDefinesChanged();
@@ -305,6 +325,10 @@ export function definesClearAll() {
     definesChanged();
   }
   return any_changed;
+}
+
+export function debugDefineIsSet(define) {
+  return defines[define];
 }
 
 function normalizeRow(m, idx) {
@@ -483,6 +507,10 @@ const SAFARI_FULLSCREEN_ASPECT = (function () {
     return 0;
   }
   const SAFARI_DIMS = { // wxh : [fullscreen aspect]
+    // iPhone 12 Pro Max
+    '926,428': 926/428,
+    // iPhone 12
+    '844,390': 844/390,
     // iPhone XR
     // iPhone 11 Pro Max
     // iPhone XS Max
@@ -510,32 +538,111 @@ const SAFARI_FULLSCREEN_ASPECT = (function () {
   return SAFARI_DIMS[key] || 0;
 }());
 function safariTopSafeArea(view_w, view_h) {
-  // Detect if the URL bar is hidden, but should be a safe area
-  if (SAFARI_FULLSCREEN_ASPECT && nearSame(view_w/view_h, SAFARI_FULLSCREEN_ASPECT, 0.001)) {
-    // Note: if user has scaling enabled, the padding required might be different
-    //   but the same holds true for the safe area padding detected via CSS!
-    return 50 * (window.devicePixelRatio || 1); // seems to be 50pts on all devices
+  if (is_ios_safari && safari_version_major < 16) {
+    // Definitely needed on v14 and lower; seen this needed on v15.1 as well
+    // Detect if the URL bar is hidden, but should be a safe area
+    if (SAFARI_FULLSCREEN_ASPECT && nearSame(view_w/view_h, SAFARI_FULLSCREEN_ASPECT, 0.001)) {
+      // Note: if user has scaling enabled, the padding required might be different
+      //   but the same holds true for the safe area padding detected via CSS!
+      return 28; // seems to be visually around 50pts, but touch area of ~25 pts on all devices
+    }
+  }
+  return 0;
+}
+function isPortrait(view_w, view_h) {
+  return view_h >= view_w * 0.8;
+}
+let kb_up_last_w = 0;
+let kb_up_last_h = 0;
+let kb_up_ret = false;
+let kb_up_frame = 0;
+function isKeyboardUp(view_w, view_h) {
+  if (!view_w) {
+    return kb_up_ret;
+  }
+  if (!is_ios) {
+    // probably logic is still valid, but not currently needed in other browsers?
+    return false;
+  }
+  if (!nearSame(view_w, kb_up_last_w, 5)) {
+    // init, or just rotated, assume not up
+    kb_up_ret = false;
+  } else if (!nearSame(view_h, kb_up_last_h, 5)) {
+    // same width
+    if (view_h < kb_up_last_h) {
+      // shrunk
+      kb_up_ret = true;
+    } else if (view_h > kb_up_last_h) {
+      // expanded
+      kb_up_ret = false;
+    }
+  }
+  kb_up_last_w = view_w;
+  kb_up_last_h = view_h;
+  ++kb_up_frame;
+  if (kb_up_frame < 3) {
+    // window.innerHeight and related shrink during the first couple frames on iOS 12.1
+    //   if in landscape and there's a URL bar / other tabs open
+    kb_up_ret = false;
+  }
+  return kb_up_ret;
+}
+function safariBottomSafeArea(view_w, view_h) {
+  // iOS === 15.0 doesn't respect safe area; 15.1 is offset
+  if (is_ios_safari && safari_version_major === 15 && safari_version_minor < 2 &&
+    isKeyboardUp() &&
+    isPortrait(view_w, view_h)
+  ) {
+    if (safari_version_minor === 0) {
+      // unknown whether or not this is correct on iPad, assuming needed now to be safe
+      return 52;
+    } else if (safari_version_minor === 1) {
+      if (!is_ipad) {
+        return 8; // v15.1
+      }
+    }
+  }
+  if (is_ios_chrome && is_ipad && safari_version_major >= 13 &&
+    isKeyboardUp()
+  ) {
+    // seen specific issue resolved by this on at least: 13.2/4 14.0/1/5 15.1/5 16.0/1/2/3
+    // v17 doesn't seem to (always?) have a fixed offset, is also buggy with
+    //   scroll pos, so let's add some safe area so it's more likely to be visible
+    // Note: v12 has no visual viewport, so we can't tell if the keyboard is up
+    return 44;
   }
   return 0;
 }
 
+// Get safe area by examining safe-area-inset padded element
+function getSafeAreaFromDOM(out, safearea, view_w, view_h) {
+  if (safearea && safearea.offsetWidth && safearea.offsetHeight) {
+    out[0] = safearea.offsetLeft;
+    out[1] = view_w - safearea.offsetWidth - safearea.offsetLeft;
+    // "view_h - window.innerHeight" is for iOS 12
+    out[2] = max(safearea.offsetTop, view_h - window.innerHeight);
+    out[3] = view_h - safearea.offsetHeight - safearea.offsetTop;
+  }
+}
 
 let last_canvas_width;
 let last_canvas_height;
 let last_body_height;
 let safearea_elem;
 let safearea_ignore_bottom = false;
-let safearea_values = [0,0,0,0];
-let last_safearea_values = [0,0,0,0];
+let safearea_dom = vec4();
+let safearea_canvas = vec4();
+let last_safearea_canvas = vec4();
 function checkResize() {
   profilerStart('checkResize');
   // use VisualViewport on at least iOS Safari - deal with tabs and keyboard
   //   shrinking the viewport without changing the window height
-  let vv = window.visualViewport || {};
-  dom_to_canvas_ratio = window.devicePixelRatio || 1;
-  dom_to_canvas_ratio *= settings.render_scale_all;
-  let view_w = (vv.width || window.innerWidth);
-  let view_h = (vv.height || window.innerHeight);
+  let vv = window.visualViewport;
+  let dom_to_pixels = window.devicePixelRatio || 1;
+  dom_to_canvas_ratio = dom_to_pixels * settings.render_scale_all;
+  let view_w = vv ? vv.width : window.innerWidth;
+  let view_h = vv ? vv.height :
+    is_ios_safari && window.pageYOffset ? document.documentElement.clientHeight : window.innerHeight;
   if (view_h !== last_body_height) {
     // set this *before* getting canvas and safearea_elem dims below
     last_body_height = view_h;
@@ -543,35 +650,39 @@ function checkResize() {
       document.body.style.height = `${view_h}px`;
     }
   }
+  // safearea_dom - left, right, top, bottom PADDING values
+  v4set(safearea_dom, 0, 0, 0, 0);
+  getSafeAreaFromDOM(safearea_dom, safearea_elem, view_w, view_h);
+  isKeyboardUp(view_w, view_h - safearea_dom[2] - safearea_dom[3]);
+  safearea_dom[2] = max(safearea_dom[2], safariTopSafeArea(view_w, view_h));
+  if (safearea_dom[3] && (
+    // iOS 15.0: Keyboard is up, but safe area is not being removed, remove it.
+    is_ios && isKeyboardUp() ||
+    // General: Possibly ignoring bottom safe area by app request, it seems not
+    //  useful on iPhones (does not adjust when keyboard is up, only obscured in
+    //  the middle, if obeying left/right safe area)
+    safearea_ignore_bottom
+  )) {
+    safearea_dom[3] = 0;
+  }
+  safearea_dom[3] = max(safearea_dom[3], safariBottomSafeArea(view_w, view_h));
+
   let rect = canvas.getBoundingClientRect();
   let new_width = round(rect.width * dom_to_canvas_ratio) || 1;
   let new_height = round(rect.height * dom_to_canvas_ratio) || 1;
 
   if (cmds.safearea[0] === -1) {
-    if (safearea_elem) {
-      let sa_width = safearea_elem.offsetWidth;
-      let sa_height = safearea_elem.offsetHeight;
-      if (sa_width && sa_height) {
-        v4set(safearea_values,
-          safearea_elem.offsetLeft * dom_to_canvas_ratio,
-          new_width - (sa_width + safearea_elem.offsetLeft) * dom_to_canvas_ratio,
-          max(safearea_elem.offsetTop * dom_to_canvas_ratio,
-            safariTopSafeArea(view_w, view_h) * settings.render_scale_all),
-          // Note: Possibly ignoring bottom safe area, it seems not useful on iPhones (does not
-          //  adjust when keyboard is up, only obscured in the middle, if obeying left/right safe area)
-          safearea_ignore_bottom ? 0 : new_height - (sa_height + safearea_elem.offsetTop) * dom_to_canvas_ratio);
-      }
-    }
+    v4scale(safearea_canvas, safearea_dom, dom_to_canvas_ratio);
   } else {
-    v4set(safearea_values,
+    v4set(safearea_canvas,
       new_width * clamp(cmds.safearea[0], 0, 25)/100,
       new_width * clamp(cmds.safearea[1], 0, 25)/100,
       new_height * clamp(cmds.safearea[2], 0, 25)/100,
       new_height * clamp(cmds.safearea[3], 0, 25)/100);
   }
-  if (!v4same(safearea_values, last_safearea_values)) {
-    v4copy(last_safearea_values, safearea_values);
-    camera2d.setSafeAreaPadding(safearea_values[0], safearea_values[1], safearea_values[2], safearea_values[3]);
+  if (!v4same(safearea_canvas, last_safearea_canvas)) {
+    v4copy(last_safearea_canvas, safearea_canvas);
+    camera2d.setSafeAreaPadding(safearea_canvas[0], safearea_canvas[1], safearea_canvas[2], safearea_canvas[3]);
     need_repos = max(need_repos, 1);
   }
 
@@ -587,10 +698,14 @@ function checkResize() {
     need_repos = 10;
     renderNeeded();
   }
-  if (is_ios_safari && (window.visualViewport || need_repos)) {
-    // we have accurate view information, or screen was just rotated / resized
-    // force scroll to top
-    window.scroll(0,0);
+  if (window.visualViewport && (is_ios_safari || true)) {
+    // Note: used to also have: || need_repos // or screen was just rotated / resized
+
+    // we have accurate view information, force scroll to top, always
+    // should maybe do this any time an edit box is not in focus as well
+    if (window.pageYOffset || window.document.body && window.document.body.scrollTop) {
+      window.scroll(0,0);
+    }
   }
   profilerStop('checkResize');
 }
@@ -601,6 +716,7 @@ export function setViewport(xywh) {
   gl.viewport(xywh[0], xywh[1], xywh[2], xywh[3]);
 }
 
+const MAX_FRAME_TIME = 10000;
 let frames_requested = 0;
 function requestFrame(user_time) {
   let max_fps = settings.max_fps;
@@ -624,7 +740,7 @@ function requestFrame(user_time) {
       frames_requested++;
     }
   } else if (max_fps && max_fps > settings.use_animation_frame) {
-    let desired_delay = max(0, round(1000 / max_fps - (user_time || 0)));
+    let desired_delay = min(MAX_FRAME_TIME, max(0, round(1000 / max_fps - (user_time || 0))));
     frames_requested++;
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
     setTimeout(tick, desired_delay);
@@ -637,9 +753,14 @@ function requestFrame(user_time) {
 
 let mat_projection_10;
 export let had_3d_this_frame;
+let need_depth_this_frame;
 
 export function clearHad3DThisFrame() {
   had_3d_this_frame = false;
+}
+
+export function needDepthIn2D() {
+  need_depth_this_frame = true;
 }
 
 export function setupProjection(use_fov_y, use_width, use_height, znear, zfar) {
@@ -651,6 +772,11 @@ export function setupProjection(use_fov_y, use_width, use_height, znear, zfar) {
   //   -(1 + mat_projection[8]) / mat_projection[0], // projection_matrix.m20) / projection_matrix.m00,
   //   -(1 + mat_projection[9]) / mat_projection[5] // projection_matrix.m21) / projection_matrix.m11
   // );
+}
+
+export function setProjection(new_mat) {
+  mat4Copy(mat_projection, new_mat);
+  mat_projection_10 = mat_projection[10];
 }
 
 export function setZRange(znear, zfar) {
@@ -675,6 +801,7 @@ export function start3DRendering(opts) {
   }
   setFOV(opts.fov || (settings.fov * PI / 180));
   had_3d_this_frame = true;
+  need_depth_this_frame = false;
   if (!opts.width && want_render_scale_3d_this_frame && !defines.NOCOPY) {
     had_render_scale_3d_this_frame = true;
     effectsPassAdd();
@@ -727,6 +854,7 @@ export function startSpriteRendering() {
   gl.enable(gl.BLEND);
   gl.disable(gl.DEPTH_TEST);
   gl.depthMask(false);
+  spriteDrawReset();
 }
 
 export function projectionZBias(dist, at_z) {
@@ -790,11 +918,15 @@ function resetState() {
   profilerStop('resetState');
 }
 
+let blurred = false;
 let in_background = false;
 let enter_background_cb = [];
 let exit_background_cb = [];
 export function isInBackground() {
   return in_background;
+}
+export function isInBackgroundOrBlurred() {
+  return in_background || blurred;
 }
 export function onEnterBackground(fn) {
   enter_background_cb.push(fn);
@@ -803,7 +935,13 @@ export function onExitBackground(fn) {
   exit_background_cb.push(fn);
 }
 
-export const hrnow = window.performance ? window.performance.now.bind(window.performance) : Date.now.bind(Date);
+export function dirtyRenderSet(value) {
+  dirty_render = value;
+}
+
+export const hrnow = window.performance && window.performance.now ?
+  window.performance.now.bind(window.performance) :
+  Date.now.bind(Date);
 
 let last_tick = 0;
 let last_tick_hr = 0;
@@ -847,7 +985,6 @@ function tick(timestamp) {
   let max_fps = settings.max_fps;
   if (max_fps && max_fps <= settings.use_animation_frame) {
     // using requestAnimationFrame, need to apply max_fps ourselves
-    let frame_time = 1000 / max_fps - 0.1;
     frame_limit_time_left -= dt_raw;
     if (frame_limit_time_left > 0) {
       // too early, skip this frame, do not count any of this time, pretend this frame never happened.
@@ -855,6 +992,7 @@ function tick(timestamp) {
       profilerStop('top');
       return profilerStop('tick');
     }
+    let frame_time = min(MAX_FRAME_TIME, 1000 / max_fps - 0.1);
     frame_limit_time_left += frame_time;
     if (frame_limit_time_left < 0) {
       // more than two frames passed, don't accumulate extra frames
@@ -871,7 +1009,6 @@ function tick(timestamp) {
   frame_dt = dt;
   last_tick = now;
   frame_timestamp += dt;
-  ++frame_index;
   errorReportSetTimeAccum(frame_timestamp);
 
   fixNatives(false);
@@ -918,6 +1055,9 @@ function tick(timestamp) {
     profilerStop();
     return profilerStop('tick');
   }
+
+  ++frame_index;
+
   if (in_background) {
     in_background = false;
     callEach(exit_background_cb);
@@ -925,6 +1065,7 @@ function tick(timestamp) {
 
   checkResize();
   had_3d_this_frame = false;
+  need_depth_this_frame = false;
   want_render_scale_3d_this_frame = false;
   had_render_scale_3d_this_frame = false;
   if (render_width) {
@@ -940,13 +1081,14 @@ function tick(timestamp) {
   }
 
   resetState();
+  spriteResetTopOfFrame();
 
   textureBind(0, textureError());
 
   fontTick();
   camera2d.tickCamera2D();
   glov_transition.render(dt);
-  camera2d.setAspectFixed(game_width, game_height);
+  camera2d.setAspectFixedRespectPixelPerfect(game_width, game_height);
 
   profilerStopStart('mid');
 
@@ -1006,7 +1148,7 @@ function tick(timestamp) {
         clear: true,
         clear_all: settings.render_scale_clear, // Not sure if this is ever faster in this case?
         final: effectsIsFinal(),
-        need_depth: false,
+        need_depth: need_depth_this_frame,
       });
     } else {
       framebufferStart({
@@ -1014,7 +1156,7 @@ function tick(timestamp) {
         height,
         clear: true,
         final: effectsIsFinal(),
-        need_depth: false,
+        need_depth: need_depth_this_frame,
       });
     }
   }
@@ -1069,7 +1211,6 @@ function tick(timestamp) {
   return profilerStop('tick');
 }
 
-let blurred = false;
 function onBlur(evt) {
   blurred = true;
 }
@@ -1115,7 +1256,11 @@ export function setFonts(new_font, title_font) {
 }
 
 export function engineStartupFunc(func) {
-  startup_funcs.push(func);
+  if (startup_funcs) {
+    startup_funcs.push(func);
+  } else {
+    func();
+  }
 }
 
 export function startup(params) {
@@ -1206,9 +1351,35 @@ export function startup(params) {
     // SamsungBrowser/1.1 - apparently has WebGL, but not requestAnimationFrame; also not binary WebSockets
     good = false;
   }
+  if (good) {
+    // ensure at least basic shaders compile
+    let shaders_supported = shadersStartup({
+      light_diffuse,
+      light_dir_ws,
+      ambient: light_ambient,
+      mat_m: mat_m,
+      mat_mv: mat_mv,
+      mat_vp: mat_vp,
+      mvp: mat_mvp,
+      mv_inv_trans: mat_mv_inv_transform,
+      mat_inv_view: mat_inv_view,
+      view: mat_view,
+      projection: mat_projection,
+      // projection_inverse,
+    });
+    if (!shaders_supported) {
+      good = false;
+    }
+  }
+
   if (!good) {
     // eslint-disable-next-line no-alert
-    window.alert('Sorry, but your browser does not support WebGL or does not have it enabled.');
+    window.alert(`${
+      window.gl ?
+        'Error initializing WebGL.\n' :
+        'Error initializing WebGL: your browser does not support WebGL or does not have it enabled.\n'}` +
+      'Try completely closing and re-opening the app or browser.' +
+      '  If the problem persists, try restarting your device.');
     document.getElementById('loading').style.visibility = 'hidden';
     document.getElementById('nowebgl').style.visibility = 'visible';
     return false;
@@ -1235,6 +1406,7 @@ export function startup(params) {
     do_viewport_postprocess = true;
   }
   pixel_aspect = params.pixel_aspect || 1;
+  render_pixel_perfect = params.pixel_perfect || 0;
 
   gl.depthFunc(gl.LEQUAL);
   // gl.enable(gl.SCISSOR_TEST);
@@ -1244,20 +1416,6 @@ export function startup(params) {
 
   textureStartup();
   geomStartup();
-  shadersStartup({
-    light_diffuse,
-    light_dir_ws,
-    ambient: light_ambient,
-    mat_m: mat_m,
-    mat_mv: mat_mv,
-    mat_vp: mat_vp,
-    mvp: mat_mvp,
-    mv_inv_trans: mat_mv_inv_transform,
-    mat_inv_view: mat_inv_view,
-    view: mat_view,
-    projection: mat_projection,
-    // projection_inverse,
-  });
   addViewSpaceGlobal('light_dir');
   camera2d.startup();
   spriteStartup();
@@ -1304,7 +1462,7 @@ export function startup(params) {
 
   callEach(startup_funcs, startup_funcs = null);
 
-  camera2d.setAspectFixed(game_width, game_height);
+  camera2d.setAspectFixedRespectPixelPerfect(game_width, game_height);
 
   if (params.state) {
     setState(params.state);
@@ -1321,8 +1479,13 @@ export function startup(params) {
   return true;
 }
 
+let custom_loads_pending = 0;
+export function loadPendingDelta(delta) {
+  custom_loads_pending += delta;
+}
+
 export function loadsPending() {
-  return textureLoadCount() + soundLoading() + modelLoadCount();
+  return textureLoadCount() + soundLoading() + modelLoadCount() + custom_loads_pending;
 }
 
 let on_load_metrics = [];

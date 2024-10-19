@@ -12,6 +12,8 @@ export type TraitedBaseClass = {
 export type TraitOpts<TBaseClass extends TraitedBaseClass, TOpts, TState=never> = {
   // eslint-disable-next-line @typescript-eslint/ban-types
   methods?: Partial<Record<string, Function>>;
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  compound_methods?: Partial<Record<string, Function>>;
   properties?: Partial<Record<keyof TBaseClass, unknown>>; // Properties placed on the root of the entity
   default_opts?: TOpts;
   init_prototype?: (opts: TOpts) => void; // Called during load after WebGL/etc initialized
@@ -41,15 +43,18 @@ function pascalCase(a: string): string {
 export type TraitFactory<TBaseClass extends TraitedBaseClass, TCtorParam> = TraitFactoryImpl<TBaseClass, TCtorParam>;
 class TraitFactoryImpl<TBaseClass extends TraitedBaseClass, TCtorParam> {
   ignore_unknown_traits: boolean = false;
+  initialized: boolean = false;
 
   traits: Partial<Record<string, TraitOpts<TBaseClass, OpaqueOpt, OpaqueState>>> = {};
 
   registerTrait<TOpts, TState=never>(trait_id: string, opts: TraitOpts<TBaseClass, TOpts, TState>): void {
+    assert(!this.initialized);
     assert(!this.traits[trait_id]);
     this.traits[trait_id] = opts as TraitOpts<TBaseClass, OpaqueOpt, OpaqueState>;
   }
 
   extendTrait<TOpts, TState=never>(trait_id: string, opts: DeepPartial<TraitOpts<TBaseClass, TOpts, TState>>): void {
+    assert(!this.initialized);
     let existing = this.traits[trait_id];
     assert(existing);
     this.traits[trait_id] = defaultsDeep(opts, existing);
@@ -136,6 +141,20 @@ function factory(${factory_param_names.join(',')}) {
       for (let key in trait_def.methods) {
         proto[key] = trait_def.methods[key];
       }
+      // Compound Methods
+      for (let key in trait_def.compound_methods) {
+        let fn = trait_def.compound_methods[key]!;
+        if (proto[key]) {
+          let nextfn = proto[key];
+          proto[key] = function () {
+            // eslint-disable-next-line prefer-rest-params
+            return fn.apply(this, arguments) || nextfn.apply(this, arguments);
+          };
+        } else {
+          proto[key] = fn;
+        }
+      }
+
       // Opts
       let num_custom_opts = Object.keys(trait_ref).length - 1; // ignore 'id'
       if (trait_def.default_opts) {
@@ -217,6 +236,7 @@ function factory(${factory_param_names.join(',')}) {
       this.buildConstructor(filename, Ctor, type_id, type_def);
       reload_cb?.(type_id);
     });
+    this.initialized = true;
   }
 
   private ctors: Partial<Record<string, Constructor<TBaseClass>>> = {};
@@ -230,6 +250,7 @@ function factory(${factory_param_names.join(',')}) {
   }
 
   allocate(type_id: string, data: TCtorParam): TBaseClass {
+    assert(this.initialized);
     let Ctor = this.ctors[type_id];
     let ret;
     if (!Ctor) {

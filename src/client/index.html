@@ -22,9 +22,6 @@
     </script>
 
     <link rel="stylesheet" type="text/css" href="main.css">
-    <!-- #if PLATFORM === 'fbinstant' -->
-    <script src="https://connect.facebook.net/en_US/fbinstant.beta.js"></script>
-    <!-- #endif -->
   </head>
   <body>
     <div id="debug_overlay"><div id="debug" class="noglov"></div></div>
@@ -90,8 +87,7 @@
         </form>
       </div>
     </div>
-    <!-- disabled-build:js vendor/combined.js -->
-    <!-- endbuild -->
+    <!-- uncomment if config.asset_hashing: <script src="assets.js"></script> -->
     <script src="app_deps.bundle.js"></script>
     <script src="app.bundle.js"></script>
     <script src="fsdata.js"></script>

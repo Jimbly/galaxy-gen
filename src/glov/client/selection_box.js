@@ -11,7 +11,10 @@ import { clamp, cloneShallow, easeIn, merge } from 'glov/common/util.js';
 import { v4copy, vec4 } from 'glov/common/vmath.js';
 import * as camera2d from './camera2d.js';
 import * as glov_engine from './engine.js';
-import * as glov_font from './font.js';
+import {
+  ALIGN,
+  fontStyle,
+} from './font';
 import {
   KEYS,
   PAD,
@@ -22,6 +25,7 @@ import {
   padButtonDownEdge,
 } from './input.js';
 import { link } from './link.js';
+import { markdownAuto } from './markdown';
 import { scrollAreaCreate } from './scroll_area.js';
 import {
   SPOT_DEFAULT_BUTTON,
@@ -43,32 +47,35 @@ import {
 } from './spot.js';
 import { spriteClipPause, spriteClipResume, spriteClipped } from './sprites.js';
 import {
+  drawHBox,
   getUIElemData,
   playUISound,
+  uiButtonHeight,
+  uiButtonWidth,
   uiFontStyleFocused,
   uiFontStyleNormal,
+  uiGetFont,
+  uiTextHeight,
 } from './ui.js';
 import * as glov_ui from './ui.js';
-
-let glov_markup = null; // Not ported
 
 let last_key_id = 0;
 
 let font;
 
-const selbox_font_style_default = glov_font.style(null, {
+const selbox_font_style_default = fontStyle(null, {
   color: 0xDFDFDFff,
 });
 
-const selbox_font_style_selected = glov_font.style(null, {
+const selbox_font_style_selected = fontStyle(null, {
   color: 0xFFFFFFff,
 });
 
-const selbox_font_style_down = glov_font.style(null, {
+const selbox_font_style_down = fontStyle(null, {
   color: 0x000000ff,
 });
 
-const selbox_font_style_disabled = glov_font.style(null, {
+const selbox_font_style_disabled = fontStyle(null, {
   color: 0x808080ff,
 });
 
@@ -84,12 +91,12 @@ export function selboxDefaultDrawItemBackground({
   image_set, color,
   image_set_extra, image_set_extra_alpha,
 }) {
-  glov_ui.drawHBox({ x, y, z, w, h },
+  drawHBox({ x, y, z, w, h },
     image_set, color);
   if (image_set_extra && image_set_extra_alpha) {
     v4copy(color_temp_fade, color);
     color_temp_fade[3] *= easeIn(image_set_extra_alpha, 2);
-    glov_ui.drawHBox({ x, y, z: z + 0.001, w, h },
+    drawHBox({ x, y, z: z + 0.001, w, h },
       image_set_extra, color_temp_fade);
   }
 }
@@ -100,6 +107,7 @@ export function selboxDefaultDrawItemText({
   w, h,
   display,
   font_height,
+  line_height,
   style,
 }) {
   let text_z = z + 1;
@@ -116,40 +124,55 @@ export function selboxDefaultDrawItemText({
       let x2 = x + display.xpad + display.tab_stop + pad;
       let w1 = display.tab_stop;
       let w2 = w - display.tab_stop - display.xpad * 2 - pad;
-      if (display.use_markup) {
-        let md = {};
-        md.align = glov_font.ALIGN.HFIT;
-        md.x_size = md.y_size = font_height;
-        md.w = w1;
-        md.h = 1;
-        md.style = style;
-        glov_markup.print(md, x1, y, text_z, pre);
-        md.w = w2;
-        glov_markup.print(md, x2, y, text_z, post);
+      if (display.use_markdown) {
+        markdownAuto({
+          font_style: style,
+          x: x1, y, z: text_z,
+          w: w1, h,
+          text_height: font_height,
+          line_height,
+          align: ALIGN.HFIT | ALIGN.VCENTER,
+          text: pre,
+        });
+        markdownAuto({
+          font_style: style,
+          x: x2, y, z: text_z,
+          w: w1, h,
+          text_height: font_height,
+          line_height,
+          align: ALIGN.HFIT | ALIGN.VCENTER,
+          text: post,
+        });
       } else {
         font.drawSizedAligned(style, x1, y, text_z, font_height,
-          glov_font.ALIGN.HFIT | glov_font.ALIGN.VCENTER,
+          ALIGN.HFIT | ALIGN.VCENTER,
           w1, h, pre);
         font.drawSizedAligned(style, x2, y, text_z, font_height,
-          glov_font.ALIGN.HFIT | glov_font.ALIGN.VCENTER,
+          ALIGN.HFIT | ALIGN.VCENTER,
           w2, h, post);
       }
     }
   }
   if (!did_tab) {
-    let md = {};
-    md.align = (item.centered || display.centered ? glov_font.ALIGN.HCENTERFIT : glov_font.ALIGN.HFIT) |
-      glov_font.ALIGN.VCENTER;
-    md.x_size = md.y_size = font_height;
-    md.w = w - display.xpad * 2;
-    md.h = h;
-    md.style = style;
-    let xx = x + display.xpad;
-    if (display.use_markup) {
-      glov_markup.print(md, xx, y, text_z, item.name);
+    let md = {
+      font_style: style,
+      x: x + display.xpad,
+      y,
+      z: text_z,
+      w: w - display.xpad * 2,
+      h,
+      text_height: font_height,
+      line_height,
+      align: (item.centered || display.centered ? ALIGN.HCENTERFIT : ALIGN.HFIT) |
+        ALIGN.VCENTER,
+      text: item.name,
+    };
+
+    if (display.use_markdown) {
+      markdownAuto(md);
     } else {
-      font.drawSizedAligned(md.style, xx, y, text_z, md.x_size,
-        md.align, md.w, md.h, item.name);
+      font.drawSizedAligned(md.font_style, md.x, md.y, md.z, md.text_height,
+        md.align, md.w, md.h, md.text);
     }
   }
   // spriteListClipperPop();
@@ -184,7 +207,7 @@ export const default_display = {
   xpad: 8,
   selection_fade: Infinity, // alpha per millisecond
   // selection_highlight: null, // TODO: custom / better selection highlight for menus
-  use_markup: false, // always false, Markup not ported
+  use_markdown: false,
 };
 
 
@@ -215,6 +238,7 @@ export class GlovMenuItem {
     this.name = params.name || 'NO_NAME'; // name to display
     this.state = params.state || null; // state to set upon selection
     this.cb = params.cb || null; // callback to call upon selection
+    this.in_event_cb = params.in_event_cb || undefined;
     // TODO - cb function on value change?
     this.value = params.value === undefined ? null : params.value; // can be number or string
     this.value_min = params.value_min || 0;
@@ -247,13 +271,14 @@ class SelectionBoxBase {
     this.x = 0;
     this.y = 0;
     this.z = Z.UI;
-    this.width = glov_ui.button_width;
+    this.width = uiButtonWidth();
     this.items = [];
     this.disabled = false;
     this.display = cloneShallow(default_display);
     this.scroll_height = 0;
-    this.font_height = glov_ui.font_height;
-    this.entry_height = glov_ui.button_height;
+    this.font_height = uiTextHeight();
+    this.line_height = null;
+    this.entry_height = uiButtonHeight();
     this.auto_reset = true;
     this.reset_selection = false;
     this.initial_selection = 0;
@@ -462,11 +487,15 @@ class SelectionBoxBase {
       display,
       entry_height,
       font_height,
+      line_height,
       key,
       selected: old_sel,
       show_as_focused,
       width,
     } = this;
+    if (line_height === null) {
+      line_height = font_height;
+    }
     let { scroll_height } = ctx;
     let eff_width = width;
     const y_save = y;
@@ -515,6 +544,7 @@ class SelectionBoxBase {
           [SPOT_NAV_LEFT]: null,
         },
         auto_focus: item.auto_focus,
+        in_event_cb: item.in_event_cb,
       };
       if (ii === first_non_disabled_selection && this.nav_loop) {
         entry_spot_rect.custom_nav[SPOT_NAV_UP] = `${key}_${last_non_disabled_selection}`;
@@ -626,6 +656,7 @@ class SelectionBoxBase {
         image_set, color,
         image_set_extra, image_set_extra_alpha,
         font_height,
+        line_height,
         display,
         style,
       });
@@ -751,7 +782,10 @@ class GlovDropDown extends SelectionBoxBase {
 
   run(params) {
     this.applyParams(params);
-    let { x, y, z, width, font_height, entry_height, disabled, key, display, ctx } = this;
+    let { x, y, z, width, font_height, line_height, entry_height, disabled, key, display, ctx } = this;
+    if (line_height === null) {
+      line_height = font_height;
+    }
 
     this.handleInitialSelection();
 
@@ -822,17 +856,32 @@ class GlovDropDown extends SelectionBoxBase {
         }
       }
     }
-    glov_ui.drawHBox({
+    drawHBox({
       x, y, z: z + 1,
       w: width, h: entry_height
     }, glov_ui.sprites.menu_header, COLORS[root_spot_ret.spot_state]);
-    let align = (display.centered ? glov_font.ALIGN.HCENTER : glov_font.ALIGN.HLEFT) |
-      glov_font.ALIGN.HFIT | glov_font.ALIGN.VCENTER;
-    font.drawSizedAligned(root_spot_ret.focused ? uiFontStyleFocused() : uiFontStyleNormal(),
-      x + display.xpad, y, z + 2,
-      font_height, align,
-      width - display.xpad - glov_ui.sprites.menu_header.uidata.wh[2] * entry_height, entry_height,
-      this.items[eff_selection].name);
+    let md = {
+      font_style: root_spot_ret.focused ? uiFontStyleFocused() : uiFontStyleNormal(),
+      x: x + display.xpad,
+      y,
+      z: z + 2,
+      w: width - display.xpad - glov_ui.sprites.menu_header.uidata.wh[2] * entry_height,
+      h: entry_height,
+      text_height: font_height,
+      line_height,
+      align: (display.centered ? ALIGN.HCENTER : ALIGN.HLEFT) | ALIGN.HFIT | ALIGN.VCENTER,
+      text: this.items[eff_selection].name,
+    };
+    if (display.use_markdown) {
+      markdownAuto(md);
+    } else {
+      font.drawSizedAligned(md.font_style,
+        md.x, md.y, md.z,
+        md.text_height,
+        md.align,
+        md.w, md.h,
+        md.text);
+    }
     y += entry_height;
     yret = y + 2;
 
@@ -894,14 +943,14 @@ GlovDropDown.prototype.nav_loop = true;
 
 export function selectionBoxCreate(params) {
   if (!font) {
-    font = glov_ui.font;
+    font = uiGetFont();
   }
   return new GlovSelectionBox(params);
 }
 
 export function dropDownCreate(params) {
   if (!font) {
-    font = glov_ui.font;
+    font = uiGetFont();
   }
   return new GlovDropDown(params);
 }
@@ -924,11 +973,14 @@ export function dropDown(param, current, opts) {
     old_selected = dropdown.getSelected();
   }
   dropdown.run();
+  opts.dropdown_visible = dropdown.isDropdownVisible();
   if (suppress_return_during_dropdown && dropdown.was_clicked ||
     !suppress_return_during_dropdown
   ) {
     if (old_selected !== dropdown.getSelected()) {
-      return dropdown.getSelected();
+      // Return input item (which may have additional data lost upon conversion
+      //   to a MenuItem), instead of `dropdown.getSelected()`
+      return param.items[dropdown.selected];
     }
   }
   return null;

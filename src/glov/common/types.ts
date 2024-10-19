@@ -3,15 +3,21 @@ import type { Packet } from './packet';
 
 export type VoidFunc = () => void;
 
+export type TSMap<T> = Partial<Record<string, T>>;
+
+export type ERR = string | undefined | null;
+
 /**
  * Data object type to be used when handling an object that contains some type of (possible unknown) information.
  * @template T - The type of information held by the object, defaults to unknown.
  */
-export type DataObject = Partial<Record<string, unknown>>;
+export type DataObject = TSMap<unknown>;
 
 export function isDataObject(value: unknown): value is DataObject {
   return value ? typeof value === 'object' && !Array.isArray(value) : false;
 }
+
+export type EmptyObject = Record<string, never>;
 
 /**
  * Error callback accepting an error as the first parameter and a result as the second parameter.
@@ -40,17 +46,25 @@ export type NetErrorCallback<T = never> = (
   result?: T
 ) => void;
 
-type NetResponseCallbackFn<T = never, E = unknown> = (
-  err?: E | undefined | null,
+type NetResponseCallbackCalledByUser<T = never> = (
+  err?: ERR,
   result?: T extends (never | void) ? never : (T | undefined | null),
-  resp_func?: NetErrorCallback
+  resp_func?: NetResponseCallbackCalledBySystem
 ) => void;
+
+// Type to use for parameters to system functions that only ever call with string | null
+export type NetResponseCallbackCalledBySystem<T = never> = (
+  err: string | null,
+  result?: T extends (never | void) ? never : T,
+  resp_func?: NetResponseCallback
+) => void;
+
 /**
  * Callback function type passed to any network message handlers: can use it to
  * send back a packet, an error, a result, as well as register a function to be
  * called in response to your response.
  */
-export interface NetResponseCallback<T = never> extends NetResponseCallbackFn<T, string> {
+export interface NetResponseCallback<T = never> extends NetResponseCallbackCalledByUser<T> {
   pak: () => Packet;
 }
 
@@ -66,39 +80,30 @@ export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
  */
 export type DefinedValueOf<T> = Exclude<T[keyof T], undefined>;
 
+/**
+ * Helper type to mark only one field of a type as optional.
+ */
+export type Optional<T, K extends keyof T> = Pick<Partial<T>, K> & Omit<T, K>;
+
+/**
+ * Helper type to filter only keys for values who match a given type
+ */
+export type KeysMatching<T, V> = Exclude<{
+  [K in keyof T]: T[K] extends V ? K : never
+}[keyof T], undefined>;
+
+
 // TODO: Implement the types below and move them to the appropriate files
 
 /**
- * CmdParse data
+ * Presence data
  */
-export type CmdRespFunc = ErrorCallback<string | unknown, string | null>;
-export interface CmdDef {
-  cmd?: string;
-  help?: string;
-  usage?: string;
-  prefix_usage_with_help?: boolean;
-  access_show?: string[];
-  access_run?: string[];
-  func(str: string, resp_func: CmdRespFunc): void;
-}
-
-/**
- * Client presence data
- */
-export interface ClientPresenceData {
+export type PresenceEntry<T=unknown> = {
   active: number;
   state: string;
-  payload: unknown;
-}
-/**
- * Server presence data
- */
-export interface ServerPresenceData {
-  id: number;
-  active: number;
-  state: string;
-  payload: unknown;
-}
+  id: number; // note: not sent from client -> server
+  payload?: T;
+};
 
 export type EntityID = number;
 
@@ -119,6 +124,7 @@ export interface ChatMessageDataBroadcast extends ChatMessageDataShared {
   client_id?: string;
   ent_id?: EntityID; // If from a worker with an EnityManager
   quiet?: boolean; // Added at run-time on client
+  err_echo?: boolean; // Added at run-time on client
 }
 /*
  * Chat history data
@@ -145,6 +151,7 @@ export interface HandlerSource {
   channel_id: string;
   id: string;
   type: string;
+  direct?: true;
 }
 
 /**
@@ -163,42 +170,24 @@ export interface ClientHandlerSource extends HandlerSource {
 export function isClientHandlerSource(src: HandlerSource): src is ClientHandlerSource {
   return src.type === 'client';
 }
+export type LoggedInClientHandlerSource = WithRequired<ClientHandlerSource, 'user_id' | 'display_name'>;
 
 export interface ChatIDs extends ClientHandlerSource {
   style?: string;
 }
 
+export type Roles = TSMap<1>;
+
 export type ClientIDs = {
   client_id: string;
   user_id?: string;
   display_name?: string;
-  roles?: Partial<Record<string, true>>;
+  roles?: Roles;
 };
-
-export interface ClientChannelWorker {
-  on(key: string, cb: (data: DataObject, key: string, value: DataObject) => void): void;
-  removeListener(key: string, cb: (data: DataObject, key: string, value: DataObject) => void): void;
-  onSubscribe(cb: (data: unknown) => void): void;
-  onceSubscribe(cb: ((data: DataObject) => void) | VoidFunc): void;
-  numSubscriptions(): number;
-  isFullySubscribed(): boolean;
-  unsubscribe(): void;
-  getChannelData<T>(key: string, default_value: T): T;
-  getChannelData(key: string): unknown;
-  getChannelID(): string;
-  setChannelData(key: string, value: unknown, skip_predict?: boolean, resp_func?: NetErrorCallback): void;
-  pak(msg: string): Packet;
-  send<R=never, P=null>(msg: string, data: P, resp_func: NetErrorCallback<R>): void;
-  send(msg: string, data?: unknown, resp_func?: NetErrorCallback): void;
-  cmdParse(cmd: string, resp_func: CmdRespFunc): void;
-  readonly data: {
-    public?: unknown;
-  };
-}
-
-export interface UserChannel extends ClientChannelWorker {
-  presence_data: Partial<Record<string, ServerPresenceData>>;
-}
+export type ChannelDataClient = {
+  ids: ClientIDs;
+} & DataObject;
+export type ChannelDataClients = TSMap<ChannelDataClient>;
 
 // TODO: Delete this type and all usages of it.
 // It is being used as a placeholder for data types that are not yet implemented.
@@ -207,3 +196,10 @@ export type UnimplementedData = DataObject;
 export type DeepPartial<T> = T extends DataObject ? {
     [P in keyof T]?: DeepPartial<T[P]>;
 } : T;
+
+export type NumberBoolean = 0 | 1;
+
+export type TextVisualLimit = {
+  font_height: number;
+  width: number;
+};

@@ -3,6 +3,7 @@ const path = require('path');
 const { forwardSlashes } = require('glov-build');
 const concat = require('glov-build-concat');
 const JSON5 = require('json5');
+const micromatch = require('micromatch');
 
 const preamble = `(function () {
 var fs = window.glov_webfs = window.glov_webfs || {};`;
@@ -61,7 +62,7 @@ function fileFSName(opts, name) {
 }
 
 module.exports = function webfsBuild(opts) {
-  let { output, embed, strip } = opts;
+  let { output, embed, strip, sized_embed } = opts;
   let ext_list = embed || ['.json'];
   let strip_ext_list = strip || ['.json'];
   assert(output);
@@ -75,36 +76,47 @@ module.exports = function webfsBuild(opts) {
     strip_exts[strip_ext_list[ii]] = true;
   }
 
+  function proc(job, file, next) {
+    let data = file.contents;
+    if (sized_embed) {
+      if (micromatch(file.relative, sized_embed.globs).length) {
+        if (data.length > sized_embed.max_size) {
+          return void next(null, null);
+        }
+      }
+    }
+    let { name, priority } = fileFSName(opts, file.relative);
+    let line;
+    let ext_idx = name.lastIndexOf('.');
+    let ext = '';
+    if (ext_idx !== -1) {
+      ext = name.slice(ext_idx);
+    }
+    if (strip_exts[ext]) {
+      name = name.slice(0, -ext.length);
+    }
+    if (embed_exts[ext]) {
+      line = `fs['${name}'] = ${encodeObj(JSON.parse(data))};`;
+    } else {
+      line = `fs['${name}'] = [${data.length},'${encodeString(data)}'];`;
+    }
+    next(null, { name, contents: line, priority });
+  }
+
   return concat({
     preamble,
     postamble,
     output: output,
     key: 'name',
-    proc: function (job, file, next) {
-      let { name, priority } = fileFSName(opts, file.relative);
-      let data = file.contents;
-      let line;
-      let ext_idx = name.lastIndexOf('.');
-      let ext = '';
-      if (ext_idx !== -1) {
-        ext = name.slice(ext_idx);
-      }
-      if (strip_exts[ext]) {
-        name = name.slice(0, -ext.length);
-      }
-      if (embed_exts[ext]) {
-        line = `fs['${name}'] = ${encodeObj(JSON.parse(data))};`;
-      } else {
-        line = `fs['${name}'] = [${data.length},'${encodeString(data)}'];`;
-      }
-      next(null, { name, contents: line, priority });
-    },
+    proc,
     version: [
+      proc,
       encodeObj,
       encodeString,
       fileFSName,
       ext_list,
       strip_ext_list,
+      sized_embed,
     ],
   });
 };

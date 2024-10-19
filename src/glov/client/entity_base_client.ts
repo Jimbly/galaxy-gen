@@ -176,6 +176,16 @@ export class EntityBaseClient extends EntityBaseCommon {
     return false;
   }
 
+  hasPendingBatchUpdateForField(field: string): boolean {
+    for (let key in this.data_overrides) {
+      let override = this.data_overrides[key];
+      if (override.field === field) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Expected to be overridden by app
   onDelete(reason: string): number {
     // Returns how many milliseconds to keep the entity around in a fading_out state

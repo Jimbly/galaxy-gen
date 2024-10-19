@@ -20,6 +20,7 @@
     "clean": "node build clean",
     "build": "node build build",
     "cache": "node build build.prod.png client_autosound --cache-rebuild",
+    "build_watch": "nodemon -w build -- build build --watch",
     "prod": "node build build && node dist/game/build.prod/server/index.js --master",
     "test_watch": "nodemon -w build -- build test --watch",
     "test": "node build lint test"
@@ -32,6 +33,7 @@
   "dependencies": {
     "express": "^4.17.1",
     "express-static-gzip": "^2.0.5",
+    "fadvise": "^1.0.0",
     "fs-store": "^0.3.2",
     "fs-store-async": "^0.3.3",
     "gl-mat3": "^2.0.0",
@@ -69,11 +71,11 @@
     "eslint": "^7.32.0",
     "eslint-plugin-html": "^7.1.0",
     "eslint-plugin-import": "^2.26.0",
-    "glov-build": "1.0.43",
+    "glov-build": "1.0.45",
     "glov-build-babel": "1.0.4",
     "glov-build-browserify": "1.0.8",
     "glov-build-cache": "1.1.0",
-    "glov-build-concat": "1.0.10",
+    "glov-build-concat": "1.0.13",
     "glov-build-imagemin": "^1.0.0",
     "glov-build-preresolve": "1.2.0",
     "glov-build-sourcemap": "1.0.5",
@@ -97,7 +99,8 @@
     "pngjs": "^6.0.0",
     "regexp-sourcemaps": "^1.0.1",
     "typescript": "4.4.3",
-    "uglify-js": "3.14.2"
+    "uglify-js": "3.14.2",
+    "xxhash-wasm": "^1.0.2"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.1"

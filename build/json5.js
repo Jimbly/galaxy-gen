@@ -13,9 +13,16 @@ module.exports = function (options) {
     } catch (err) {
       return void done(err);
     }
+    if (options.filter_obj) {
+      obj = options.filter_obj(obj, job, file);
+    }
+    let text = JSON.stringify(obj, null, options.beautify ? 2 : null);
+    if (options.filter_text) {
+      text = options.filter_text(text, job, file, obj);
+    }
     job.out({
       relative: file.relative.replace(/\.json5$/, '.json'),
-      contents: Buffer.from(JSON.stringify(obj, null, options.beautify ? 2 : null)),
+      contents: Buffer.from(text),
     });
     done();
   }
@@ -23,5 +30,10 @@ module.exports = function (options) {
   return {
     type: gb.SINGLE,
     func: parseJSON5,
+    version: [
+      parseJSON5,
+      options.filter_obj,
+      options.filter_text,
+    ],
   };
 };

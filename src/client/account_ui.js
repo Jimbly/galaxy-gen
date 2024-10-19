@@ -11,7 +11,12 @@ const { click, KEYS, keyDownEdge } = require('glov/client/input.js');
 const { linkGetDefaultStyle, linkText } = require('glov/client/link.js');
 const { random, round } = Math;
 const net = require('glov/client/net.js');
+const {
+  SOCIAL_ONLINE,
+  socialPresenceStatusSet,
+} = require('glov/client/social');
 const ui = require('glov/client/ui.js');
+const { uiTextHeight } = require('glov/client/ui');
 const { vec4 } = require('glov/common/vmath.js');
 
 export function formatUserID(user_id, display_name) {
@@ -71,6 +76,7 @@ AccountUI.prototype.playAsGuest = function (use_name) {
   }
   let pass = 'test';
   local_storage.set('name', name);
+  socialPresenceStatusSet(SOCIAL_ONLINE);
   this.edit_box_name.setText(name);
   net.subs.login(name, pass, function (err) {
     if (err) {
@@ -103,7 +109,7 @@ AccountUI.prototype.showLogin = function (param) {
     font_height, font_height_small, label_w,
     pad, status_bar,
   } = param;
-  font_height = font_height || ui.font_height;
+  font_height = font_height || uiTextHeight();
   font_height_small = font_height_small || font_height * 0.75;
   button_height = button_height || ui.button_height;
   button_width = button_width || 240;
@@ -152,18 +158,6 @@ AccountUI.prototype.showLogin = function (param) {
     login_message = 'Logging in...';
   } else if (net.subs.logging_out) {
     login_message = 'Logging out...';
-  } else if (!net.subs.loggedIn() && window.FBInstant) {
-    net.subs.loginFacebook(function (err) {
-      if (err) {
-        ui.modalDialog({
-          title: 'Facebook login Failed',
-          text: err,
-          buttons: {
-            'Cancel': null,
-          },
-        });
-      }
-    });
   } else if (!net.subs.loggedIn() && net.subs.auto_create_user &&
     !local_storage.get('did_auto_anon') && !local_storage.get('name')
   ) {
@@ -204,7 +198,7 @@ AccountUI.prototype.showLogin = function (param) {
         font_height: font_height_small,
         text: 'Random',
       })) {
-        net.client.send('random_name', null, function (ignored, data) {
+        net.client.send('random_name', null, null, function (ignored, data) {
           if (data) {
             edit_box_display_name.setText(data);
           }
@@ -231,6 +225,7 @@ AccountUI.prototype.showLogin = function (param) {
 
       if (submit) {
         local_storage.set('name', edit_box_name.text);
+        socialPresenceStatusSet(SOCIAL_ONLINE);
         // do creation and log in!
         net.subs.userCreate({
           user_id: edit_box_name.text,
@@ -303,6 +298,7 @@ AccountUI.prototype.showLogin = function (param) {
 
       if (submit) {
         local_storage.set('name', edit_box_name.text);
+        socialPresenceStatusSet(SOCIAL_ONLINE);
         if (prelogin) {
           prelogin();
         }
@@ -321,8 +317,7 @@ AccountUI.prototype.showLogin = function (param) {
       }
     }
   } else {
-    // FB Users can't logout
-    let show_logout = !window.FBInstant;
+    let show_logout = true;
     let user_id = net.subs.loggedIn();
     let user_channel = net.subs.getChannel(`user.${user_id}`);
     let display_name = user_channel.getChannelData('public.display_name') || user_id;

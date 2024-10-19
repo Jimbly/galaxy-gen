@@ -4,35 +4,48 @@
 /* eslint-env browser */
 
 import assert from 'assert';
-import { PLATFORM_FBINSTANT } from 'glov/client/client_config';
+import * as settings from 'glov/client/settings';
+import { settingsRegister, settingsSet } from 'glov/client/settings';
 import {
-  ID_PROVIDER_FB_GAMING,
-  ID_PROVIDER_FB_INSTANT,
   PRESENCE_ACTIVE,
   PRESENCE_INACTIVE,
   PRESENCE_OFFLINE,
+  PRESENCE_OFFLINE_INACTIVE,
 } from 'glov/common/enums';
 import { FriendData, FriendStatus, FriendsData } from 'glov/common/friends_data';
-import {
-  ClientPresenceData,
-  ErrorCallback,
-  FriendCmdResponse,
-  ServerPresenceData,
-} from 'glov/common/types';
 import { deepEqual } from 'glov/common/util';
-import { Vec4 } from 'glov/common/vmath';
+import { ROVec4 } from 'glov/common/vmath';
+import { abTestGetMetricsAndPlatform } from './abtest';
 import { cmd_parse } from './cmds';
 import { ExternalUserInfo } from './external_user_info';
 import * as input from './input';
-import { netDisconnected, netSubs } from './net';
+import {
+  ClientChannelWorker,
+  netDisconnected,
+  netSubs,
+  netUserId,
+} from './net';
 import { Sprite, spriteCreate } from './sprites';
 import { textureLoad } from './textures';
+
+import type { CmdRespFunc } from 'glov/common/cmd_parse';
+import type {
+  ErrorCallback,
+  FriendCmdResponse,
+  NetErrorCallback,
+  PresenceEntry,
+  TSMap,
+} from 'glov/common/types';
 
 declare let gl: WebGLRenderingContext | WebGL2RenderingContext;
 
 const IDLE_TIME = 60000;
 
 let friend_list: FriendsData | null = null;
+
+export type ClientUserChannel<T=unknown> = ClientChannelWorker & {
+  presence_data?: TSMap<PresenceEntry<T>>;
+};
 
 export function friendsGet(): FriendsData {
   return friend_list ?? Object.create(null);
@@ -48,23 +61,26 @@ export function friendIsBlocked(user_id: string): boolean {
   return value?.status === FriendStatus.Blocked;
 }
 
-function makeFriendCmdRequest(cmd: string, user_id: string, cb: ErrorCallback<string>): void {
+function makeFriendCmdRequest(cmd: string, user_id: string, cb: NetErrorCallback<string>): void {
   user_id = user_id.toLowerCase();
-  let requesting_user_id = netSubs().loggedIn();
+  let requesting_user_id = netUserId();
   if (netDisconnected()) {
     return void cb('ERR_DISCONNECTED');
   }
   if (!requesting_user_id) {
     return void cb('ERR_NOT_LOGGED_IN');
   }
-  netSubs().getMyUserChannel().cmdParse(`${cmd} ${user_id}`, function (err: string, resp: FriendCmdResponse) {
+  let my_user_channel = netSubs().getMyUserChannel();
+  assert(my_user_channel);
+  my_user_channel.cmdParse(`${cmd} ${user_id}`, function (err?: string | null, resp?: FriendCmdResponse) {
     if (err) {
       return void cb(err);
-    } else if (requesting_user_id !== netSubs().loggedIn() || !friend_list) {
+    } else if (requesting_user_id !== netUserId() || !friend_list) {
       // Logged out or switched user meanwhile, so ignore the result
       return void cb('Invalid data');
     }
 
+    assert(resp);
     if (resp.friend) {
       friend_list[user_id] = resp.friend;
     } else {
@@ -74,89 +90,45 @@ function makeFriendCmdRequest(cmd: string, user_id: string, cb: ErrorCallback<st
   });
 }
 
-export function friendAdd(user_id: string, cb: ErrorCallback<string>): void {
+export function friendAdd(user_id: string, cb: NetErrorCallback<string>): void {
   makeFriendCmdRequest('friend_add', user_id, cb);
 }
-export function friendRemove(user_id: string, cb: ErrorCallback<string>): void {
+export function friendRemove(user_id: string, cb: NetErrorCallback<string>): void {
   makeFriendCmdRequest('friend_remove', user_id, cb);
 }
-export function friendBlock(user_id: string, cb: ErrorCallback<string>): void {
+export function friendBlock(user_id: string, cb: NetErrorCallback<string>): void {
   makeFriendCmdRequest('friend_block', user_id, cb);
 }
-export function friendUnblock(user_id: string, cb: ErrorCallback<string>): void {
+export function friendUnblock(user_id: string, cb: NetErrorCallback<string>): void {
   makeFriendCmdRequest('friend_unblock', user_id, cb);
 }
 
-// Pass-through commands
-cmd_parse.register({
-  cmd: 'friend_add',
-  help: 'Add a friend',
-  func: friendAdd,
-});
-cmd_parse.register({
-  cmd: 'friend_remove',
-  help: 'Remove a friend',
-  func: friendRemove,
-});
-cmd_parse.register({
-  cmd: 'friend_block',
-  help: 'Block someone from seeing your rich presence, also removes from your friends list',
-  func: friendBlock,
-});
-cmd_parse.register({
-  cmd: 'friend_unblock',
-  help: 'Reset a user to allow seeing your rich presence again',
-  func: friendUnblock,
-});
-cmd_parse.register({
-  cmd: 'friend_list',
-  help: 'List all friends',
-  func: function (str: string, resp_func: ErrorCallback<string>) {
-    if (!friend_list) {
-      return void resp_func('Friends list not loaded');
-    }
-    resp_func(null, Object.keys(friend_list).filter(isFriend).join(',') ||
-      'You have no friends');
-  },
-});
-cmd_parse.register({
-  cmd: 'friend_block_list',
-  help: 'List all blocked users',
-  func: function (str: string, resp_func: ErrorCallback<string>) {
-    if (!friend_list) {
-      return void resp_func('Friends list not loaded');
-    }
-    resp_func(null, Object.keys(friend_list).filter(friendIsBlocked).join(',') ||
-      'You have no blocked users');
-  },
-});
+export const SOCIAL_ONLINE = 1;
+export const SOCIAL_AFK = 2;
+export const SOCIAL_INVISIBLE = 3;
+export type SocialPresenceStatus = typeof SOCIAL_ONLINE | typeof SOCIAL_AFK | typeof SOCIAL_INVISIBLE;
+declare module 'glov/client/settings' {
+  let social_presence: SocialPresenceStatus;
+}
 
-let invisible = 0;
-cmd_parse.registerValue('invisible', {
-  type: cmd_parse.TYPE_INT,
-  help: 'Hide rich presence information from other users',
-  label: 'Invisible',
-  range: [0,1],
-  get: () => invisible,
-  set: (v: number) => (invisible = v),
-});
+export function socialPresenceStatusGet(): SocialPresenceStatus {
+  return settings.social_presence;
+}
+export function socialPresenceStatusSet(value: SocialPresenceStatus): void {
+  settingsSet('social_presence', value);
+}
 
-let afk = 0;
-cmd_parse.registerValue('afk', {
-  type: cmd_parse.TYPE_INT,
-  help: 'Appear as idle to other users',
-  label: 'AFK',
-  range: [0,1],
-  get: () => afk,
-  set: (v: number) => (afk = v),
-});
-
-function onPresence(this: { presence_data?: ServerPresenceData }, data: ServerPresenceData): void {
+function onPresence(this: ClientUserChannel, data: TSMap<PresenceEntry>): void {
   let user_channel = this;
   user_channel.presence_data = data;
 }
 
-let last_presence: ClientPresenceData | null = null;
+function onUnSubscribe(this: ClientUserChannel): void {
+  delete this.presence_data;
+}
+
+type ClientPresenceState = Omit<PresenceEntry, 'id'>;
+let last_presence: ClientPresenceState | null = null;
 let send_queued = false;
 function richPresenceSend(): void {
   if (!netSubs().loggedIn() || !last_presence || send_queued) {
@@ -168,17 +140,33 @@ function richPresenceSend(): void {
     if (!netSubs().loggedIn() || !last_presence) {
       return;
     }
-    let pak = netSubs().getMyUserChannel().pak('presence_set');
+    let pak = netSubs().getMyUserChannel()!.pak('presence_set');
     pak.writeInt(last_presence.active);
     pak.writeAnsiString(last_presence.state);
     pak.writeJSON(last_presence.payload);
+    pak.writeAnsiString(abTestGetMetricsAndPlatform());
     pak.send();
   });
 }
-export function richPresenceSet(active: number, state: string, payload?: unknown): void {
-  active = !active || afk || (Date.now() - input.inputLastTime() > IDLE_TIME) ? PRESENCE_INACTIVE : PRESENCE_ACTIVE;
-  if (invisible) {
-    active = PRESENCE_OFFLINE;
+export function richPresenceSet(active_in: number, state: string, payload?: unknown): void {
+  let active: number;
+  switch (socialPresenceStatusGet()) {
+    case SOCIAL_AFK:
+      active = active_in === PRESENCE_ACTIVE ? PRESENCE_INACTIVE : active_in;
+      break;
+    case SOCIAL_INVISIBLE:
+      active = PRESENCE_OFFLINE;
+      break;
+    default:
+      active = active_in;
+  }
+  let is_idle = (Date.now() - input.inputLastTime() > IDLE_TIME);
+  if (is_idle) {
+    if (active === PRESENCE_ACTIVE) {
+      active = PRESENCE_INACTIVE;
+    } else if (active === PRESENCE_OFFLINE) {
+      active = PRESENCE_OFFLINE_INACTIVE;
+    }
   }
   payload = payload || null;
   if (!last_presence ||
@@ -208,7 +196,7 @@ export function getExternalFriendInfos(user_id: string): Record<string, External
 }
 
 export function getExternalUserInfos(user_id: string): Record<string, ExternalUserInfo> | undefined {
-  if (user_id === netSubs().loggedIn()) {
+  if (user_id === netUserId()) {
     return getExternalCurrentUserInfos();
   } else {
     return getExternalFriendInfos(user_id);
@@ -228,8 +216,10 @@ function updateExternalFriendsOnServer(provider: string, to_add: ExternalUserInf
     return;
   }
 
-  let requesting_user_id = netSubs().loggedIn();
-  let pak = netSubs().getMyUserChannel().pak('friend_auto_update');
+  let requesting_user_id = netUserId();
+  let my_user_channel = netSubs().getMyUserChannel();
+  assert(my_user_channel);
+  let pak = my_user_channel.pak('friend_auto_update');
   pak.writeAnsiString(provider);
   for (let ii = 0; ii < to_add.length; ++ii) {
     pak.writeAnsiString(to_add[ii].external_id);
@@ -239,8 +229,8 @@ function updateExternalFriendsOnServer(provider: string, to_add: ExternalUserInf
     pak.writeAnsiString(to_remove[ii]);
   }
   pak.writeAnsiString('');
-  pak.send(function (err: string, resp: Record<string, FriendData>) {
-    if (requesting_user_id !== netSubs().loggedIn() || !friend_list) {
+  pak.send(function (err: string | null, resp?: Record<string, FriendData>) {
+    if (requesting_user_id !== netUserId() || !friend_list) {
       // Logged out or switched user meanwhile, so ignore the result
       return;
     } else if (err) {
@@ -322,9 +312,9 @@ function setExternalFriends(provider: string, provider_friends: ExternalUserInfo
 
 function requestExternalCurrentUser(provider: string,
   request_func: (cb: ErrorCallback<ExternalUserInfo>) => void): void {
-  let requesting_user_id = netSubs().loggedIn();
+  let requesting_user_id = netUserId();
   request_func((err, user_info) => {
-    if (requesting_user_id !== netSubs().loggedIn()) {
+    if (requesting_user_id !== netUserId()) {
       // Logged out or switched user meanwhile, so ignore the result
       return;
     } else if (err || !user_info) {
@@ -338,9 +328,9 @@ function requestExternalCurrentUser(provider: string,
 
 function requestExternalFriends(provider: string,
   request_func: (cb: ErrorCallback<ExternalUserInfo[]>) => void): void {
-  let requesting_user_id = netSubs().loggedIn();
+  let requesting_user_id = netUserId();
   request_func((err, friends) => {
-    if (requesting_user_id !== netSubs().loggedIn() || !friend_list) {
+    if (requesting_user_id !== netUserId() || !friend_list) {
       // Logged out or switched user meanwhile, so ignore the result
       return;
     } else if (err || !friends) {
@@ -354,8 +344,8 @@ function requestExternalFriends(provider: string,
 
 export type UserProfileImage = {
   img: Sprite;
-  img_color?: Vec4;
-  frame?: number;
+  img_color?: ROVec4;
+  frame?: number | string;
 };
 let profile_images: Record<string, UserProfileImage> = {};
 let default_profile_image: UserProfileImage;
@@ -366,10 +356,14 @@ export function getUserProfileImage(user_id: string): UserProfileImage {
   }
 
   let url = null;
-  if (PLATFORM_FBINSTANT) {
-    url = getExternalUserInfos(user_id)?.[ID_PROVIDER_FB_INSTANT]?.profile_picture_url;
-  } else {
-    url = getExternalUserInfos(user_id)?.[ID_PROVIDER_FB_GAMING]?.profile_picture_url;
+  let infos = getExternalUserInfos(user_id);
+  if (infos) {
+    for (let key in infos) {
+      if (infos[key] && infos[key].profile_picture_url) {
+        url = infos[key].profile_picture_url;
+        break;
+      }
+    }
   }
 
   if (url) {
@@ -391,14 +385,18 @@ export function getUserProfileImage(user_id: string): UserProfileImage {
   return default_profile_image;
 }
 
+export function getDefaultUserProfileImage(): UserProfileImage {
+  return default_profile_image;
+}
+
 export function setDefaultUserProfileImage(image: UserProfileImage): void {
   default_profile_image = image;
 }
 
-let external_user_info_providers: Partial<Record<string, {
+let external_user_info_providers: TSMap<{
   get_current_user?: (cb: ErrorCallback<ExternalUserInfo>) => void;
   get_friends?: (cb: ErrorCallback<ExternalUserInfo[]>) => void;
-}>> = {};
+}> = {};
 
 export function registerExternalUserInfoProvider(
   provider: string,
@@ -407,7 +405,7 @@ export function registerExternalUserInfoProvider(
 ): void {
   if (get_current_user || get_friends) {
     assert(!friend_list);
-    assert(!netSubs()?.loggedIn());
+    assert(!netSubs().loggedIn());
 
     external_user_info_providers[provider] = { get_current_user, get_friends };
   } else {
@@ -419,17 +417,19 @@ export function registerExternalUserInfoProvider(
 export function socialInit(): void {
   netSubs().on('login', function () {
     let user_channel = netSubs().getMyUserChannel();
-    let user_id = netSubs().loggedIn();
+    let user_id = netUserId();
     richPresenceSend();
     friend_list = null;
     if (netDisconnected()) {
       return;
     }
-    user_channel.pak('friend_list').send((err: unknown, resp: FriendsData) => {
-      if (err || user_id !== netSubs().loggedIn()) {
+    assert(user_channel);
+    user_channel.pak('friend_list').send((err: string | null, resp?: FriendsData) => {
+      if (err || user_id !== netUserId()) {
         // disconnected, etc
         return;
       }
+      assert(resp);
       friend_list = resp;
 
       // Sync friend list with external providers' friends
@@ -451,4 +451,77 @@ export function socialInit(): void {
   });
 
   netSubs().onChannelMsg('user', 'presence', onPresence);
+  netSubs().onChannelEvent('user', 'unsubscribe', onUnSubscribe);
+
+  // Pass-through commands
+  cmd_parse.register({
+    cmd: 'friend_add',
+    help: 'Add a friend',
+    func: friendAdd,
+  });
+  cmd_parse.register({
+    cmd: 'friend_remove',
+    help: 'Remove a friend',
+    func: friendRemove,
+  });
+  cmd_parse.register({
+    cmd: 'friend_block',
+    help: 'Block someone from seeing your rich presence, also removes from your friends list',
+    func: friendBlock,
+  });
+  cmd_parse.register({
+    cmd: 'friend_unblock',
+    help: 'Reset a user to allow seeing your rich presence again',
+    func: friendUnblock,
+  });
+  cmd_parse.register({
+    cmd: 'friend_list',
+    help: 'List all friends',
+    func: function (str: string, resp_func: CmdRespFunc<string>) {
+      if (!friend_list) {
+        return void resp_func('Friends list not loaded');
+      }
+      resp_func(null, Object.keys(friend_list).filter(isFriend).join(',') ||
+        'You have no friends');
+    },
+  });
+  cmd_parse.register({
+    cmd: 'friend_block_list',
+    help: 'List all blocked users',
+    func: function (str: string, resp_func: CmdRespFunc<string>) {
+      if (!friend_list) {
+        return void resp_func('Friends list not loaded');
+      }
+      resp_func(null, Object.keys(friend_list).filter(friendIsBlocked).join(',') ||
+        'You have no blocked users');
+    },
+  });
+
+  settingsRegister({
+    social_presence: {
+      default_value: SOCIAL_ONLINE,
+      type: cmd_parse.TYPE_INT,
+      range: [SOCIAL_ONLINE,SOCIAL_INVISIBLE],
+      access_show: ['hidden'],
+    },
+  });
+
+  cmd_parse.registerValue('invisible', {
+    type: cmd_parse.TYPE_INT,
+    help: 'Hide rich presence information from other users',
+    label: 'Invisible',
+    range: [0,1],
+    get: () => (settings.social_presence === SOCIAL_INVISIBLE ? 1 : 0),
+    set: (v: number) => socialPresenceStatusSet(v ? SOCIAL_INVISIBLE : SOCIAL_ONLINE),
+  });
+
+  cmd_parse.registerValue('afk', {
+    type: cmd_parse.TYPE_INT,
+    help: 'Appear as idle to other users',
+    label: 'AFK',
+    range: [0,1],
+    get: () => (settings.social_presence === SOCIAL_AFK ? 1 : 0),
+    set: (v: number) => socialPresenceStatusSet(v ? SOCIAL_AFK : SOCIAL_ONLINE),
+  });
+
 }

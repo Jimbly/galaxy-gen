@@ -60,6 +60,11 @@ function Alea(seed) {
   this.reseed(seed);
 }
 Alea.prototype.reseed = function (seed) {
+  if (seed >= 4294967296) { // 2^32
+    // e.g. Date.now()
+    seed = mashI53(seed);
+  }
+
   // this.s0/s1/s2 are floating point between 0 and 1
   // this.c is a 32-bit int
   this.c = 1;

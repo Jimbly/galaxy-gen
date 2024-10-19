@@ -2,6 +2,7 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 import { fontSetReplacementChars } from 'glov/client/font';
+import { locateAsset } from 'glov/client/locate_asset';
 import { randFastCreate } from 'glov/client/rand_fast';
 import { getURLBase } from 'glov/client/urlhash';
 import { webFSGetFile } from 'glov/client/webfs';
@@ -24,7 +25,7 @@ export function profanityStartup() {
 export function profanityStartupLate() {
   // Async load of (potentially large) unicode replacement data, after all other loading is finished
   let scriptTag = document.createElement('script');
-  scriptTag.src = `${getURLBase()}replacement_chars.min.js`;
+  scriptTag.src = `${getURLBase()}${locateAsset('replacement_chars.min.js')}`;
   scriptTag.onload = function () {
     if (window.unicode_replacement_chars) {
       profanitySetReplacementChars(window.unicode_replacement_chars);

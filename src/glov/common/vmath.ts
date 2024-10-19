@@ -249,6 +249,12 @@ export function v2scale(out: Vec2, a: ROVec2, s: number): Vec2 {
   return out;
 }
 
+export function v2iScale(inout: Vec2, s: number): Vec2 {
+  inout[0] *= s;
+  inout[1] *= s;
+  return inout;
+}
+
 export function v2set(out: Vec2, a: number, b: number): Vec2 {
   out[0] = a;
   out[1] = b;
@@ -662,4 +668,11 @@ export function v4set(out: Vec4, a: number, b: number, c: number, d: number): Ve
 export function v4zero(out: Vec4): Vec4 {
   out[0] = out[1] = out[2] = out[3] = 0;
   return out;
+}
+
+export function mat4isFinite(m: Mat4): boolean {
+  return isFinite(m[0]) && isFinite(m[1]) && isFinite(m[2]) && isFinite(m[3]) &&
+    isFinite(m[4]) && isFinite(m[5]) && isFinite(m[6]) && isFinite(m[7]) &&
+    isFinite(m[8]) && isFinite(m[9]) && isFinite(m[10]) && isFinite(m[11]) &&
+    isFinite(m[12]) && isFinite(m[13]) && isFinite(m[14]) && isFinite(m[15]);
 }

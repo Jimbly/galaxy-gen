@@ -20,6 +20,7 @@ let mouse_log = false;
 
 export const click = mouseUpEdge; // eslint-disable-line @typescript-eslint/no-use-before-define
 export const inputClick = mouseUpEdge; // eslint-disable-line @typescript-eslint/no-use-before-define
+export const inputDrag = drag; // eslint-disable-line @typescript-eslint/no-use-before-define
 
 const { deprecate } = require('glov/common/util.js');
 deprecate(exports, 'mouseDown', 'mouseDownAnywhere, mouseDownMidClick, mouseDownOverBounds');
@@ -182,6 +183,7 @@ const { renderNeeded } = require('./engine.js');
 const in_event = require('./in_event.js');
 const local_storage = require('./local_storage.js');
 const { abs, max, min, sqrt } = Math;
+const { normalizeWheel } = require('./normalize_mousewheel.js');
 const pointer_lock = require('./pointer_lock.js');
 const settings = require('./settings.js');
 const { soundResume } = require('./sound.js');
@@ -367,13 +369,20 @@ function letWheelEventThrough(event) {
   return allow_all_events || isInputElement(event.target);
 }
 
+let event_filter = () => false;
+
+// `filter` returns true if the event should be allowed to propgate to the DOM, and not be sent to the engine
+export function inputSetEventFilter(filter) {
+  event_filter = filter;
+}
+
 function letEventThrough(event) {
   if (!event.target || allow_all_events || event.glov_do_not_cancel) {
     return true;
   }
   // Going to an input or related element
   return isInputElement(event.target) ||
-    String(event.target.className).includes('noglov');
+    String(event.target.className).includes('noglov') || event_filter(event);
   /* Not doing this: this causes legitimate clicks (e.g. when an edit box is focused)
       to be lost, instead, relying on `allow_all_events` when an HTML UI is active.
     // or, one of those is focused, and going away from it (e.g. input elem focused, clicking on canvas)
@@ -460,7 +469,8 @@ function onKeyDown(event) {
   let no_stop = letEventThrough(event) ||
     code >= KEYS.F5 && code <= KEYS.F12 || // Chrome debug hotkeys
     code === KEYS.I && (event.altKey && event.metaKey || event.ctrlKey && event.shiftKey) || // Safari, alternate Chrome
-    code === KEYS.R && event.ctrlKey; // Chrome reload hotkey
+    code === KEYS.R && event.ctrlKey || // Chrome reload hotkey
+    (code === KEYS.LEFT || code === KEYS.RIGHT) && event.altKey; // forward/back navigation
   if (!no_stop) {
     event.stopPropagation();
     event.preventDefault();
@@ -660,10 +670,10 @@ function onWheel(event) {
   let saved = mouse_moved; // don't trigger mouseMoved()
   onMouseMove(event, true);
   mouse_moved = saved;
-  let delta = -event.deltaY || event.wheelDelta || -event.detail;
+  let normalized = normalizeWheel(event);
   wheel_events.push({
     pos: [event.pageX, event.pageY],
-    delta: delta > 0 ? 1 : -1,
+    delta: -normalized.pixel_y/100,
     dispatched: false,
   });
 
@@ -851,9 +861,6 @@ export function startup(_canvas, params) {
   window.addEventListener('focus', onBlurOrFocus, false);
 
   handleTouches(canvas);
-
-  // For iOS, this is needed in test_fullscreen, but not here, for some reason
-  //window.addEventListener('gesturestart', ignored, false);
 
   window.addEventListener('beforeunload', beforeUnload, false);
 }
@@ -1243,8 +1250,12 @@ export function mouseOver(param) {
     for (let id in touches) {
       let touch = touches[id];
       if (checkPos(touch.cur_pos, pos_param)) {
-        touch.down_edge = 0;
-        touch.up_edge = 0;
+        if (touch.down_edge) {
+          touch.down_edge = 0;
+        }
+        if (touch.up_edge) {
+          touch.up_edge = 0;
+        }
         if (!param || !param.drag_target) {
           touch.dispatched = true;
         }
@@ -1478,20 +1489,22 @@ export function mouseUpEdge(param) {
   let pos_param = mousePosParam(param);
   let button = pos_param.button;
   let max_click_dist = param.max_dist || 50; // TODO: relative to camera distance?
-  let dragged_too_far = false;
+  let click_invalid = false;
 
   for (let touch_id in touches) {
     let touch_data = touches[touch_id];
     if (touch_data.total > max_click_dist) {
       // Do *not* register in_event_cb, would fire even when we would disregard this click
-      dragged_too_far = true;
-      continue;
-    }
-    if (!touch_data.up_edge) {
+      click_invalid = true;
       continue;
     }
     if (touch_data.long_press_dispatched) {
       // If this touch has already triggered a long-press, do not additionally trigger a click
+      // also, invalidate in_event_cb
+      click_invalid = true;
+      continue;
+    }
+    if (!touch_data.up_edge) {
       continue;
     }
     if (!(button === ANY || button === touch_data.button)) {
@@ -1510,7 +1523,7 @@ export function mouseUpEdge(param) {
     }
   }
 
-  if (param.in_event_cb && !mouse_over_captured && !dragged_too_far) {
+  if (param.in_event_cb && !mouse_over_captured && !click_invalid) {
     // TODO: Maybe need to also pass along earlier exclusions?  Working okay for now though.
     if (!param.phys) {
       param.phys = {};
@@ -1592,16 +1605,24 @@ export function drag(param) {
     return null;
   }
   param = param || {};
+  let bounds_is_finite = param.w !== undefined && isFinite(param.w);
   let pos_param = mousePosParam(param);
   let button = pos_param.button;
   let min_dist = param.min_dist || 0;
 
   for (let touch_id in touches) {
     let touch_data = touches[touch_id];
-    if (!(button === ANY || button === touch_data.button) || touch_data.dispatched_drag) {
+    if (!(button === ANY || button === touch_data.button) || touch_data.dispatched_drag ||
+      touch_id === param.not_touch_id
+    ) {
       continue;
     }
     if (checkPos(touch_data.start_pos, pos_param)) {
+      if (pointerLocked() && bounds_is_finite) {
+        // Likely just locked between frames and will get a drag on a wrong element at center of screen
+        // Generally, if pointer is locked, only non-positional drags are relevant
+        continue;
+      }
       camera2d.domDeltaToVirtual(delta, [touch_data.total/2, touch_data.total/2]);
       let total = delta[0] + delta[1];
       if (total < min_dist) {
@@ -1631,6 +1652,8 @@ export function drag(param) {
         start_time: touch_data.start_time,
         is_down_edge,
         down_time: touch_data.down_time,
+        touch_id,
+        dropped: touch_data.up_edge,
       };
     }
   }

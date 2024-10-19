@@ -26,6 +26,7 @@ import {
   ErrorCallback,
   HandlerSource,
   NetErrorCallback,
+  TSMap,
   WithRequired,
 } from 'glov/common/types';
 import {
@@ -115,11 +116,12 @@ export type ActionHandler<Entity extends EntityBaseServer> = (
   resp_func: ErrorCallback<unknown, string>
 ) => void;
 
-export type DataAssignmentType = 'number' | 'string' | 'array' | 'boolean' | 'object' | null;
+export type DataAssignmentType = 'number' | 'string' | 'array' | 'boolean' | 'object' | 'null';
 
 export type ActionDef<Entity extends EntityBaseServer> = {
   self_only: boolean;
-  allowed_data_assignments: Partial<Record<string, DataAssignmentType>>;
+  log_cat?: string;
+  allowed_data_assignments: Partial<Record<string, DataAssignmentType | DataAssignmentType[]>>;
   allow_any_assignment?: boolean;
   handler?: ActionHandler<Entity>;
 };
@@ -163,10 +165,14 @@ interface PlayerEntity extends EntityBaseServer {
 
 export type DirtyFields = Partial<Record<string, true>>;
 
+export function logCatForEntityActionID(action_id: string): string | undefined {
+  return entity_action_defs[action_id]?.log_cat;
+}
+
 export class EntityBaseServer extends EntityBaseCommon {
   declare entity_manager: ServerEntityManagerInterface;
 
-  declare is_player: boolean;
+  declare is_player: boolean; // on prototype
   in_dirty_list: boolean;
   dirty_fields: DirtyFields;
   dirty_sub_fields: Partial<Record<string, DirtyFields>>;
@@ -290,6 +296,7 @@ export class EntityBaseServer extends EntityBaseCommon {
     this.entity_manager.dirty(this, field, delete_reason);
   }
 
+  private action_async_locks?: TSMap<string>;
   handleAction(action_data: ActionHandlerParam, resp_func: NetErrorCallback<unknown>): void {
     let { action_id, ent_id, predicate, self, /*payload, */data_assignments, src } = action_data;
 
@@ -322,22 +329,36 @@ export class EntityBaseServer extends EntityBaseCommon {
           return void resp_func('ERR_FIELD_MISMATCH');
         }
       }
+      if (this.action_async_locks && this.action_async_locks[field]) {
+        this.debugSrc(src, `Rejecting action ${action_id} ` +
+          `due to field "${field}" has outstanding async lock "${this.action_async_locks[field]}"`);
+        return void resp_func('ERR_ASYNC_LOCK');
+      }
     }
 
     for (let key in data_assignments) {
       let allowed_type = allowed_data_assignments[key];
-      let provided_type = Array.isArray(data_assignments[key]) ? 'array' : typeof data_assignments[key];
+      let value = data_assignments[key];
+      let provided_type: DataAssignmentType = value === null ? 'null' :
+        Array.isArray(value) ? 'array' :
+        typeof value as DataAssignmentType;
       if (allow_any_assignment) {
-        // OK
-      } else if (allowed_type === null && data_assignments[key] === null) {
         // OK
       } else if (!allowed_type) {
         this.errorSrc(src, `Action ${action_id} attempted to set disallowed field "${key}"`);
         return void resp_func('ERR_INVALID_ASSIGNMENT');
-      } else if (provided_type !== allowed_type) {
-        this.errorSrc(src, `Action ${action_id} attempted to set field "${key}"` +
-          ` to incorrect type (${provided_type})`);
-        return void resp_func('ERR_INVALID_ASSIGNMENT');
+      } else {
+        let ok = false;
+        if (Array.isArray(allowed_type)) {
+          ok = allowed_type.includes(provided_type);
+        } else {
+          ok = provided_type === allowed_type;
+        }
+        if (!ok) {
+          this.errorSrc(src, `Action ${action_id} attempted to set field "${key}"` +
+            ` to incorrect type (${provided_type})`);
+          return void resp_func('ERR_INVALID_ASSIGNMENT');
+        }
       }
     }
 
@@ -349,25 +370,49 @@ export class EntityBaseServer extends EntityBaseCommon {
           if (!data_assignments) {
             data_assignments = action_data.data_assignments = {}; // in case the handler wants to add some
           }
-          let is_async = true;
+          let is_async: boolean | 'unknown' = 'unknown';
           handler.call(this, action_data, (err?: string | null, data?: unknown) => {
-            is_async = false;
+            if (is_async === true) {
+              if (predicate) {
+                let { field } = predicate;
+                let next_value = data_assignments[field];
+                assert(next_value && typeof next_value === 'string');
+                assert(this.action_async_locks);
+                assert.equal(next_value, this.action_async_locks[field]);
+                delete this.action_async_locks[field];
+              }
+            } else {
+              is_async = false;
+            }
             result = data;
             next(err);
           });
           if (is_async) {
-            assert(!predicate); // Otherwise, predicate is checked and applied non-atomically
+            is_async = true;
+            if (predicate) {
+              // Lock based on the predicated field until this action completes, otherwise
+              // some other action could pass its predicate and apply changes out of order
+              let { field } = predicate;
+              let next_value = data_assignments[field];
+              assert(next_value && typeof next_value === 'string');
+              this.action_async_locks = this.action_async_locks || {};
+              this.action_async_locks[field] = next_value;
+            }
           }
         } else {
           next();
         }
       },
       (next) => {
-        // If action was successful, apply data changes
-        // (should include setting the expected field)
-        for (let key in data_assignments) {
-          let value = data_assignments[key];
-          this.setData(key, value);
+        if (!this.entity_manager.entities[this.id]) {
+          // we've been deleted (in the handler), do not set any data
+        } else {
+          // If action was successful, apply data changes
+          // (should include setting the expected field)
+          for (let key in data_assignments) {
+            let value = data_assignments[key];
+            this.setData(key, value);
+          }
         }
         next();
       },
@@ -435,7 +480,6 @@ export class EntityBaseServer extends EntityBaseCommon {
     }
   }
 }
-
 EntityBaseServer.prototype.is_player = false;
 
 // Optional app-specific override

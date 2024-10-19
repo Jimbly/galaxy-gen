@@ -1,4 +1,5 @@
 import { assert } from 'console';
+import { CHAT_FLAG_EMOTE } from 'glov/common/enums';
 import { FIFO, fifoCreate } from 'glov/common/fifo';
 import { Packet } from 'glov/common/packet';
 import {
@@ -8,12 +9,13 @@ import {
   ChatMessageDataSaved,
   ClientHandlerSource,
   ErrorCallback,
+  NetResponseCallback,
 } from 'glov/common/types';
 import { sanitize, secondsToFriendlyString } from 'glov/common/util';
 import { ChannelWorker } from './channel_worker';
 
 const CHAT_MAX_LEN = 1024; // Client must be set to this or fewer
-const CHAT_USER_FLAGS = 0x1;
+const CHAT_USER_FLAGS = CHAT_FLAG_EMOTE;
 const CHAT_MAX_MESSAGES = 50;
 
 const CHAT_COOLDOWN_DATA_KEY = 'public.chat_cooldown';
@@ -21,8 +23,11 @@ const CHAT_MINIMUM_ACCOUNT_AGE_KEY = 'public.chat_minimum_account_age';
 const CHAT_DATA_KEY = 'private.chat';
 
 export interface ChattableWorker extends ChannelWorker {
+  // internal state, not implemented by caller
+  chat_max_messages?: number; // set by chatSetMaxMessages() if dynamic, or on prototype if static
   chat_msg_timestamps?: FIFO< { timestamp: number; id: string }>;
   chat_records_map?: Partial<Record<string, { timestamp: number; id: string }>>;
+  // APIs implemented by caller to modify ChattableWorker behavior
   chatFilter?(source: ClientHandlerSource, msg: string): string | null;
   chatDecorateData?(data_saved: ChatMessageDataSaved, data_broadcast: ChatMessageDataBroadcast): void;
   chatCooldownFilter?(source: ClientHandlerSource): boolean;
@@ -47,12 +52,49 @@ export function chatSetMinimumAccountAge(worker: ChannelWorker, minutes: number)
   worker.setChannelData(CHAT_MINIMUM_ACCOUNT_AGE_KEY, minutes);
 }
 
-export function chatGet(worker: ChannelWorker): ChatHistoryData | null {
+function chatGet(worker: ChannelWorker): ChatHistoryData | null {
   return worker.getChannelData(CHAT_DATA_KEY, null);
 }
 
-export function chatClear(worker: ChannelWorker): void {
-  return worker.setChannelData(CHAT_DATA_KEY, null);
+export function chatClear(worker: ChannelWorker): boolean {
+  if (!worker.getChannelData(CHAT_DATA_KEY, null)) {
+    return false;
+  }
+  worker.setChannelData(CHAT_DATA_KEY, null);
+  return true;
+}
+
+export function chatSetMaxMessages(worker: ChattableWorker, max_messages: number): void {
+  let chat = chatGet(worker);
+  if (chat) {
+    let { msgs, idx } = chat;
+    if (max_messages === msgs.length) {
+      // no change, and we've previously wrapped
+    } else if (idx === msgs.length && msgs.length < max_messages) {
+      // we've not wrapped, and the new limit is larger than our number of messages
+    } else {
+      // otherwise, need some fixup
+      // grab ordered list of messages
+      let new_list = [];
+      for (let ii = 0; ii < msgs.length; ++ii) {
+        let idx2 = (idx + ii) % msgs.length;
+        let elem = msgs[idx2];
+        if (elem && elem.msg) {
+          new_list.push(elem);
+        }
+      }
+      let new_idx = new_list.length;
+      if (max_messages < new_list.length) {
+        new_list = new_list.slice(-max_messages);
+        new_idx = 0;
+      }
+      worker.setChannelData<ChatHistoryData>(CHAT_DATA_KEY, {
+        idx: new_idx,
+        msgs: new_list,
+      });
+    }
+  }
+  worker.chat_max_messages = max_messages;
 }
 
 export function sendChat(
@@ -73,9 +115,10 @@ export function sendChat(
       msgs: [],
     };
   }
-  let last_idx = (chat.idx + CHAT_MAX_MESSAGES - 1) % CHAT_MAX_MESSAGES;
+  let max_messages = (typeof worker.chat_max_messages === 'number') ? worker.chat_max_messages : CHAT_MAX_MESSAGES;
+  let last_idx = (chat.idx + max_messages - 1) % max_messages;
   let last_msg = chat.msgs[last_idx];
-  if (id && last_msg && last_msg.id === id && last_msg.msg === msg) {
+  if (id && last_msg && last_msg.id === id && last_msg.msg === msg && !(flags & ~CHAT_USER_FLAGS)) {
     return 'ERR_ECHO';
   }
   let ts = Date.now();
@@ -87,7 +130,7 @@ export function sendChat(
     worker.chatDecorateData(data_saved, data_broad);
   }
   chat.msgs[chat.idx] = data_saved;
-  chat.idx = (chat.idx + 1) % CHAT_MAX_MESSAGES;
+  chat.idx = (chat.idx + 1) % max_messages;
   // Setting whole 'chat' blob, since we re-serialize the whole metadata anyway
   if (!worker.channel_server.restarting) {
     worker.setChannelData(CHAT_DATA_KEY, chat);
@@ -105,13 +148,13 @@ function denyChat(
 ): string {
   let { user_id, channel_id, display_name } = source; // user_id is falsey if not logged in
   let id = user_id || channel_id;
-  worker.logSrc(source,
+  worker.logSrcCat(source, 'chat',
     `suppressed chat from ${id} ("${display_name}") (${channel_id}) (${err}): ${JSON.stringify(msg)}`);
   if (err === 'ERR_ACCOUNT_AGE') {
     return `Your account is too recent to chat in this world. Wait ${time_left} before writing again.`;
   }
   if (err === 'ERR_COOLDOWN') {
-    return `This world has chat slow mode enabled. Wait ${time_left} seconds before writting again.`;
+    return `This world has chat slow mode enabled. Wait ${time_left} seconds before writing again.`;
   }
   return err;
 }
@@ -190,7 +233,7 @@ function chatReceive(
     return denyChat(worker, source, err, msg);
   }
   // Log entire, non-truncated chat string
-  worker.logSrc(source, `chat from ${id} ("${display_name}") (${channel_id}): ${JSON.stringify(msg)}`);
+  worker.logSrcCat(source, 'chat', `chat from ${id} ("${display_name}") (${channel_id}): ${JSON.stringify(msg)}`);
   return null;
 }
 
@@ -206,7 +249,7 @@ export function handleChat(this: ChattableWorker,
 export function handleChatGet(this: ChattableWorker,
   source: ClientHandlerSource,
   data: void,
-  resp_func: ErrorCallback<ChatHistoryData | null>
+  resp_func: NetResponseCallback<ChatHistoryData | null>
 ): void {
   resp_func(null, chatGet(this));
 }

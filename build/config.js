@@ -1,11 +1,16 @@
 module.exports = function (gb) {
   let config = {
+    asset_hashing: false, // Set to true if assets will be deployed via things like a write-once CDN with long caching
     server_js_files: [
       '**/*.[jt]s',
       '!**/*.d.ts',
       '!**/client/**/*',
     ],
-    server_static: ['**/glov/common/words/*.gkg', '**/glov/common/words/*.txt'],
+    server_static: [
+      '**/glov/common/words/*.gkg',
+      '**/glov/common/words/*.txt',
+      'client_json:client/img/font/*.json'
+    ],
     all_js_files: ['**/*.[jt]s', '!client/vendor/**/*'],
     client_js_files: [
       '**/*.[jt]s',
@@ -21,6 +26,8 @@ module.exports = function (gb) {
     client_css: ['client/**/*.css', '!client/sounds/Bfxr/**'],
     client_png: [
       'client/**/*.png',
+      '!client/atlases/**',
+      'client_autoatlas:**/*.png',
     ],
     client_png_alphafix: [
       '**',
@@ -40,6 +47,8 @@ module.exports = function (gb) {
       'client/**/*.glb',
       'client/**/*.ico',
       'client/**/*.ttf',
+      'client/**/*.woff',
+      'client/**/*.woff2',
       '!**/unused/**',
       '!client/sounds/Bfxr/**',
       // 'client/**/vendor/**',
@@ -50,6 +59,7 @@ module.exports = function (gb) {
     ],
     compress_files: [
       'client/**',
+      '!**/*.txp',
       '!**/*.png',
       '!**/*.jpg',
       '!**/*.mp3',
@@ -65,12 +75,35 @@ module.exports = function (gb) {
       'glov/common/words/*.gkg',
       'glov/common/words/*.txt',
       'client_texproc:**/*.tflag',
+      'client_texproc_output:**/*.png',
+      'client_texproc_output:!**/favicon*.png',
+      'client_autoatlas:**.auat',
     ],
-    fsdata_embed: ['.json', '.tflag'],
+    fsdata_embed: ['.json', '.tflag', '.auat'],
     fsdata_strip: ['.json'],
+    fsdata_sized_embed: {
+      globs: [
+        '**/*.png',
+      ],
+      max_size: 16*1024, // fine to be notably higher if the textures are actually used?
+    },
     // files in client/*, presumably bundled into fsdata, that should be placed in server/*
     // Note: no files in base GLOV.js build, but input cannot be empty, so using dummy path
     server_fsdata: ['client/does/not/exists/*'],
+    asset_hashed_files_dev: [
+      'client_fsdata:**',
+      'client_texproc_output:**',
+    ],
+    asset_hashed_files_prod: [
+      'build.prod.client_fsdata:**',
+      'build.prod.texfinal:**',
+    ],
+    asset_hashed_files: [
+      'client_static:**',
+      'client_autosound:**',
+      'client_single_min:**',
+    ],
+    asset_hashed_files_need_rewrite: [],
     default_defines: {
       PLATFORM: 'web',
       ENV: '',
@@ -85,6 +118,7 @@ module.exports = function (gb) {
     }],
     extra_client_tasks: [],
     extra_prod_inputs: [], // Will bypass the production zip bundling, but still get in the raw production output
+    extra_prod_tasks: [],
     extra_zip_inputs: [],
     client_intermediate_input: [
       'client_json:**',

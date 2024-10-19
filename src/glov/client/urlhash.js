@@ -17,6 +17,7 @@
     push: true, // do a pushState instead of replaceState when this changes
     hide_values: { foo: true }, // do not add to URL if values is in the provided set
     route_only: true, // never show this value, but still use it to influence routes - use with routeFixed()
+    clear_on_route_change: true, // clear this value if a route-based URL is pushed, e.g. treat as part of a route
   });
   urlhash.set('pos', '3,4');
   urlhash.get('pos')
@@ -47,14 +48,36 @@ let page_base = (document.location.href || '').match(/^[^#?]+/)[0]; // remove se
 // }
 // Removes index.html et all
 let url_base = page_base.replace(/[^/]*$/,'');
+if (url_base.endsWith('/a/')) {
+  // Slightly hacky, if an index.html is stored forever in the hashed assets folder, adjust to deal with this
+  url_base = url_base.slice(0, -2);
+}
 let on_change = [];
 
+// e.g. http://site.com/ http://company.com/app/
 export function getURLBase() {
   return url_base;
 }
 
+// e.g. http://site.com/ http://company.com/app/ http://site.com/page.html (for multi-page apps)
+// Probably don't want this, call getLinkURL() instead
 export function getURLPageBase() {
   return page_base;
+}
+
+// given something like w/1234 or ?foo=bar, return http://site.com/w/1234 or http://site.com/?foo=bar
+//  or http://site.com/page.html?w/1234 or http://site.com/page.html?foo=bar appropriately
+export function getLinkURL(suburl) {
+  let mid = '';
+  if (!page_base.endsWith('/') && suburl && !suburl.startsWith('?')) {
+    // a page_base like `foo.com/index.html` and a route url like `user/foo`, delineate them
+    mid = '?';
+  }
+  let url = `${page_base}${mid}${suburl}`;
+  if (url.endsWith('?')) {
+    url = url.slice(0, -1);
+  }
+  return url;
 }
 
 export function onChange(cb) {
@@ -83,7 +106,11 @@ let routes = [];
 
 function queryString() {
   let href = String(document.location);
-  return href.slice(page_base.length);
+  href = href.slice(page_base.length);
+  if (href.includes('#')) {
+    href = href.slice(0, href.indexOf('#'));
+  }
+  return href;
 }
 
 const regex_value = /[^\w]\w+=([^&]+)/;
@@ -117,13 +144,14 @@ function getValue(query_string, opts) {
 
 let last_history_str = null; // always re-set it on the first update
 
-function goInternal(query_string) { // with the '?'
+// if `skip_apply` is set, we update the browser's URL/history, but do _not_ call any callbacks
+function goInternal(query_string, for_init, skip_apply, route_only) {
   // Update all values, except those hidden by what is currently in the query string
   let hidden = {};
   for (let key in params) {
     let opts = params[key];
     if (opts.hides) {
-      if (getValue(query_string, opts)) {
+      if (for_init ? opts.value : getValue(query_string, opts)) {
         for (let otherkey in opts.hides) {
           hidden[otherkey] = 1;
         }
@@ -137,13 +165,17 @@ function goInternal(query_string) { // with the '?'
       continue;
     }
     let opts = params[key];
-    let new_value = getValue(query_string, opts);
+    let new_value = for_init ? opts.value : getValue(query_string, opts);
     if (opts.type === TYPE_SET) {
       for (let v in new_value) {
-        if (!opts.value[v]) {
+        if (!opts.value[v] || for_init) {
           opts.value[v] = 1;
           dirty[key] = true;
         }
+      }
+      if (route_only && !(opts.routes || opts.clear_on_route_change)) {
+        // do not clear any existing querystring values from a route_only operation
+        continue;
       }
       for (let v in opts.value) {
         if (!new_value[v]) {
@@ -152,27 +184,32 @@ function goInternal(query_string) { // with the '?'
         }
       }
     } else {
-      if (new_value !== opts.value) {
+      if (route_only && !(opts.routes || opts.clear_on_route_change) && !new_value) {
+        // do not clear any existing querystring values from a route_only operation
+        continue;
+      }
+      if (new_value !== opts.value || for_init) {
         dirty[key] = true;
         opts.value = new_value;
       }
     }
   }
 
-  // Call all change callbacks
-  for (let key in dirty) {
-    let opts = params[key];
-    if (opts.change) {
-      opts.change(opts.value);
+  if (!skip_apply) {
+    // Call all change callbacks
+    for (let key in dirty) {
+      let opts = params[key];
+      if (opts.change) {
+        opts.change(opts.value, for_init);
+      }
     }
+    callEach(on_change, for_init);
   }
-  callEach(on_change);
 }
 
 let eff_title;
-function toString() {
+function toString(route_only) {
   eff_title = '';
-  let values = [];
   let hidden = {};
   for (let key in params) {
     let opts = params[key];
@@ -217,6 +254,7 @@ function toString() {
     }
     break;
   }
+  let values = [];
   for (let key in params) {
     if (hidden[key]) {
       continue;
@@ -239,11 +277,14 @@ function toString() {
     eff_title = title_transformer(eff_title);
   }
   eff_title = String(eff_title);
+  if (route_only) {
+    values = [];
+  }
   return `${root_value}${values.length ? '?' : ''}${values.join('&')}`;
 }
 
 export function refreshTitle() {
-  toString();
+  toString(false);
   if (eff_title && eff_title !== document.title) {
     document.title = eff_title;
   }
@@ -259,7 +300,7 @@ function periodicRefreshTitle() {
 function onPopState() {
   let query_string = queryString();
   last_history_str = query_string;
-  goInternal(query_string);
+  goInternal(query_string, false, false, false);
   refreshTitle();
 }
 
@@ -268,19 +309,23 @@ export function onURLChange(cb) {
   on_url_change = cb;
 }
 
+let history_update_deferred = false;
+export function historyDeferUpdate(defer) {
+  history_update_deferred = defer;
+}
+
 let last_history_set_time = 0;
 let scheduled = false;
 let need_push_state = false;
 function updateHistoryCommit() {
   profilerStart('updateHistoryCommit');
+  if (history_update_deferred) {
+    setTimeout(updateHistoryCommit, 1000);
+    return void profilerStop();
+  }
   scheduled = false;
   last_history_set_time = Date.now();
-  let mid = '';
-  if (!page_base.endsWith('/') && last_history_str && !last_history_str.startsWith('?')) {
-    // a page_base like `foo.com/index.html` and a route url like `user/foo`, delineate them
-    mid = '?';
-  }
-  let url = `${page_base}${mid}${last_history_str}`;
+  let url = getLinkURL(last_history_str);
   if (url.endsWith('?')) {
     url = url.slice(0, -1);
   }
@@ -304,7 +349,7 @@ function updateHistoryCommit() {
   profilerStop();
 }
 function updateHistory(new_need_push_state) {
-  let new_str = toString();
+  let new_str = toString(false);
   if (last_history_str === new_str) {
     return;
   }
@@ -347,6 +392,11 @@ export function startup(param) {
   }
 }
 
+// Optional: fire all relevant `change` callbacks for any parameters with values
+export function urlhashFireInitialChanges() {
+  goInternal(null, true, false, false);
+}
+
 function routeEx(new_route) {
   let { keys } = new_route;
   for (let ii = 0; ii < keys.length; ++ii) {
@@ -369,7 +419,7 @@ export function route(route_string) {
     keys.push(match);
     return '([^/&?]+)';
   });
-  let regex = new RegExp(`^\\??${base}(?:$|\\?)`);
+  let regex = new RegExp(`^\\??${base}(?:$|\\?|#)`);
   routeEx({
     route_string,
     regex,
@@ -380,7 +430,7 @@ export function route(route_string) {
 // For a route that has no parameters, e.g. `foo.html`
 // Needs an associated key already registered, then set(key, '1') and set(key, '') enter and leave this route
 export function routeFixed(route_string, key) {
-  let regex = new RegExp(`^\\??${route_string}(?:$|\\?)`);
+  let regex = new RegExp(`^\\??${route_string}(?:$|\\?|#)`);
   routeEx({
     route_string,
     regex,
@@ -393,7 +443,7 @@ export function register(opts) {
   assert(opts.key);
   assert(!params[opts.key]);
   opts.type = opts.type || TYPE_STRING;
-  let regex_search = `(?:[^\\w])${opts.key}=([^&]+)`;
+  let regex_search = `(?:[^\\w])${opts.key}=([^&#]+)`;
   let regex_type = '';
   if (opts.type === TYPE_SET) {
     regex_type = 'g';
@@ -470,7 +520,20 @@ export function get(key) {
   return opts.value;
 }
 
-export function go(query_string) { // with the '?'
-  goInternal(query_string);
+export function getRouteString() {
+  return toString(true);
+}
+
+// query_string with the '?'
+export function go(query_string, skip_apply) {
+  goInternal(query_string, false, skip_apply, false);
+  updateHistory(true);
+}
+
+// apply primarily the route-based parts of the URL, leaving all (existing)
+// querystring-based ones alone, although this will also apply changes to
+// querystring-based values if passed in.
+export function goRoute(route_string, skip_apply) {
+  goInternal(route_string, false, skip_apply, true);
   updateHistory(true);
 }
