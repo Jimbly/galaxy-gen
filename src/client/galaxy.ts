@@ -3,19 +3,29 @@ export const STAR_LAYER = 6;
 export const MAX_LAYER = 8;
 import assert from 'assert';
 import * as engine from 'glov/client/engine';
-import * as textures from 'glov/client/textures';
-import { mashString, randCreate } from 'glov/common/rand_alea';
+import { Texture } from 'glov/client/sprites';
+import {
+  TEXTURE_FORMAT,
+  textureLoad,
+} from 'glov/client/textures';
+import {
+  mashString,
+  randCreate,
+} from 'glov/common/rand_alea';
+import { WithRequired } from 'glov/common/types';
 import {
   clamp,
   easeInOut,
   easeOut,
   lerp,
 } from 'glov/common/util';
-import * as SimplexNoise from 'simplex-noise';
+import SimplexNoise from 'simplex-noise';
 import { solarSystemCreate } from './solar_system';
 import { hueFromID } from './star_types';
 
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
+
+type SolarSystem = ReturnType<typeof solarSystemCreate>;
 
 const SUMSQ = 0.75;
 
@@ -47,12 +57,47 @@ let counts = {
   renderStars: 0,
 };
 
-let star_buf_pool = [];
-let hue_buf_pool = [];
+let star_buf_pool: Float32Array[] = [];
+let hue_buf_pool: Uint8Array[] = [];
 
 let noise = new Array(2);
 let rand = randCreate(0);
-function genGalaxy(params) {
+type PerturbParams = {
+  noise_freq: number;
+  noise_weight: number;
+};
+type GenGalaxyParams = {
+  seed: number;
+  arms: number;
+  buf_dim: number;
+  twirl: number;
+  center: number;
+  poi_count: number;
+  len_mods: number;
+  noise_freq: number;
+  noise_weight: number;
+  star_count: number;
+  max_zoom: number;
+  layer1?: PerturbParams;
+  layer2?: PerturbParams;
+  layer3?: PerturbParams;
+  layer4?: PerturbParams;
+  layer5?: PerturbParams;
+};
+type POI = {
+  x: number;
+  y: number;
+  type: number;
+  v: number;
+};
+type GenGalaxyRet = {
+  data: Float32Array;
+  sum: number;
+  sumsq: number;
+  star_count: number;
+  pois: POI[];
+};
+function genGalaxy(params: GenGalaxyParams): GenGalaxyRet {
   let {
     seed, arms, buf_dim, twirl, center, poi_count, len_mods, noise_freq, noise_weight,
     star_count, max_zoom,
@@ -163,17 +208,41 @@ function genGalaxy(params) {
   };
 }
 
-let tex_pool = [];
+let tex_pool: Texture[] = [];
 let tex_id_idx = 0;
 
-function Galaxy(params) {
-  this.params = params;
-  let buf_dim = this.buf_dim = params.buf_dim;
-  let tex_total_size = this.tex_total_size = buf_dim * buf_dim;
-  this.tex_data = new Uint8Array(tex_total_size * 4);
-  this.layers = [];
-  this.work_frame = 0;
-  this.loading = false;
+type GalaxyLayer = GalaxyCell[];
+
+class Galaxy {
+  buf_dim: number;
+  tex_total_size: number;
+  tex_data: Uint8Array;
+  layers: GalaxyLayer[];
+  work_frame = 0;
+  loading = false;
+  constructor(public params: GenGalaxyParams) {
+    let buf_dim = this.buf_dim = params.buf_dim;
+    let tex_total_size = this.tex_total_size = buf_dim * buf_dim;
+    this.tex_data = new Uint8Array(tex_total_size * 4);
+    this.layers = [];
+  }
+
+  sample_buf?: Float32Array;
+  last_sample_buf?: string;
+  declare getSampleBuf: (layer_idx: number, cx: number, cy: number) => Float32Array | null;
+
+  declare getCell: (layer_idx: number, cell_idx: number, just_alloc?: boolean) => GalaxyCell;
+  declare realizeStars: (cell: GalaxyCell) => boolean;
+  declare renderStars: (cell: GalaxyCell) => boolean;
+  declare assignChildStars: (cell: GalaxyCell) => void;
+  declare perturb: (cell: GalaxyCell, params: { noise_freq: number; noise_weight: number })=> void;
+
+  stars?: Partial<Record<number, Star>>;
+  declare getStar: (star_id: number) => Star | null;
+  declare getStarData: (star: Star) => asserts star is WithRequired<Star, 'solar_system'>;
+  declare dispose: () => void;
+  declare getCellTextured: (layer_idx: number, cell_idx: number) => GalaxyCell;
+  declare starsNear: (x: number, y: number, num: number) => number[];
 }
 
 const SAMPLE_PAD = 4;
@@ -202,22 +271,22 @@ const SAMPLE_PAD = 4;
 
 // from http://paulbourke.net/miscellaneous/imageprocess/
 let cubic_weights = (function () {
-  function cub(v) {
+  function cub(v: number): number {
     return v*v*v;
   }
-  function p(v) {
+  function p(v: number): number {
     return max(0, v);
   }
-  function r(x) {
+  function r(x: number): number {
     let v= 1/6 * (cub(p(x+2)) - 4 * cub(p(x+1)) + 6*cub(p(x)) - 4 * cub(p(x-1)));
     return v;
   }
-  function weight(ii, jj, dx, dy) {
+  function weight(ii: number, jj: number, dx: number, dy: number): number {
     return r(ii - dx/4) * r(jj - dy/4);
   }
-  let ret = [];
+  let ret: number[][][] = [];
   for (let dy = 0; dy < 4; ++dy) {
-    let row = [];
+    let row: number[][] = [];
     ret.push(row);
     for (let dx = 0; dx < 4; ++dx) {
       let w = [];
@@ -231,7 +300,7 @@ let cubic_weights = (function () {
   }
   return ret;
 }());
-function expandBicubic16X(data, buf_dim, xq, yq) {
+function expandBicubic16X(data: Float32Array, buf_dim: number, xq: number, yq: number): Float32Array {
   ++counts.bicubic;
   let sample_dim = buf_dim + SAMPLE_PAD * 2;
   let ret = new Float32Array(buf_dim * buf_dim);
@@ -262,11 +331,11 @@ function expandBicubic16X(data, buf_dim, xq, yq) {
 
 
 // Gets a padded buffer from the specified cell and all neighbors
-Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
+Galaxy.prototype.getSampleBuf = function (layer_idx: number, cx: number, cy: number): Float32Array | null {
   let { sample_buf, buf_dim } = this;
   let key = [layer_idx, cx, cy].join();
   if (this.last_sample_buf === key) {
-    return sample_buf;
+    return sample_buf!;
   }
   let layer_res = pow(LAYER_STEP, layer_idx);
   let sample_dim = buf_dim + SAMPLE_PAD * 2;
@@ -274,7 +343,7 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
     sample_buf = this.sample_buf = new Float32Array(sample_dim*sample_dim);
   }
   // Call getCell() on all requirements (may recurse into here)
-  let bufs = [];
+  let bufs: (Float32Array|null)[][] = [];
   for (let dy = -1; dy <= 1; ++dy) {
     let py = cy + dy;
     bufs[dy] = [];
@@ -289,6 +358,7 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
           return null;
         }
         buf = cell.data;
+        assert(buf);
       }
       bufs[dy][dx] = buf;
     }
@@ -319,21 +389,31 @@ Galaxy.prototype.getSampleBuf = function (layer_idx, cx, cy) {
   return sample_buf;
 };
 
+type StarProgress = {
+  state: unknown;
+  y: number;
+  out: number;
+};
+
 const STAR_QUOTA = 14; // ms
-let realize_scratch_buf;
+let realize_scratch_buf: Float64Array;
 let realize_scratch_buf_size = 0;
-Galaxy.prototype.realizeStars = function (cell) {
+Galaxy.prototype.realizeStars = function (cell: GalaxyCell): boolean {
   let start = Date.now();
   let {
     layer_idx, cell_idx, star_count, data, sum, sumsq, x0, y0, w, pois,
     star_progress, star_storage,
   } = cell;
+  assert(star_count !== undefined);
+  assert(sum !== undefined);
+  assert(sumsq !== undefined);
+  assert(pois);
   let scale = star_count / lerp(SUMSQ, sum, sumsq) * 1.03;
   assert.equal(layer_idx, STAR_LAYER); // consistent IDs only on this layer
   let { buf_dim, params } = this;
   let { seed } = params;
   let yy0;
-  let out_idx;
+  let out_idx: number;
   ++counts.realizeStars;
   if (!star_progress) {
     assert(star_count >= pois.length);
@@ -348,9 +428,12 @@ Galaxy.prototype.realizeStars = function (cell) {
     }
     yy0 = star_progress.y;
     out_idx = star_progress.out;
+    assert(star_storage);
   }
   // const value_scale = 0.75; // Was: (sum / star_count), which was ~0.75 before SUMSQ
-  function addStarSub(x, y) {
+  function addStarSub(x: number, y: number): void {
+    assert(star_storage); // workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+    assert(pois); // workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
     ++counts.star;
     let idx;
     if (out_idx === star_count) {
@@ -367,7 +450,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     assert(yfloat >= cell.y0);
     assert(yfloat < cell.y0 + w);
   }
-  function addStar(xx, yy) {
+  function addStar(xx: number, yy: number): void {
     // type: rand.range(POI_TYPE_OFFS.length),  // this choice now implicit from the ID
     // v: (0.5 + rand.random()) * value_scale, // this choice now implicit from the ID
     let x = x0 + xx/buf_dim * w;
@@ -375,6 +458,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     addStarSub(x, y);
   }
   if (star_count) {
+    assert(data);
     let expire = start + STAR_QUOTA;
     if (out_idx === 0) {
       for (let ii = 0; ii < pois.length; ++ii) {
@@ -423,6 +507,7 @@ Galaxy.prototype.realizeStars = function (cell) {
     }
     let mod0 = w/LAYER_STEP;
     temp.sort((ai, bi) => {
+      assert(star_storage); // workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
       let ax = star_storage[ai];
       let ay = star_storage[ai+1];
       let bx = star_storage[bi];
@@ -475,16 +560,16 @@ Galaxy.prototype.realizeStars = function (cell) {
 };
 
 // https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
-function hash(x) {
+function hash(x: number): number {
   x = (((x >>> 16) ^ x) * 0x45d9f3b) >>> 0;
   x = (((x >>> 16) ^ x) * 0x45d9f3b) >>> 0;
   x = ((x >>> 16) ^ x) >>> 0;
   return x;
 }
-function starValueFromID(id) {
+function starValueFromID(id: number): number {
   return (0.5 + hash(id) / 0xffffffff) * 0.75;
 }
-function starVisTypeFromID(id) {
+function starVisTypeFromID(id: number): number {
   return ((hash(id) & 0x7fff) / 0x8000 * POI_TYPE_OFFS.length) | 0;
 }
 
@@ -499,7 +584,7 @@ function starVisTypeFromID(id) {
     // 0,0,0,
   ];
   // Note: this function gets called recursively
-  Galaxy.prototype.renderStars = function (cell) {
+  Galaxy.prototype.renderStars = function (cell: GalaxyCell): boolean {
     let { layer_idx, x0, y0, w, cx, cy } = cell;
     let { buf_dim } = this;
     let scale = buf_dim / w;
@@ -520,7 +605,7 @@ function starVisTypeFromID(id) {
         assert(!n.tex); // just for debug, make sure this neighbor we're writing into hasn't already made a texture
         if (!n.star_buf) {
           if (star_buf_pool.length) {
-            n.star_buf = star_buf_pool.pop();
+            n.star_buf = star_buf_pool.pop()!;
             n.star_buf.fill(0);
           } else {
             n.star_buf = new Float32Array(buf_dim * buf_dim);
@@ -530,7 +615,7 @@ function starVisTypeFromID(id) {
         ndata.push(n.star_buf);
         if (!n.hue_buf) {
           if (hue_buf_pool.length) {
-            n.hue_buf = hue_buf_pool.pop();
+            n.hue_buf = hue_buf_pool.pop()!;
             n.hue_buf.fill(0);
           } else {
             n.hue_buf = new Uint8Array(buf_dim * buf_dim);
@@ -543,12 +628,16 @@ function starVisTypeFromID(id) {
     assert(ndata[4] === cell.star_buf);
     ++counts.renderStars;
 
-    let weights = [];
-    let xpos = [];
-    let ypos = [];
+    let weights: number[] = [];
+    let xpos: number[] = [];
+    let ypos: number[] = [];
     // let { max_zoom } = this.params;
     // let max_res = pow(2, max_zoom);
     let { star_count, star_storage, star_storage_start, star_idx } = cell;
+    assert(star_storage);
+    assert(star_storage_start !== undefined);
+    assert(star_count !== undefined);
+    assert(star_idx !== undefined);
     let store_idx = star_storage_start*2;
     for (let ii = 0; ii < star_count; ++ii) {
       let x = star_storage[store_idx++];
@@ -642,14 +731,27 @@ function starVisTypeFromID(id) {
   };
 }
 
-Galaxy.prototype.assignChildStars = function (cell) {
+type CellChildData = {
+  pois: POI[];
+  star_count?: number;
+  star_idx?: number;
+  store_start?: number;
+  store_count?: number;
+};
+
+Galaxy.prototype.assignChildStars = function (cell: GalaxyCell): void {
   let { buf_dim } = this;
   let { pois, star_count, sum, sumsq, data, star_idx, star_storage, star_storage_start } = cell;
-  let child_data = [];
+  let child_data: CellChildData[] = [];
   for (let ii = 0; ii < LAYER_STEP * LAYER_STEP; ++ii) {
     child_data.push({ pois: [] });
   }
+  assert(pois);
+  assert(star_count !== undefined);
   if (!star_storage) {
+    assert(sumsq !== undefined);
+    assert(star_idx !== undefined);
+    assert(data);
     let qs = buf_dim / LAYER_STEP;
     let running_sum = 0;
     let running_sumsq = 0;
@@ -686,6 +788,7 @@ Galaxy.prototype.assignChildStars = function (cell) {
     child_data[idx].pois.push(poi);
   }
   if (star_storage) {
+    assert(star_storage_start !== undefined);
     let child_idx = 0;
     let last_start = star_storage_start;
     let end = star_storage_start + star_count;
@@ -714,10 +817,11 @@ Galaxy.prototype.assignChildStars = function (cell) {
   ++counts.assignChildStars;
 };
 
-Galaxy.prototype.perturb = function (cell, params) {
+Galaxy.prototype.perturb = function (cell: GalaxyCell, params: PerturbParams): void {
   let { buf_dim } = this;
   let { noise_freq, noise_weight } = params;
   let { data, x0, y0, w } = cell;
+  assert(data);
   let mul = w / buf_dim;
   for (let idx=0, yy = 0; yy < buf_dim; ++yy) {
     let world_y = y0 + yy * mul;
@@ -735,9 +839,35 @@ Galaxy.prototype.perturb = function (cell, params) {
   ++counts.perturb;
 };
 
-Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
+type GalaxyCell = {
+  x0: number;
+  y0: number;
+  w: number;
+  h: number;
+  layer_idx: number;
+  cell_idx: number;
+  cx: number;
+  cy: number;
+  ready: boolean;
+
+  sum?: number;
+  sumsq?: number;
+  data: Float32Array | null;
+  star_count?: number;
+  star_idx?: number;
+  stars_ready?: boolean;
+  pois?: POI[];
+  star_progress?: StarProgress;
+  star_storage?: Float64Array;
+  star_storage_start?: number;
+  star_buf: Float32Array | null;
+  hue_buf: Uint8Array | null;
+  tex: Texture | null;
+  child_data?: CellChildData[];
+};
+Galaxy.prototype.getCell = function (layer_idx: number, cell_idx: number, just_alloc?: boolean): GalaxyCell {
   if (layer_idx > MAX_LAYER) {
-    return {};
+    return {} as GalaxyCell;
   }
   let { layers, buf_dim, params } = this;
   let layer = layers[layer_idx];
@@ -762,6 +892,10 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       x0, y0, w, h: w,
       layer_idx, cell_idx, cx, cy,
       ready: false,
+      data: null,
+      star_buf: null,
+      hue_buf: null,
+      tex: null,
     };
     layer[cell_idx] = cell;
   }
@@ -796,11 +930,13 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       return cell;
     }
 
+
     let qx = cx - px * LAYER_STEP;
     let qy = cy - py * LAYER_STEP;
     let qidx = qx + qy * LAYER_STEP;
 
     if (!cell.pois) {
+      assert(parent.child_data);
       cell.pois = parent.child_data[qidx].pois;
       // pois.filter((poi) => poi.x >= x0 && poi.x < x0 + w && poi.y >= y0 && poi.y < y0 + w);
     }
@@ -822,9 +958,9 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
 
         // Have the parent sample buf, generate us
         let data = cell.data = expandBicubic16X(sample_buf, buf_dim, qx, qy);
-        let key = `layer${layer_idx}`;
+        let key = `layer${layer_idx}` as 'layer1' | 'layer2'; // etc
         if (params[key]) {
-          this.perturb(cell, params[key]);
+          this.perturb(cell, params[key]!);
         }
         let sum = 0;
         let sumsq = 0;
@@ -839,10 +975,14 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
     }
 
     if (!cell.stars_ready) {
+      assert(parent.child_data);
       if (parent.star_storage) {
+        assert(parent.star_idx !== undefined);
+        assert(parent.star_storage_start !== undefined);
         // filter existing stars
         cell.star_storage = parent.star_storage;
         cell.star_storage_start = parent.child_data[qidx].store_start;
+        assert(cell.star_storage_start !== undefined);
         cell.star_count = parent.child_data[qidx].store_count;
         cell.star_idx = parent.star_idx + (cell.star_storage_start - parent.star_storage_start);
       } else {
@@ -941,7 +1081,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
      0,1,1,1,0,
      0,0,0,0,0],
   ];
-  Galaxy.prototype.getCellTextured = function (layer_idx, cell_idx) {
+  Galaxy.prototype.getCellTextured = function (layer_idx: number, cell_idx: number): GalaxyCell {
     let { buf_dim, tex_data, tex_total_size } = this;
     let cell = this.getCell(layer_idx, cell_idx);
     if (cell.tex) {
@@ -952,6 +1092,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       // still loading
       return cell;
     }
+    assert(pois);
     let layer_res = pow(LAYER_STEP, layer_idx);
     if (layer_idx >= STAR_LAYER) {
       data = cell.star_buf;
@@ -974,6 +1115,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       }
     }
     ++counts.getCellTextured;
+    assert(data);
 
     let max_res = pow(2, this.params.max_zoom);
     if (layer_res === max_res) {
@@ -985,6 +1127,10 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
       }
       // Render in stars
       let { star_storage, star_count, star_storage_start, star_idx } = cell;
+      assert(star_storage);
+      assert(star_storage_start !== undefined);
+      assert(star_count !== undefined);
+      assert(star_idx !== undefined);
       let store_idx = star_storage_start*2;
       for (let ii = 0; ii < star_count; ++ii) {
         let x = star_storage[store_idx++];
@@ -1061,13 +1207,13 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
     }
 
     if (tex_pool.length) {
-      cell.tex = tex_pool.pop();
+      cell.tex = tex_pool.pop()!;
       cell.tex.updateData(buf_dim, buf_dim, tex_data);
     } else {
       ++counts.tex;
-      cell.tex = textures.load({
+      cell.tex = textureLoad({
         name: `galaxy_${++tex_id_idx}`,
-        format: textures.format.RGBA8,
+        format: TEXTURE_FORMAT.RGBA8,
         width: buf_dim,
         height: buf_dim,
         data: tex_data,
@@ -1090,7 +1236,7 @@ Galaxy.prototype.getCell = function (layer_idx, cell_idx, just_alloc) {
   };
 }
 
-export function distSq(x1, y1, x2, y2) {
+export function distSq(x1: number, y1: number, x2: number, y2: number): number {
   let dx = x2 - x1;
   let dy = y2 - y1;
   return dx*dx + dy*dy;
@@ -1099,7 +1245,7 @@ export function distSq(x1, y1, x2, y2) {
 {
   const dy = [0, 1, -1];
   const dx = [0, 1, -1];
-  Galaxy.prototype.starsNear = function (x, y, num) {
+  Galaxy.prototype.starsNear = function (x: number, y: number, num: number): number[] {
     let { layers } = this;
     let layer_idx = MAX_LAYER - 1;
     let layer = layers[layer_idx];
@@ -1127,6 +1273,10 @@ export function distSq(x1, y1, x2, y2) {
           continue;
         }
         let { star_storage, star_storage_start, star_count, star_idx } = cell;
+        assert(star_storage);
+        assert(star_storage_start !== undefined);
+        assert(star_count !== undefined);
+        assert(star_idx !== undefined);
         let store_idx = star_storage_start*2;
         for (let ii = 0; ii < star_count; ++ii) {
           let star_x = star_storage[store_idx++];
@@ -1163,15 +1313,23 @@ export function distSq(x1, y1, x2, y2) {
   };
 }
 
-Galaxy.prototype.getStar = function (star_id) {
+type Star = {
+  x: number;
+  y: number;
+  id: number;
+  solar_system?: SolarSystem;
+};
+
+Galaxy.prototype.getStar = function (star_id: number): Star | null {
   let { layers, stars } = this;
   if (!stars) {
     this.stars = stars = {};
   }
-  if (stars[star_id]) {
-    return stars[star_id];
+  let existing = stars[star_id];
+  if (existing) {
+    return existing;
   }
-  function search(layer_idx, cx, cy) {
+  function search(layer_idx: number, cx: number, cy: number): Star | null {
     let layer = layers[layer_idx];
     let layer_res = pow(LAYER_STEP, layer_idx);
     let cell_idx = cx + cy * layer_res;
@@ -1179,20 +1337,23 @@ Galaxy.prototype.getStar = function (star_id) {
     if (!cell || !cell.stars_ready) {
       return null;
     }
+    assert(cell.star_idx !== undefined);
+    assert(cell.star_count !== undefined);
     assert(star_id >= cell.star_idx);
     if (layer_idx === STAR_LAYER) {
       let { star_storage, star_storage_start } = cell;
       if (!star_storage) {
         return null;
       }
+      assert(star_storage_start !== undefined);
       let idx = star_id - cell.star_idx;
       assert(idx < cell.star_count);
       let store_idx = (star_storage_start + idx) * 2;
       let x = star_storage[store_idx++];
       let y = star_storage[store_idx++];
       // Create and cache star
-      let star = { x, y, id: star_id };
-      stars[star_id] = star;
+      let star: Star = { x, y, id: star_id };
+      stars![star_id] = star; // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
       return star;
     }
     // not this layer, drill down
@@ -1201,7 +1362,7 @@ Galaxy.prototype.getStar = function (star_id) {
     }
     for (let qidx = 0; qidx < cell.child_data.length; ++qidx) {
       let cd = cell.child_data[qidx];
-      if (star_id < cd.star_idx + cd.star_count) {
+      if (star_id < cd.star_idx! + cd.star_count!) {
         let qx = qidx % LAYER_STEP;
         let qy = (qidx - qx) / LAYER_STEP;
         return search(layer_idx + 1, cx * LAYER_STEP + qx, cy * LAYER_STEP + qy);
@@ -1213,11 +1374,10 @@ Galaxy.prototype.getStar = function (star_id) {
   return search(0, 0, 0);
 };
 
-Galaxy.prototype.getStarData = function (star) {
+Galaxy.prototype.getStarData = function (star: Star): asserts star is WithRequired<Star, 'solar_system'> {
   if (!star.solar_system) {
     star.solar_system = solarSystemCreate(this.params.seed, star);
   }
-  return star;
 };
 
 Galaxy.prototype.dispose = function () {
@@ -1244,6 +1404,6 @@ setInterval(() => {
 }, 5000);
 
 
-export function createGalaxy(params) {
+export function createGalaxy(params: GenGalaxyParams): Galaxy {
   return new Galaxy(params);
 }
