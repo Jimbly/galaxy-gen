@@ -328,6 +328,10 @@ export function v3angle(a: ROVec3, b: ROVec3): number {
   );
 }
 
+export function v3clone(a: ROVec3): Vec3 {
+  return a.slice(0) as Vec3;
+}
+
 export function v3copy(out: Vec3, a: ROVec3): Vec3 {
   out[0] = a[0];
   out[1] = a[1];

@@ -2,6 +2,7 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 /* eslint-env browser */
+/* globals Console, Transferable */
 
 require('./polyfill.js');
 
@@ -16,17 +17,19 @@ import {
   webFSApplyReload,
   webFSGetData,
   webFSStartup,
-} from './webfs.js';
+} from './webfs';
 
-export function sendmsg(id, data, transfer) {
-  postMessage({ id, data }, transfer);
+import type { TSMap } from 'glov/common/types';
+
+export function sendmsg<T=unknown>(id: string, data: T, transfer?: Transferable[]): void {
+  (postMessage as (message: unknown, transfer?: Transferable[]) => void)({ id, data }, transfer);
 }
 
-export function debugmsg(msg, clear) {
+export function debugmsg(msg: string, clear?: boolean): void {
   sendmsg('debugmsg', { msg, clear });
 }
 
-function consoleLogForward(...args) {
+function consoleLogForward(...args: unknown[]): void {
   sendmsg('log', args.join(' '));
 }
 
@@ -36,7 +39,7 @@ if (!self.console) {
     info: consoleLogForward,
     warn: consoleLogForward,
     error: consoleLogForward,
-  };
+  } as Console;
 }
 
 // Catch errors not happening inside handlers' try/catch
@@ -53,19 +56,21 @@ self.addEventListener('error', function (evt) {
   }
 });
 
-let handlers = [];
-export function addHandler(id, cb) {
+export type WorkerReqHandler<T=unknown> = (payload: T) => void;
+
+let handlers: TSMap<WorkerReqHandler> = {};
+export function addHandler<T>(id: string, cb: WorkerReqHandler<T>): void {
   assert(!handlers[id]);
-  handlers[id] = cb;
+  handlers[id] = cb as WorkerReqHandler;
 }
 
 let time_work = 0;
 let time_idle = 0;
-let batch_timing = [];
+let batch_timing: number[] = [];
 let last_report_time = Date.now();
 let timing_enabled = false;
 
-function reportTiming(now) {
+function reportTiming(now: number): void {
   // end work, start yield/idle
   if (now - last_report_time > 100) {
     let elapsed = time_work + time_idle;
@@ -79,7 +84,7 @@ function reportTiming(now) {
 
 let last_work_end = last_report_time;
 let last_work_start = 0;
-export function startWork() {
+export function startWork(): void {
   let now = Date.now();
   let idle_time = now - last_work_end;
   if (timing_enabled) {
@@ -89,7 +94,7 @@ export function startWork() {
   last_work_start = now;
 }
 
-export function endWork() {
+export function endWork(): void {
   let now = Date.now();
   last_work_end = now;
   let batch_time = now - last_work_start;
@@ -100,16 +105,27 @@ export function endWork() {
   }
 }
 
-self.onmessage = function (evt) {
+type MyWorkerMessage = {
+  id: string;
+  data: unknown;
+};
+
+function isMyWorkerMessage(evt: unknown): evt is MyWorkerMessage {
+  return Boolean(evt instanceof Object && (evt as MyWorkerMessage).id);
+}
+
+
+self.onmessage = function (evt_in: { data: unknown }) {
   // start work, end yield/idle
   startWork();
-  evt = evt.data;
-  if (evt instanceof Object && evt.id) {
-    assert(handlers[evt.id], evt.id);
+  let evt = evt_in.data;
+  if (isMyWorkerMessage(evt)) {
+    let handler = handlers[evt.id];
+    assert(handler, evt.id);
     try {
-      handlers[evt.id](evt.data);
+      handler(evt.data);
     } catch (e) {
-      sendmsg('error', { message: e.message || String(e), stack: e.stack });
+      sendmsg('error', { message: (e as Error).message || String(e), stack: (e as Error).stack });
     }
   } else {
     console.log('worker (worker thread) unhandled message', evt);
@@ -117,7 +133,7 @@ self.onmessage = function (evt) {
   endWork();
 };
 
-addHandler('busy', function (data) {
+addHandler('busy', function (data: number) {
   let start = Date.now();
   let a = 1;
   let b = 1;
@@ -129,7 +145,7 @@ addHandler('busy', function (data) {
   sendmsg('busy_done', null);
 });
 
-addHandler('timing_enable', function (data) {
+addHandler('timing_enable', function (data: boolean) {
   timing_enabled = data;
 });
 
@@ -152,13 +168,13 @@ addHandler('assert_later', function () {
 });
 
 addHandler('crash_now', function () {
-  let obj = null;
+  let obj: { foo: { bar: number } } = null!;
   obj.foo.bar++;
 });
 
 addHandler('crash_later', function () {
   setTimeout(function crashLater() {
-    let obj = null;
+    let obj: { foo: { bar: number } } = null!;
     obj.foo.bar++;
   }, 100);
 });

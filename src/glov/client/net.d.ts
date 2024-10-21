@@ -74,6 +74,7 @@ export type SubscriptionManager = {
   unsubscribe(channel_id: string): void;
   sendCmdParse(cmd: string, resp_func: NetResponseCallbackCalledBySystem): void;
   serverLog(type: string, data: string | DataObject): void;
+  serverLogSetExtraData(data: null | DataObject): void;
 
   onChannelMsg<T=unknown>(channel_type: string | null,
     msg: string, cb: (data: T, resp_func: ErrorCallback) => void): void;

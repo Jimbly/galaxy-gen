@@ -980,9 +980,13 @@ SubscriptionManager.prototype.getLoginResponseData = function () {
   return this.login_response_data || {};
 };
 
+SubscriptionManager.prototype.serverLogSetExtraData = function (data) {
+  this.server_log_extra_data = data;
+};
+
 SubscriptionManager.prototype.serverLog = function (type, data) {
   this.onceConnected(() => {
-    this.client.send('log', { type, data });
+    this.client.send('log', { type, data, ...this.server_log_extra_data });
   });
 };
 

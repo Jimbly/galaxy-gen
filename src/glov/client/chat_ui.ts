@@ -1755,11 +1755,15 @@ class ChatUIImpl {
       this.channel.removeMsgHandler('chat', this.on_chat);
       this.channel.removeMsgHandler('join', this.on_join);
       this.channel.removeMsgHandler('leave', this.on_leave);
+      netSubs().serverLogSetExtraData(null);
     }
     this.channel = channel;
     if (!channel) {
       return;
     }
+    netSubs().serverLogSetExtraData({
+      channel_id: channel.channel_id,
+    });
     // joining a new one, clear first
     this.clearChat();
     channel.onMsg('chat', this.on_chat);
