@@ -1,10 +1,32 @@
 import assert from 'assert';
-import * as textures from 'glov/client/textures';
-import { mashString, randCreate } from 'glov/common/rand_alea';
-import { clamp, defaults, nextHighestPowerOfTwo } from 'glov/common/util';
-import { vec2, vec4 } from 'glov/common/vmath';
-import * as SimplexNoise from 'simplex-noise';
-import { starTypeData, starTypeFromID } from './star_types';
+import { Texture } from 'glov/client/sprites';
+import {
+  TEXTURE_FORMAT,
+  textureLoad,
+} from 'glov/client/textures';
+import {
+  mashString,
+  randCreate,
+} from 'glov/common/rand_alea';
+import { KeysMatching } from 'glov/common/types';
+import {
+  clamp,
+  defaults,
+  nextHighestPowerOfTwo,
+} from 'glov/common/util';
+import {
+  ROVec4,
+  vec2,
+  vec4,
+} from 'glov/common/vmath';
+import SimplexNoise from 'simplex-noise';
+import { Star } from './galaxy';
+import {
+  starTypeData,
+  starTypeFromID,
+} from './star_types';
+
+type StarType = ReturnType<typeof starTypeData>;
 
 const { atan2, max, round, sqrt, PI } = Math;
 
@@ -125,7 +147,31 @@ const color_table_gasgiant5 = [
   1, 12,
 ];
 
-const noise_base = {
+type NoiseOptRange = {
+  min: number;
+  max: number;
+  freq: number;
+  mul?: number; // calculated
+  add?: number;
+};
+type NoiseOptRangeRT = Required<NoiseOptRange>;
+type NoiseOpts = {
+  frequency: number | NoiseOptRange;
+  amplitude: number;
+  persistence: number | NoiseOptRange;
+  lacunarity: number | NoiseOptRange;
+  octaves: number;
+  cutoff: number;
+  domain_warp: number;
+  warp_freq: number;
+  warp_amp: number;
+  skew_x: number;
+  skew_y: number;
+  key?: string;
+};
+type NoiseOptsRangeField = KeysMatching<NoiseOpts, NoiseOptRange | number>;
+
+const noise_base: NoiseOpts = {
   frequency: 2,
   amplitude: 1,
   persistence: 0.5,
@@ -139,7 +185,7 @@ const noise_base = {
   skew_y: 1,
 };
 
-function noiseMod(opts, base) {
+function noiseMod(opts: Partial<NoiseOpts>, base?: NoiseOpts): NoiseOpts {
   base = base || noise_base;
   return defaults(opts, base || noise_base);
 }
@@ -166,7 +212,15 @@ const noise_waterworld = noiseMod({
   warp_amp: 0.3,
 });
 
-const planet_types = [
+type PlanetType = {
+  name: string;
+  size: [number, number];
+  bias?: number;
+  color: ROVec4;
+  color_table: number[] | number[][];
+  noise: NoiseOpts;
+};
+const planet_types: PlanetType[] = [
   // Class D (planetoid or moon with little to no atmosphere)
   { name: 'D', size: [4,8], color: vec4(0.7,0.7,0.7,1), color_table: color_table_gray, noise: noise_base },
   // Class H (generally uninhabitable)
@@ -207,41 +261,55 @@ const planet_types = [
   { name: 'Y', size: [8,18], color: vec4(1,0.3,0,1), color_table: color_table_molten, noise: noise_base },
 ];
 
-function randExp(idx, min, mx) {
+function randExp(idx: number, min: number, mx: number): number {
   let v = rand[idx].random();
   v *= v;
   return min + (mx - min) * v;
 }
 
-function typeFromName(name) {
+function typeFromName(name: string): PlanetType {
   for (let ii = 0; ii < planet_types.length; ++ii) {
     if (planet_types[ii].name === name) {
       return planet_types[ii];
     }
   }
   assert(false);
-  return null;
 }
 
-function Planet(solar_system, override_data) {
-  override_data = override_data || {};
-  this.type = override_data.name ?
-    typeFromName(override_data.name) :
-    planet_types[rand[2].range(planet_types.length)];
-  this.size = override_data.size || randExp(3, this.type.size[0], this.type.size[1]);
-  this.orbit = rand[0].floatBetween(0, PI*2) * 11;
-  this.orbit_speed = randExp(1, 0.1, 1);
-  this.seed = override_data.seed || rand[2].uint32();
-  // this.parent = solar_system;
+class Planet {
+  type: PlanetType;
+  size: number;
+  orbit: number;
+  orbit_speed: number;
+  seed: number;
+  constructor(solar_system: SolarSystem, override_data?: {
+    name?: string;
+    size?: number;
+    seed?: number;
+  }) {
+    override_data = override_data || {};
+    this.type = override_data.name ?
+      typeFromName(override_data.name) :
+      planet_types[rand[2].range(planet_types.length)];
+    this.size = override_data.size || randExp(3, this.type.size[0], this.type.size[1]);
+    this.orbit = rand[0].floatBetween(0, PI*2) * 11;
+    this.orbit_speed = randExp(1, 0.1, 1);
+    this.seed = override_data.seed || rand[2].uint32();
+    // this.parent = solar_system;
+  }
+
+  declare tex?: Texture & { planet_tex_id?: number };
+  declare tex_id?: number;
+  declare getTexture: (onscreen_size: number) => Texture;
 }
 
-let noise;
-let noise_warp;
+let noise: SimplexNoise[];
+let noise_warp: SimplexNoise[];
 let noise_skew = vec2();
-let total_amplitude;
-let noise_field;
-let subopts;
-function initNoise(seed, subopts_in) {
+let total_amplitude: number;
+let noise_field: Record<NoiseOptsRangeField, SimplexNoise>;
+let subopts: NoiseOpts;
+function initNoise(seed: number, subopts_in: NoiseOpts): void {
   subopts = subopts_in;
   noise = new Array(subopts.octaves);
   for (let ii = 0; ii < noise.length; ++ii) {
@@ -253,16 +321,18 @@ function initNoise(seed, subopts_in) {
   }
   total_amplitude = 0;  // Used for normalizing result to 0.0 - 1.0
   let amp = subopts.amplitude;
-  let p = subopts.persistence && subopts.persistence.max || subopts.persistence;
+  let p = subopts.persistence && (subopts.persistence as NoiseOptRange).max || subopts.persistence as number;
   for (let ii=0; ii<subopts.octaves; ii++) {
     total_amplitude += amp;
     amp *= p;
   }
-  noise_field = {};
-  for (let f in subopts) {
-    let v = subopts[f];
+  noise_field = {} as Record<NoiseOptsRangeField, SimplexNoise>;
+  let f: keyof NoiseOpts;
+  for (f in subopts) {
+    let v = subopts[f] as NoiseOptRange | number;
     if (typeof v === 'object') {
-      noise_field[f] = new SimplexNoise(`${seed}f${subopts.key}${f}`);
+      let f2 = f as NoiseOptsRangeField;
+      noise_field[f2] = new SimplexNoise(`${seed}f${subopts.key!}${f2}`);
       v.mul = (v.max - v.min) * 0.5;
       v.add = v.min + v.mul;
     }
@@ -274,7 +344,7 @@ function initNoise(seed, subopts_in) {
 
 {
   const MAX_TEXTURES = 20;
-  let tex_pool = [];
+  let tex_pool: Texture[] = [];
   let tex_idx = 0;
   let planet_tex_id = 0;
 
@@ -283,14 +353,14 @@ function initNoise(seed, subopts_in) {
   let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES);
 
   let sample_pos = vec2();
-  function get(field) {
-    let v = subopts[field];
+  function get(field: NoiseOptsRangeField): number {
+    let v = subopts[field] as NoiseOptRangeRT;
     if (typeof v !== 'object') {
       return v;
     }
     return v.add + v.mul * noise_field[field].noise2D(sample_pos[0] * v.freq, sample_pos[1] * v.freq);
   }
-  function sample(x, y) {
+  function sample(x: number, y: number): number {
     sample_pos[0] = x * noise_skew[0];
     sample_pos[1] = y * noise_skew[1];
     let warp_freq = subopts.warp_freq;
@@ -314,7 +384,7 @@ function initNoise(seed, subopts_in) {
     return total/total_amplitude;
   }
 
-  function colorIndex(table, value) {
+  function colorIndex(table: number[], value: number): number {
     for (let ii = 0; ii < table.length; ii+=2) {
       if (value <= table[ii]) {
         return table[ii+1];
@@ -323,8 +393,11 @@ function initNoise(seed, subopts_in) {
     return table[table.length - 1];
   }
 
+  function is2DArray(a: number[] | number[][]): a is number[][] {
+    return Array.isArray(a[0]);
+  }
 
-  Planet.prototype.getTexture = function (onscreen_size) {
+  Planet.prototype.getTexture = function (onscreen_size: number): Texture {
     if (this.tex && this.tex.planet_tex_id === this.tex_id) {
       return this.tex;
     }
@@ -333,9 +406,12 @@ function initNoise(seed, subopts_in) {
       rand[ii].reseed(mashString(`${this.seed}_${ii}`));
     }
 
-    let color_table = this.type.color_table;
-    if (Array.isArray(color_table[0])) {
-      color_table = color_table[rand[0].range(color_table.length)];
+    let color_table_test = this.type.color_table;
+    let color_table: number[];
+    if (is2DArray(color_table_test)) {
+      color_table = color_table_test[rand[0].range(color_table_test.length)];
+    } else {
+      color_table = color_table_test;
     }
     // with pixely view, looks a lot better with a /2 on the texture resolution
     let planet_res = clamp(nextHighestPowerOfTwo(onscreen_size)/2, PLANET_MIN_RES, PLANET_MAX_RES);
@@ -358,9 +434,9 @@ function initNoise(seed, subopts_in) {
       this.tex = tex_pool[tex_idx];
       this.tex.updateData(planet_res, planet_res, tex_data);
     } else {
-      this.tex = tex_pool[tex_idx] = textures.load({
+      this.tex = tex_pool[tex_idx] = textureLoad({
         name: `planet_${++tex_idx}`,
-        format: textures.format.R8,
+        format: TEXTURE_FORMAT.R8,
         width: planet_res,
         height: planet_res,
         data: tex_data,
@@ -369,6 +445,7 @@ function initNoise(seed, subopts_in) {
         wrap_s: gl.REPEAT,
         wrap_t: gl.CLAMP_TO_EDGE,
       });
+      assert(this.tex);
     }
     tex_idx = (tex_idx + 1) % MAX_TEXTURES;
     this.tex_id = ++planet_tex_id;
@@ -379,8 +456,8 @@ function initNoise(seed, subopts_in) {
 
 const PMRES = 128;
 const PMBORDER = 16;
-let pmtex;
-export function planetMapTexture() {
+let pmtex: Texture | undefined;
+export function planetMapTexture(): Texture {
   if (pmtex) {
     return pmtex;
   }
@@ -388,7 +465,7 @@ export function planetMapTexture() {
   let idx = 0;
   let mid = PMRES / 2;
   const PMR = PMRES / 2 - PMBORDER;
-  function encodeRadian(rad) {
+  function encodeRadian(rad: number): number {
     if (rad < 0) {
       rad += PI * 2;
     }
@@ -414,9 +491,9 @@ export function planetMapTexture() {
     }
   }
   assert.equal(idx, tex_data.length);
-  pmtex = textures.load({
+  pmtex = textureLoad({
     name: 'pmtex',
-    format: textures.format.RGB8,
+    format: TEXTURE_FORMAT.RGB8,
     width: PMRES,
     height: PMRES,
     data: tex_data,
@@ -426,69 +503,75 @@ export function planetMapTexture() {
     wrap_t: gl.CLAMP_TO_EDGE,
   });
 
-  return pmtex;
+  return pmtex!;
 }
 
-function cmpSize(a, b) {
+function cmpSize(a: Planet, b: Planet): number {
   return a.size - b.size;
 }
 
-function SolarSystem(global_seed, star) {
-  let { /*x, y,*/ id } = star;
-  let classif = starTypeFromID(id);
-  let star_data = starTypeData(classif);
-  this.star_data = star_data;
-  // this.star_id = id;
-  for (let ii = 0; ii < rand.length; ++ii) {
-    rand[ii].reseed(mashString(`${id}_${global_seed}_${ii}`));
-  }
-  let planets = [];
-  if (id === 98897686813) { // Sol
-    this.name = 'Sol';
-    planets.push(new Planet(this, { name: 'D', size: 4 })); // Mercury
-    planets.push(new Planet(this, { name: 'K', size: 6 })); // Venus
-    planets.push(new Planet(this, { name: 'M', size: 8, seed: 5 })); // Earth
-    planets.push(new Planet(this, { name: 'Y', size: 5 })); // Mars
+export class SolarSystem {
 
-    planets.push(new Planet(this, { name: 'T', size: 16, seed: 1 })); // Jupiter
-    planets.push(new Planet(this, { name: 'J', size: 12, seed: 1 })); // Saturn
+  star_data: StarType;
+  name?: string;
+  planets: Planet[];
+  constructor(global_seed: number, star: Star) {
+    let { /*x, y,*/ id } = star;
+    let classif = starTypeFromID(id);
+    let star_data = starTypeData(classif);
+    this.star_data = star_data;
+    // this.star_id = id;
+    for (let ii = 0; ii < rand.length; ++ii) {
+      rand[ii].reseed(mashString(`${id}_${global_seed}_${ii}`));
+    }
+    let planets = [];
+    if (id === 98897686813) { // Sol
+      this.name = 'Sol';
+      planets.push(new Planet(this, { name: 'D', size: 4 })); // Mercury
+      planets.push(new Planet(this, { name: 'K', size: 6 })); // Venus
+      planets.push(new Planet(this, { name: 'M', size: 8, seed: 5 })); // Earth
+      planets.push(new Planet(this, { name: 'Y', size: 5 })); // Mars
 
-    planets.push(new Planet(this, { name: 'P', size: 9 })); // Uranus
-    planets.push(new Planet(this, { name: 'W', size: 8 })); // Neptune
-  } else {
-    let num_planets = rand[0].range(4);
-    let chance = 0.5;
-    while (num_planets) {
-      planets.push(new Planet(this));
-      --num_planets;
-      if (!num_planets) {
-        if (rand[1].random() < chance) {
-          ++num_planets;
-          chance *= 0.9;
+      planets.push(new Planet(this, { name: 'T', size: 16, seed: 1 })); // Jupiter
+      planets.push(new Planet(this, { name: 'J', size: 12, seed: 1 })); // Saturn
+
+      planets.push(new Planet(this, { name: 'P', size: 9 })); // Uranus
+      planets.push(new Planet(this, { name: 'W', size: 8 })); // Neptune
+    } else {
+      let num_planets = rand[0].range(4);
+      let chance = 0.5;
+      while (num_planets) {
+        planets.push(new Planet(this));
+        --num_planets;
+        if (!num_planets) {
+          if (rand[1].random() < chance) {
+            ++num_planets;
+            chance *= 0.9;
+          }
         }
       }
-    }
-    // split in two, sort by size, put bigger in the middle
-    let p1 = [];
-    let p2 = [];
-    for (let ii = 0; ii < planets.length; ++ii) {
-      let planet = planets[ii];
-      if (!planet.type.bias && rand[0].range(2) || planet.type.bias < 0) {
-        p1.push(planet);
-      } else {
-        p2.push(planet);
+      // split in two, sort by size, put bigger in the middle
+      let p1 = [];
+      let p2 = [];
+      for (let ii = 0; ii < planets.length; ++ii) {
+        let planet = planets[ii];
+        if (!planet.type.bias && rand[0].range(2) || planet.type.bias! < 0) {
+          p1.push(planet);
+        } else {
+          p2.push(planet);
+        }
       }
+      p1.sort(cmpSize);
+      p2.sort(cmpSize).reverse();
+      planets = p1.concat(p2);
     }
-    p1.sort(cmpSize);
-    p2.sort(cmpSize).reverse();
-    planets = p1.concat(p2);
+    this.planets = planets;
+    // for (let ii = 0; ii < planets.length; ++ii) {
+    //   planets[ii].ord = ii;
+    // }
   }
-  this.planets = planets;
-  // for (let ii = 0; ii < planets.length; ++ii) {
-  //   planets[ii].ord = ii;
-  // }
 }
 
-export function solarSystemCreate(global_seed, star) {
+export function solarSystemCreate(global_seed: number, star: Star): SolarSystem {
   return new SolarSystem(global_seed, star);
 }

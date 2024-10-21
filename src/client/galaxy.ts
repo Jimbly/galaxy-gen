@@ -20,12 +20,10 @@ import {
   lerp,
 } from 'glov/common/util';
 import SimplexNoise from 'simplex-noise';
-import { solarSystemCreate } from './solar_system';
+import { SolarSystem, solarSystemCreate } from './solar_system';
 import { hueFromID } from './star_types';
 
 const { abs, atan2, ceil, floor, max, min, sqrt, pow, PI, round } = Math;
-
-type SolarSystem = ReturnType<typeof solarSystemCreate>;
 
 const SUMSQ = 0.75;
 
@@ -1313,7 +1311,7 @@ export function distSq(x1: number, y1: number, x2: number, y2: number): number {
   };
 }
 
-type Star = {
+export type Star = {
   x: number;
   y: number;
   id: number;
