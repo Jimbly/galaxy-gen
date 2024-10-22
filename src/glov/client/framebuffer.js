@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { nop } = require('glov/common/util');
 const { is_ios } = require('./browser.js');
 const { cmd_parse } = require('./cmds.js');
 const { applyCopy } = require('./effects.js');
@@ -320,6 +321,85 @@ export function framebufferUpdateCanvasForCapture() {
   } else {
     return { width: engine.viewport[2], height: engine.viewport[3] };
   }
+}
+
+let clipboard_copy_supported = true;
+// Note: Adding this doesn't seem to help, except to get a clean error in
+//   contexts explicitly denying clipboard access (Discord)
+function clipboardGetPermission(next) {
+  if (!navigator.permissions?.query) {
+    return void next();
+  }
+  let didnext = false;
+  function onceNext(result) {
+    if (didnext) {
+      return;
+    }
+    didnext = true;
+    if (result && result.state && result.state === 'denied') {
+      clipboard_copy_supported = false;
+      next('ERR_CLIPBOARD_ACCESS_DENIED');
+    } else {
+      next();
+    }
+  }
+  try {
+    navigator.permissions.query({
+      name: 'clipboard-write'
+    }).then(onceNext, onceNext);
+  } catch (e) {
+    onceNext();
+  }
+}
+// Do this once at startup to set clipboard_copy_supported=false if we're in
+//   a context that explicitly denies clipboard access (Discord)
+clipboardGetPermission(nop);
+
+export function copyCanvasToClipboard() {
+  if (clipboard_copy_supported === false) {
+    return;
+  }
+  function onError(err) {
+    console.error('Error copying to clipboard:', err);
+    clipboard_copy_supported = false;
+  }
+  engine.postRender(function () {
+    let dims = framebufferUpdateCanvasForCapture();
+    let canvas = engine.canvas;
+    if (dims.width !== canvas.width) {
+      canvas = document.createElement('canvas');
+      canvas.width = dims.width;
+      canvas.height = dims.height;
+      let ctx = canvas.getContext('2d');
+      ctx.drawImage(engine.canvas, 0, engine.canvas.height - dims.height, dims.width, dims.height,
+        0, 0, dims.width, dims.height);
+    }
+    if (!canvas.toBlob) { // iOS 10
+      return void onError('ERR_UNSUPPORTED');
+    }
+    canvas.toBlob((blob) => {
+      clipboardGetPermission((perm_err) => {
+        if (perm_err) {
+          return void onError(perm_err);
+        }
+        try {
+          /* globals navigator, ClipboardItem */
+          let maybe_promise = navigator.clipboard.write([
+            new ClipboardItem({
+              'image/png': blob
+            })
+          ]);
+          if (maybe_promise && maybe_promise.catch) {
+            maybe_promise.catch(onError);
+          }
+          // success
+        } catch (err) {
+          onError(err);
+        }
+      });
+    }, 'image/png');
+  });
+  // Also needs to add a postprocessing function to trigger offscreen rendering this frame
 }
 
 settings.register({
