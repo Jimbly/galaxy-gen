@@ -22,11 +22,10 @@ import {
 import SimplexNoise from 'simplex-noise';
 import { Star } from './galaxy';
 import {
+  StarType,
   starTypeData,
   starTypeFromID,
 } from './star_types';
-
-type StarType = ReturnType<typeof starTypeData>;
 
 const { atan2, max, round, sqrt, PI } = Math;
 

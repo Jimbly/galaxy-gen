@@ -2,24 +2,38 @@
 import assert from 'assert';
 import * as engine from 'glov/client/engine';
 import { mashI53 } from 'glov/common/rand_alea';
-import { vec4 } from 'glov/common/vmath';
+import { TSMap } from 'glov/common/types';
+import {
+  ROVec4,
+  rovec4,
+} from 'glov/common/vmath';
 
 const colors = [
-  vec4(0.816,1,1,1),
-  vec4(0.98,0.204,0,1),
-  vec4(1,0.467,0,1),
-  vec4(1,1,0.408,1), // G
-  vec4(1,1,0.8,1),
-  vec4(0.922,1,1,1),
-  vec4(0.875,1,1,1),
-  vec4(0.816,1,1,1),
+  rovec4(0.816,1,1,1),
+  rovec4(0.98,0.204,0,1),
+  rovec4(1,0.467,0,1),
+  rovec4(1,1,0.408,1), // G
+  rovec4(1,1,0.8,1),
+  rovec4(0.922,1,1,1),
+  rovec4(0.875,1,1,1),
+  rovec4(0.816,1,1,1),
 ];
 
+export type StarType = {
+  label: string;
+  odds: number;
+  hue: number;
+  color: ROVec4;
+  astro_radius: number;
+  mass: number;
+  lumin: number;
+  game_radius: number;
+};
 // From http://www.atlasoftheuniverse.com/startype.html
 // label, odds, color index, astro_radius, mass, luminosity, game_radius
 const sg_scale = 0.001 / (0.001 + 0.1 + 0.7 + 2 + 3.5 + 8 + 80);
-const star_types = (function () {
-  let raw = {
+const star_types: TSMap<StarType> = (function () {
+  let raw: TSMap<[string, number, number, number, number, number, number]> = {
     O:   ['O',            0.001,          7,    10,  50,  100000, 30],
     B:   ['B',            0.1,            6,     5,  10,    1000, 25],
     A:   ['A',            0.7,            5,   1.7,   2,      20, 23],
@@ -39,9 +53,9 @@ const star_types = (function () {
     sgK: ['Supergiant K', sg_scale * 8,   2,    72,  12,   38000, 32],
     sgM: ['Supergiant M', sg_scale * 80,  1,    30,  10,   30000, 30],
   };
-  let ret = {};
+  let ret: TSMap<StarType> = {};
   for (let key in raw) {
-    let rd = raw[key];
+    let rd = raw[key]!;
     ret[key] = {
       label: rd[0],
       odds: rd[1],
@@ -58,15 +72,15 @@ const star_types = (function () {
 const star_types_total = (function () {
   let ret = 0;
   for (let key in star_types) {
-    ret += star_types[key].odds;
+    ret += star_types[key]!.odds;
   }
   return ret;
 }());
 
-function starType(choice) {
+function starType(choice: number): string {
   choice *= star_types_total;
   for (let key in star_types) {
-    choice -= star_types[key].odds;
+    choice -= star_types[key]!.odds;
     if (choice <= 0) {
       return key;
     }
@@ -75,18 +89,18 @@ function starType(choice) {
   return 'M';
 }
 
-export function starTypeFromID(id) {
+export function starTypeFromID(id: number): string {
   return starType(mashI53(id));
 }
 
-export function hueFromID(id) {
-  return star_types[starType(mashI53(id))].hue;
+export function hueFromID(id: number): number {
+  return star_types[starType(mashI53(id))]!.hue;
 }
 
-export function starTypeData(key) {
-  return star_types[key];
+export function starTypeData(key: string): StarType {
+  return star_types[key]!;
 }
 
-export function hueFromType(key) {
-  return star_types[key].hue;
+export function hueFromType(key: string): number {
+  return star_types[key]!.hue;
 }
