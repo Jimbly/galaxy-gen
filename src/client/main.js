@@ -6,22 +6,57 @@ local_storage.setStoragePrefix('galaxy-gen'); // Before requiring anything else 
 import assert from 'assert';
 import * as camera2d from 'glov/client/camera2d';
 import * as engine from 'glov/client/engine';
+import {
+  debugDefineIsSet,
+  getFrameDt,
+  getFrameTimestamp,
+} from 'glov/client/engine';
 import { copyCanvasToClipboard } from 'glov/client/framebuffer';
-import * as input from 'glov/client/input';
-import { KEYS } from 'glov/client/input';
-import * as net from 'glov/client/net';
-import { netDisconnected } from 'glov/client/net';
-import * as perf from 'glov/client/perf';
-import * as shaders from 'glov/client/shaders';
+import {
+  KEYS,
+  inputClick,
+  inputDrag,
+  keyDown,
+  keyDownEdge,
+  mouseMoved,
+  mousePos,
+  mouseWheel,
+} from 'glov/client/input';
+import {
+  netClient,
+  netDisconnected,
+  netInit,
+} from 'glov/client/net';
+import { addMetric } from 'glov/client/perf';
+import { shaderCreate } from 'glov/client/shaders';
 import { slider } from 'glov/client/slider';
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
-import * as sprites from 'glov/client/sprites';
-import { BLEND_ADDITIVE, spriteCreate } from 'glov/client/sprites';
-import * as textures from 'glov/client/textures';
-import * as ui from 'glov/client/ui';
+import {
+  BLEND_ADDITIVE,
+  spriteCreate,
+  spriteQueueRaw,
+} from 'glov/client/sprites';
+import {
+  textureLoad,
+  textureWhite,
+} from 'glov/client/textures';
 import {
   LINE_CAP_ROUND,
   LINE_NO_AA,
+  buttonText,
+  drawCircle,
+  drawElipse,
+  drawHollowCircle,
+  drawHollowRect2,
+  drawLine,
+  drawRect,
+  panel,
+  print,
+  scaleSizes,
+  setFontHeight,
+  uiButtonHeight,
+  uiButtonWidth,
+  uiTextHeight,
 } from 'glov/client/ui';
 import {
   clamp,
@@ -41,8 +76,15 @@ import {
   vec2,
   vec4,
 } from 'glov/common/vmath';
-import { LAYER_STEP, createGalaxy, distSq } from './galaxy';
-import { planetMapTexture, solarSystemCreate } from './solar_system';
+import {
+  LAYER_STEP,
+  createGalaxy,
+  distSq,
+} from './galaxy';
+import {
+  planetMapTexture,
+  solarSystemCreate,
+} from './solar_system';
 
 const { abs, ceil, cos, floor, max, min, pow, round, sin, sqrt, PI } = Math;
 
@@ -60,7 +102,7 @@ const game_height = 256;
 export function main() {
   if (engine.DEBUG) {
     // Enable auto-reload, etc
-    net.init({ engine });
+    netInit({ engine });
   }
 
   let view = local_storage.getJSON('view', 1);
@@ -90,17 +132,17 @@ export function main() {
     viewport_postprocess: false,
     antialias: false,
     do_borders: false,
-    show_fps: engine.defines.ATTRACT ? false : undefined,
+    show_fps: debugDefineIsSet('ATTRACT') ? false : undefined,
     ui_sprites,
   })) {
     return;
   }
   font = engine.font;
 
-  ui.scaleSizes(13 / 32);
-  ui.setFontHeight(8);
+  scaleSizes(13 / 32);
+  setFontHeight(8);
 
-  let tex_palette = textures.load({
+  let tex_palette = textureLoad({
     url: 'palette/pal2.png',
     filter_min: gl.NEAREST,
     filter_mag: gl.NEAREST,
@@ -108,7 +150,7 @@ export function main() {
     wrap_t: gl.CLAMP_TO_EDGE,
   });
 
-  let tex_palette_planets = textures.load({
+  let tex_palette_planets = textureLoad({
     url: 'palette/pal_planets.png',
     filter_min: gl.NEAREST,
     filter_mag: gl.NEAREST,
@@ -116,10 +158,10 @@ export function main() {
     wrap_t: gl.CLAMP_TO_EDGE,
   });
 
-  let shader_galaxy_pixel = shaders.create('shaders/galaxy_blend_pixel.fp');
-  let shader_galaxy_blend = shaders.create('shaders/galaxy_blend.fp');
-  let shader_planet_pixel = shaders.create('shaders/planet_pixel.fp');
-  let white_tex = textures.textures.white;
+  let shader_galaxy_pixel = shaderCreate('shaders/galaxy_blend_pixel.fp');
+  let shader_galaxy_blend = shaderCreate('shaders/galaxy_blend.fp');
+  let shader_planet_pixel = shaderCreate('shaders/planet_pixel.fp');
+  let white_tex = textureWhite();
 
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
@@ -213,7 +255,7 @@ export function main() {
   }
 
   let cells_drawn = 0;
-  perf.addMetric({
+  addMetric({
     name: 'cells',
     show_stat: 'false',
     labels: {
@@ -263,12 +305,12 @@ export function main() {
     return abs(amount) * 500;
   }
   function zoomTick(max_okay_zoom) {
-    let dt = engine.frame_dt;
+    let dt = getFrameDt();
     for (let ii = 0; ii < queued_zooms.length; ++ii) {
       let zm = queued_zooms[ii];
       let new_progress = min(1, zm.progress + dt/zoomTime(zm.delta));
       let dp;
-      if (engine.defines.ATTRACT) {
+      if (debugDefineIsSet('ATTRACT')) {
         dp = new_progress - zm.progress;
       } else {
         // manual mode, smooth the application of zooming
@@ -341,9 +383,9 @@ export function main() {
     }
     last_img = data_full;
 
-    if (net.client) {
+    if (netClient()) {
 
-      let pak = net.client.pak('img');
+      let pak = netClient().pak('img');
       pak.writeInt(img_id++);
       pak.writeString(data_full);
       pak.send();
@@ -358,7 +400,7 @@ export function main() {
   }
 
   const VSCALE = 0.5;
-  function drawElipse(x, y, z, r0, r1, color) {
+  function drawHollowElipse(x, y, z, r0, r1, color) {
     let segments = max(20, r0 - 10);
     let last_pos = [0,0];
     let cur_pos = [0,0];
@@ -371,7 +413,7 @@ export function main() {
         v2addScale(cur_pos, cur_pos, unit_vec, 0.5);
       }
       if (ii) {
-        ui.drawLine(last_pos[0], last_pos[1], cur_pos[0], cur_pos[1], z, 1, 1, color, LINE_NO_AA|LINE_CAP_ROUND);
+        drawLine(last_pos[0], last_pos[1], cur_pos[0], cur_pos[1], z, 1, 1, color, LINE_NO_AA|LINE_CAP_ROUND);
       }
     }
   }
@@ -388,14 +430,14 @@ export function main() {
     let sun_radius = star_data.game_radius;
     let sun_pad = w * 0.1;
     let c = star_data.color;
-    ui.drawCircle(xmid, ymid, z, sun_radius + 2, 0.25, [c[0], c[1], c[2], fade], BLEND_ADDITIVE);
-    ui.drawCircle(xmid, ymid, z + 0.005, sun_radius, 0.95, [c[0], c[1], c[2], fade]);
+    drawCircle(xmid, ymid, z, sun_radius + 2, 0.25, [c[0], c[1], c[2], fade], BLEND_ADDITIVE);
+    drawCircle(xmid, ymid, z + 0.005, sun_radius, 0.95, [c[0], c[1], c[2], fade]);
     let rstep = (w/2 - sun_pad) / (planets.length + 2);
     let r0 = sun_pad + rstep;
     for (let ii = 0; ii < planets.length; ++ii) {
       let r = r0 + rstep * ii;
       let planet = planets[ii];
-      let theta = planet.orbit + planet.orbit_speed * engine.frame_timestamp*ORBIT_RATE;
+      let theta = planet.orbit + planet.orbit_speed * getFrameTimestamp()*ORBIT_RATE;
       theta %= 2 * PI;
       let x = xmid + cos(theta) * r;
       let y = ymid + sin(theta) * r * VSCALE;
@@ -405,16 +447,16 @@ export function main() {
       // }
 
       let zz = z + (y - ymid)/h;
-      // ui.drawCircle(x, y, zz, planet.size + 2, 0.99, [0,0,0,fade]);
+      // drawCircle(x, y, zz, planet.size + 2, 0.99, [0,0,0,fade]);
       // c = planet.type.color;
-      // ui.drawCircle(x, y, zz + 0.00001, planet.size, 0.99, [c[0], c[1], c[2], fade]);
-      drawElipse(xmid, ymid, z - 2, r, r * VSCALE, [0.5, 0.5, 0, fade]);
+      // drawCircle(x, y, zz + 0.00001, planet.size, 0.99, [c[0], c[1], c[2], fade]);
+      drawHollowElipse(xmid, ymid, z - 2, r, r * VSCALE, [0.5, 0.5, 0, fade]);
 
       let sprite_size = planet.size;
       let planet_params = {
-        params: [engine.frame_timestamp * 0.0003, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
+        params: [getFrameTimestamp() * 0.0003, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
-      sprites.queueraw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
+      spriteQueueRaw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
         x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
         [1,1,1,fade], shader_planet_pixel, planet_params);
     }
@@ -422,7 +464,7 @@ export function main() {
     // draw backdrop
     let br0 = w/2 * 1.5;
     let br1 = h/2*VSCALE * 1.5;
-    ui.drawElipse(xmid - br0, ymid - br1, xmid + br0, ymid + br1, z - 2.1, 0, [0,0,0,fade]);
+    drawElipse(xmid - br0, ymid - br1, xmid + br0, ymid + br1, z - 2.1, 0, [0,0,0,fade]);
   }
 
   let drag_temp = vec2();
@@ -430,9 +472,12 @@ export function main() {
 
     gl.clearColor(0, 0, 0, 1);
     let z = Z.UI;
+    const button_height = uiButtonHeight();
+    const button_width = uiButtonWidth();
+    const font_height = uiTextHeight();
 
     let x = 4;
-    let button_spacing = ui.button_height + 6;
+    let button_spacing = button_height + 6;
     let y = 4;
 
     let w = min(game_width, game_height);
@@ -467,17 +512,17 @@ export function main() {
         (LAYER_STEP/2) * ceil(zoom_level / (LAYER_STEP/2)),
         (LAYER_STEP/2) * ceil((zoom_level + 1) / (LAYER_STEP/2)),
       ];
-      // ui.print(font.styleColored(null, 0x808080ff), 10, 20, 1000, `${zlis[0]} (${zoom_level})`);
+      // print(font.styleColored(null, 0x808080ff), 10, 20, 1000, `${zlis[0]} (${zoom_level})`);
       for (let ii = 0; ii < zlis.length; ++ii) {
         let r = checkLevel(zlis[ii]);
         if (r) {
           max_okay_zoom = zlis[ii];
         }
-        // ui.print(font.styleColored(null, 0x808080ff), 10, 30 + ii * ui.font_height, 1000, `${zlis[ii]}: ${r}`);
+        // print(font.styleColored(null, 0x808080ff), 10, 30 + ii * font_height, 1000, `${zlis[ii]}: ${r}`);
       }
     }
 
-    if (galaxy && !engine.defines.ATTRACT) {
+    if (galaxy && !debugDefineIsSet('ATTRACT')) {
       galaxy.loading = false;
     }
 
@@ -489,17 +534,17 @@ export function main() {
         galaxy.dispose();
       }
       galaxy = createGalaxy(params);
-      galaxy.loading = first || engine.defines.ATTRACT;
+      galaxy.loading = first || debugDefineIsSet('ATTRACT');
       allocSprite();
     }
 
-    if (input.keyDown(KEYS.CTRL) && input.keyDownEdge(KEYS.C)) {
+    if (keyDown(KEYS.CTRL) && keyDownEdge(KEYS.C)) {
       copyCanvasToClipboard();
     }
 
     if (show_panel) {
-      if (ui.buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: ui.button_width * 0.75 }) ||
-        input.keyDownEdge(KEYS.V)
+      if (buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: button_width * 0.75 }) ||
+        keyDownEdge(KEYS.V)
       ) {
         view = (view + 1) % 2;
         local_storage.setJSON('view', view);
@@ -507,8 +552,8 @@ export function main() {
         //engine.reloadSafe();
       }
 
-      if (ui.buttonText({ x: x + ui.button_width - ui.button_height, y, text: '<<', w: ui.button_height }) ||
-        input.keyDownEdge(KEYS.ESC)
+      if (buttonText({ x: x + button_width - button_height, y, text: '<<', w: button_height }) ||
+        keyDownEdge(KEYS.ESC)
       ) {
         show_panel = !show_panel;
         local_storage.setJSON('panel', show_panel);
@@ -517,27 +562,27 @@ export function main() {
       y += button_spacing;
 
       // if (view === 1) {
-      //   ui.print(style, x, y, z, `Dither: ${params.dither}`);
-      //   y += ui.font_height;
+      //   print(style, x, y, z, `Dither: ${params.dither}`);
+      //   y += font_height;
       //   params.dither = round4(slider(params.dither, { x, y, z, min: 0, max: 1 }));
       //   y += button_spacing;
       // }
 
       if (solar_view) {
-        if (ui.buttonText({ x, y, z, text: solar_override ? 'Override' : 'Generated' })) {
+        if (buttonText({ x, y, z, text: solar_override ? 'Override' : 'Generated' })) {
           solar_override = !solar_override;
           local_storage.setJSON('solar_override', solar_override);
           solar_override_system = null;
         }
         y += button_spacing;
         if (solar_override) {
-          ui.print(style, x, y, z, `StarID: ${solar_params.star_id}`);
-          y += ui.font_height;
+          print(style, x, y, z, `StarID: ${solar_params.star_id}`);
+          y += font_height;
           solar_params.star_id = round(slider(solar_params.star_id, { x, y, z, min: 1, max: 99 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Seed: ${solar_params.seed}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Seed: ${solar_params.seed}`);
+          y += font_height;
           solar_params.seed = round(slider(solar_params.seed, { x, y, z, min: 1, max: 99 }));
           y += button_spacing;
 
@@ -550,72 +595,72 @@ export function main() {
           }
         }
       } else {
-        ui.print(style, x, y, z, `Seed: ${params.seed}`);
-        y += ui.font_height;
+        print(style, x, y, z, `Seed: ${params.seed}`);
+        y += font_height;
         params.seed = round(slider(params.seed, { x, y, z, min: 1, max: 9999 }));
         y += button_spacing;
 
         if (zoom_level < 1.9) { // Galaxy
-          ui.print(style, x, y, z, `Arms: ${params.arms}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Arms: ${params.arms}`);
+          y += font_height;
           params.arms = round(slider(params.arms, { x, y, z, min: 1, max: 16 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Arm Mods: ${params.len_mods}`);
+          y += font_height;
           params.len_mods = round(slider(params.len_mods, { x, y, z, min: 1, max: 32 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Twirl: ${params.twirl}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Twirl: ${params.twirl}`);
+          y += font_height;
           params.twirl = round4(slider(params.twirl, { x, y, z, min: 0, max: 8 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Center: ${params.center}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Center: ${params.center}`);
+          y += font_height;
           params.center = round4(slider(params.center, { x, y, z, min: 0, max: 0.3 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Noise Freq: ${params.noise_freq}`);
+          y += font_height;
           params.noise_freq = round4(slider(params.noise_freq, { x, y, z, min: 0.1, max: 10 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Noise Weight: ${params.noise_weight}`);
+          y += font_height;
           params.noise_weight = round4(slider(params.noise_weight, { x, y, z, min: 0, max: 4 }));
           y += button_spacing;
 
-          ui.print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
-          y += ui.font_height;
+          print(style, x, y, z, `Lone Clusters: ${params.poi_count}`);
+          y += font_height;
           params.poi_count = round(slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
           y += button_spacing;
         } else {
           let layer_idx = round(zoom_level / (LAYER_STEP / 2));
-          ui.print(style, x, y, z, `Layer #${layer_idx}:`);
-          y += ui.font_height + 2;
+          print(style, x, y, z, `Layer #${layer_idx}:`);
+          y += font_height + 2;
           let key = `layer${layer_idx}`;
           if (params[key]) {
-            ui.print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
-            y += ui.font_height;
+            print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
+            y += font_height;
             params[key].noise_freq = round4(slider(params[key].noise_freq,
               { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
             y += button_spacing;
 
-            ui.print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
-            y += ui.font_height;
+            print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
+            y += font_height;
             params[key].noise_weight = round4(slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
             y += button_spacing;
           }
         }
       }
 
-      ui.panel({
-        x: x - 4, y: 0, w: ui.button_width + 8, h: y, z: z - 1,
+      panel({
+        x: x - 4, y: 0, w: button_width + 8, h: y, z: z - 1,
       });
     } else {
-      if (!engine.defines.ATTRACT && ui.buttonText({ x, y, text: '>>', w: ui.button_height }) ||
-        input.keyDownEdge(KEYS.ESC)
+      if (!debugDefineIsSet('ATTRACT') && buttonText({ x, y, text: '>>', w: button_height }) ||
+        keyDownEdge(KEYS.ESC)
       ) {
         show_panel = !show_panel;
         local_storage.setJSON('panel', show_panel);
@@ -624,15 +669,15 @@ export function main() {
     }
 
     x = game_width - w + 4;
-    y = w - ui.button_height;
+    y = w - button_height;
 
-    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '-' }) ||
-      input.keyDownEdge(KEYS.MINUS) || input.keyDownEdge(KEYS.Q)
+    if (buttonText({ x, y, z, w: button_height, text: '-' }) ||
+      keyDownEdge(KEYS.MINUS) || keyDownEdge(KEYS.Q)
     ) {
       use_mouse_pos = false;
       doZoom(0.5, 0.5, -1);
     }
-    x += ui.button_height + 2;
+    x += button_height + 2;
     const SLIDER_W = 110;
     let new_zoom = roundZoom(slider(target_zoom_level + solar_view,
       { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 1 }));
@@ -640,21 +685,21 @@ export function main() {
       doZoom(0.5, 0.5, new_zoom - target_zoom_level);
     }
     x += SLIDER_W + 2;
-    if (ui.buttonText({ x, y, z, w: ui.button_height, text: '+' }) ||
-      input.keyDownEdge(KEYS.EQUALS) ||
-      input.keyDownEdge(KEYS.E)
+    if (buttonText({ x, y, z, w: button_height, text: '+' }) ||
+      keyDownEdge(KEYS.EQUALS) ||
+      keyDownEdge(KEYS.E)
     ) {
       use_mouse_pos = false;
       doZoom(0.5, 0.5, 1);
     }
-    x += ui.button_height + 2;
-    let mouse_wheel = input.mouseWheel();
-    if (input.click({ button: 2 })) {
+    x += button_height + 2;
+    let mouse_wheel = mouseWheel();
+    if (inputClick({ button: 2 })) {
       mouse_wheel-=1;
     }
     if (mouse_wheel) {
       use_mouse_pos = true;
-      input.mousePos(mouse_pos);
+      mousePos(mouse_pos);
       if (mouse_wheel < 0 && eff_solar_view_unsmooth && !solar_view) {
         // ignore
       } else {
@@ -664,14 +709,14 @@ export function main() {
 
     zoomTick(max_okay_zoom);
     let zoom = pow(2, zoom_level);
-    let zoom_text_y = floor(y + (ui.button_height - ui.font_height)/2);
-    let zoom_text_w = ui.print(null, x, zoom_text_y, z,
+    let zoom_text_y = floor(y + (button_height - font_height)/2);
+    let zoom_text_w = print(null, x, zoom_text_y, z,
       solar_view ? 'Solar' : `${zoom.toFixed(0)}X`);
-    ui.drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + ui.font_height, z - 1, color_text_backdrop);
+    drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + font_height, z - 1, color_text_backdrop);
 
     x = game_width - w;
-    // y -= ui.font_height;
-    // ui.print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
+    // y -= font_height;
+    // print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
 
     let legend_scale = 0.25;
     let legend_x0 = game_width - w*legend_scale - 2;
@@ -679,26 +724,26 @@ export function main() {
     let legend_color = solar_view ? color_legend_fade : unit_vec;
     y = w;
 
-    ui.drawLine(legend_x0, y - 4.5, legend_x1, y - 4.5, z, 1, 1, legend_color);
-    ui.drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, legend_color);
-    ui.drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, legend_color);
+    drawLine(legend_x0, y - 4.5, legend_x1, y - 4.5, z, 1, 1, legend_color);
+    drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, legend_color);
+    drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, legend_color);
     let ly = legend_scale * params.width_ly / zoom;
-    let legend_y = y - 6 - ui.font_height;
+    let legend_y = y - 6 - font_height;
     font.drawSizedAligned(solar_view ? font_style_fade : null,
-      legend_x0, legend_y, z, ui.font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
+      legend_x0, legend_y, z, font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
       `${format(ly)}ly`);
-    ui.drawRect(legend_x0 - 2, legend_y, legend_x1 + 2, y, z - 1, color_text_backdrop);
+    drawRect(legend_x0 - 2, legend_y, legend_x1 + 2, y, z - 1, color_text_backdrop);
 
     x = map_x0;
     y = map_y0;
 
     v2set(drag_temp, 0, 0);
-    let kb_scale = input.keyDown(KEYS.SHIFT) ? 0.5 : 0.125;
-    drag_temp[0] += input.keyDown(KEYS.A) * kb_scale;
-    drag_temp[0] -= input.keyDown(KEYS.D) * kb_scale;
-    drag_temp[1] += input.keyDown(KEYS.W) * kb_scale;
-    drag_temp[1] -= input.keyDown(KEYS.S) * kb_scale;
-    let drag = input.drag();
+    let kb_scale = keyDown(KEYS.SHIFT) ? 0.5 : 0.125;
+    drag_temp[0] += keyDown(KEYS.A) * kb_scale;
+    drag_temp[0] -= keyDown(KEYS.D) * kb_scale;
+    drag_temp[1] += keyDown(KEYS.W) * kb_scale;
+    drag_temp[1] -= keyDown(KEYS.S) * kb_scale;
+    let drag = inputDrag();
     if (drag && drag.delta) {
       v2add(drag_temp, drag_temp, drag.delta);
       use_mouse_pos = true;
@@ -712,7 +757,7 @@ export function main() {
       local_storage.setJSON('offsx', zoom_offs[0]);
       local_storage.setJSON('offsy', zoom_offs[1]);
     }
-    if (engine.defines.ATTRACT) {
+    if (debugDefineIsSet('ATTRACT')) {
       zoom_offs[0] = clamp(zoom_offs[0], 0, 1 - 1/zoom);
       zoom_offs[1] = clamp(zoom_offs[1], 0, 1 - 1/zoom);
     } else {
@@ -720,11 +765,11 @@ export function main() {
       zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
     }
 
-    if (input.mouseMoved()) {
+    if (mouseMoved()) {
       use_mouse_pos = true;
     }
     if (use_mouse_pos) {
-      input.mousePos(mouse_pos);
+      mousePos(mouse_pos);
     } else {
       mouse_pos[0] = map_x0 + w/2;
       mouse_pos[1] = map_y0 + w/2;
@@ -733,15 +778,15 @@ export function main() {
     mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
 
     let overlay_y = 0;
-    let overlay_x = show_panel ? map_x0 + 2 : ui.button_height * 2;
+    let overlay_x = show_panel ? map_x0 + 2 : button_height * 2;
     let overlay_w = 0;
     function overlayText(line) {
-      if (engine.defines.ATTRACT) {
+      if (debugDefineIsSet('ATTRACT')) {
         return;
       }
-      let textw = ui.print(null, overlay_x, overlay_y, z, line);
+      let textw = print(null, overlay_x, overlay_y, z, line);
       overlay_w = max(overlay_w, textw);
-      overlay_y += ui.font_height;
+      overlay_y += font_height;
     }
     if (0) {
       overlayText(`${use_mouse_pos?'Mouse':'Target'}: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
@@ -757,8 +802,8 @@ export function main() {
         hp = round(hp);
         wp = round(wp);
       }
-      if (engine.defines.CELL) {
-        ui.drawHollowRect2({
+      if (debugDefineIsSet('CELL')) {
+        drawHollowRect2({
           x: xp - 0.5,
           y: yp - 0.5,
           w: wp + 1,
@@ -773,7 +818,7 @@ export function main() {
         }
       }
 
-      if (engine.defines.CURSOR) {
+      if (debugDefineIsSet('CURSOR')) {
         let dx = floor((mouse_pos[0] - cell.x0) / cell.w * galaxy.buf_dim);
         let dy = floor((mouse_pos[1] - cell.y0) / cell.w * galaxy.buf_dim);
         let dd = cell.data[dy * galaxy.buf_dim + dx];
@@ -905,8 +950,8 @@ export function main() {
         }
         let r = 4 / (1 + MAX_ZOOM - zoom_level);
         if (!solar_view) {
-          ui.drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
-          if (input.click({
+          drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
+          if (inputClick({
             x: xp - SELECT_DIST,
             y: yp - SELECT_DIST,
             w: SELECT_DIST * 2,
@@ -930,7 +975,7 @@ export function main() {
           let planet = planets[ii];
           overlayText(`  Planet #${ii+1}: Class ${planet.type.name}`);
         }
-        let do_view = eff_solar_view ? eff_solar_view : engine.defines.AUTOSOLAR && zoom_level > 15.5 ? 1 : 0;
+        let do_view = eff_solar_view ? eff_solar_view : debugDefineIsSet('AUTOSOLAR') && zoom_level > 15.5 ? 1 : 0;
         if (do_view) {
           drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w, xp, yp, do_view);
         }
@@ -939,15 +984,15 @@ export function main() {
       }
     }
 
-    if (input.click()) {
+    if (inputClick()) {
       use_mouse_pos = true;
-      input.mousePos(mouse_pos);
+      mousePos(mouse_pos);
       doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, solar_view ? -1 : 1);
     }
 
-    ui.drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
+    drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
 
-    if (engine.defines.ATTRACT && !netDisconnected()) {
+    if (debugDefineIsSet('ATTRACT') && !netDisconnected()) {
       engine.postRender(saveSnapshot);
     }
   }
