@@ -821,8 +821,10 @@ export function main() {
       if (debugDefineIsSet('CURSOR')) {
         let dx = floor((mouse_pos[0] - cell.x0) / cell.w * galaxy.buf_dim);
         let dy = floor((mouse_pos[1] - cell.y0) / cell.w * galaxy.buf_dim);
-        let dd = cell.data[dy * galaxy.buf_dim + dx];
-        overlayText(`Value: ${dd.toFixed(5)}`);
+        if (cell.data) {
+          let dd = cell.data[dy * galaxy.buf_dim + dx];
+          overlayText(`Value: ${dd.toFixed(5)}`);
+        }
       }
     }
 
