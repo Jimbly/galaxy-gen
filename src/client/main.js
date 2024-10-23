@@ -20,6 +20,10 @@ import { BLEND_ADDITIVE, spriteCreate } from 'glov/client/sprites';
 import * as textures from 'glov/client/textures';
 import * as ui from 'glov/client/ui';
 import {
+  LINE_CAP_ROUND,
+  LINE_NO_AA,
+} from 'glov/client/ui';
+import {
   clamp,
   clone,
   deepEqual,
@@ -367,7 +371,7 @@ export function main() {
         v2addScale(cur_pos, cur_pos, unit_vec, 0.5);
       }
       if (ii) {
-        ui.drawLine(last_pos[0], last_pos[1], cur_pos[0], cur_pos[1], z, 1, 0.9, color);
+        ui.drawLine(last_pos[0], last_pos[1], cur_pos[0], cur_pos[1], z, 1, 1, color, LINE_NO_AA|LINE_CAP_ROUND);
       }
     }
   }
