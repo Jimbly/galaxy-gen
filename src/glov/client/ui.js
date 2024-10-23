@@ -71,6 +71,7 @@ const {
   spotUnfocus,
 } = require('./spot.js');
 const {
+  BLEND_ADDITIVE,
   BLEND_PREMULALPHA,
   spriteClipped,
   spriteClipPause,
@@ -1893,10 +1894,22 @@ function premulAlphaColor(color) {
   temp_color[3] = color[3];
   return temp_color;
 }
+function premulAlphaAdditiveColor(color) {
+  temp_color[0] = color[0] * color[3];
+  temp_color[1] = color[1] * color[3];
+  temp_color[2] = color[2] * color[3];
+  temp_color[3] = 0;
+  return temp_color;
+}
 function drawElipseInternal(sprite, x0, y0, x1, y1, z, spread, tu0, tv0, tu1, tv1, color, blend) {
-  if (!blend && !glov_engine.defines.NOPREMUL) {
-    blend = BLEND_PREMULALPHA;
-    color = premulAlphaColor(color);
+  if (!glov_engine.defines.NOPREMUL) {
+    if (!blend) {
+      blend = BLEND_PREMULALPHA;
+      color = premulAlphaColor(color);
+    } else if (blend === BLEND_ADDITIVE) {
+      blend = BLEND_PREMULALPHA;
+      color = premulAlphaAdditiveColor(color);
+    }
   }
   spriteQueueRaw(sprite.texs,
     x0, y0, z, x1 - x0, y1 - y0,
