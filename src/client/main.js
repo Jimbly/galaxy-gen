@@ -941,9 +941,22 @@ export function main() {
       let xp = x + w/2;
       let yp = y + w/2;
       if (star) {
+        if (debugDefineIsSet('STAR')) {
+          overlayText(`star.x: ${star.x.toFixed(10)}`);
+          overlayText(`star.y: ${star.y.toFixed(10)}`);
+        }
+
         let max_zoom = pow(2, MAX_ZOOM);
-        xp = floor(star.x * max_zoom * buf_dim);
-        yp = floor(star.y * max_zoom * buf_dim);
+        xp = star.x * max_zoom * buf_dim;
+        yp = star.y * max_zoom * buf_dim;
+        if (debugDefineIsSet('STAR')) {
+          overlayText(`rel star.x: ${xp.toFixed(2)}`);
+          overlayText(`rel star.y: ${yp.toFixed(2)}`);
+        }
+        if (view === 1) {
+          xp = floor(xp);
+          yp = floor(yp);
+        }
         xp = x + (xp*zoom/max_zoom/buf_dim - zoom_offs[0] * zoom) * w;
         yp = y + (yp*zoom/max_zoom/buf_dim - zoom_offs[1] * zoom) * w;
         if (view === 1) {
