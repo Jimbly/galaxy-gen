@@ -23,6 +23,7 @@ Z.FPSMETER = Z.FPSMETER || 10000;
 export const LINE_ALIGN = 1<<0;
 export const LINE_CAP_SQUARE = 1<<1;
 export const LINE_CAP_ROUND = 1<<2;
+export const LINE_NO_AA = 1<<3;
 
 export const internal = {
   checkHooks, // eslint-disable-line @typescript-eslint/no-use-before-define
@@ -2097,6 +2098,12 @@ export function drawLine(x0, y0, x1, y1, z, w, precise, color, mode) {
   step_end = 1 + precise * (step_end - 1);
   let A = 1.0 / (step_end - step_start);
   let B = -step_start * A;
+
+  if (mode & LINE_NO_AA) {
+    A *= 512;
+    B = B * 512 - (512/2-0.5);
+  }
+
   let shader_param;
   if (line_last_shader_param.param0[0] !== A ||
     line_last_shader_param.param0[1] !== B
