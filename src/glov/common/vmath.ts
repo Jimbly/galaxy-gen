@@ -24,6 +24,12 @@ export type Vec3 = [number, number, number, ...number[]] | Float64Array | Int32A
 export type Vec2 = [number, number, ...number[]] | Float64Array | Int32Array;
 export type Vec1 = [number, ...number[]] | Float64Array | Int32Array;
 
+// Pure JS types compatible with vmath functions
+export type JSVec4 = [number, number, number, number];
+export type JSVec3 = [number, number, number];
+export type JSVec2 = [number, number];
+export type JSVec1 = [number];
+
 export type ROVec4 = Readonly<Vec4>;
 export type ROVec3 = Readonly<Vec3>;
 export type ROVec2 = Readonly<Vec2>;
