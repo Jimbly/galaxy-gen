@@ -514,7 +514,7 @@ export class SolarSystem {
   star_data: StarType;
   name?: string;
   planets: Planet[];
-  constructor(global_seed: number, star: Star) {
+  constructor(global_seed: number, star: Pick<Star, 'id'>) {
     let { /*x, y,*/ id } = star;
     let classif = starTypeFromID(id);
     let star_data = starTypeData(classif);
@@ -571,6 +571,6 @@ export class SolarSystem {
   }
 }
 
-export function solarSystemCreate(global_seed: number, star: Star): SolarSystem {
+export function solarSystemCreate(global_seed: number, star: Pick<Star, 'id'>): SolarSystem {
   return new SolarSystem(global_seed, star);
 }

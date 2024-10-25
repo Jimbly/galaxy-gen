@@ -33,6 +33,9 @@ import { slider } from 'glov/client/slider';
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
 import {
   BLEND_ADDITIVE,
+  ShaderParams,
+  Sprite,
+  Texture,
   spriteCreate,
   spriteQueueRaw,
 } from 'glov/client/sprites';
@@ -67,6 +70,8 @@ import {
   lerp,
 } from 'glov/common/util';
 import {
+  JSVec2,
+  ROVec4,
   unit_vec,
   v2add,
   v2addScale,
@@ -77,11 +82,15 @@ import {
   vec4,
 } from 'glov/common/vmath';
 import {
+  Galaxy,
+  GalaxyCellAlloced,
+  GenGalaxyParams,
   LAYER_STEP,
   createGalaxy,
   distSq,
 } from './galaxy';
 import {
+  SolarSystem,
   planetMapTexture,
   solarSystemCreate,
 } from './solar_system';
@@ -99,7 +108,7 @@ Z.UI_TEST = 200;
 const game_width = 256 + 90;
 const game_height = 256;
 
-export function main() {
+export function main(): void {
   if (engine.DEBUG) {
     // Enable auto-reload, etc
     netInit({ engine });
@@ -112,23 +121,23 @@ export function main() {
   const font_info_04b03x1 = require('./img/font/04b03_8x1.json');
   const font_info_palanquin32 = require('./img/font/palanquin32.json');
   let pixely = view === 1 ? 'strict' : 'on';
-  let font;
+  let font_init;
   let ui_sprites;
   if (pixely === 'strict' || true) {
-    font = { info: font_info_04b03x1, texture: 'font/04b03_8x1' };
+    font_init = { info: font_info_04b03x1, texture: 'font/04b03_8x1' };
     ui_sprites = spriteSetGet('pixely');
   } else if (pixely && pixely !== 'off') {
-    font = { info: font_info_04b03x2, texture: 'font/04b03_8x2' };
+    font_init = { info: font_info_04b03x2, texture: 'font/04b03_8x2' };
     ui_sprites = spriteSetGet('pixely');
   } else {
-    font = { info: font_info_palanquin32, texture: 'font/palanquin32' };
+    font_init = { info: font_info_palanquin32, texture: 'font/palanquin32' };
   }
 
   if (!engine.startup({
     game_width,
     game_height,
     pixely,
-    font,
+    font: font_init,
     viewport_postprocess: false,
     antialias: false,
     do_borders: false,
@@ -137,7 +146,7 @@ export function main() {
   })) {
     return;
   }
-  font = engine.font;
+  let font = engine.font;
 
   scaleSizes(13 / 32);
   setFontHeight(8);
@@ -166,7 +175,10 @@ export function main() {
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
   const buf_dim = 256;
-  let params = {
+  let params: GenGalaxyParams & {
+    dither: number;
+    width_ly: number;
+  } = {
     buf_dim,
     dither: 0.5,
     arms: 7,
@@ -206,27 +218,28 @@ export function main() {
     seed: 80,
     star_id: 55,
   };
-  let gen_params;
-  let gen_solar_params;
-  let debug_sprite;
-  let galaxy;
-  function allocSprite() {
+  let gen_params: typeof params;
+  let gen_solar_params: typeof solar_params;
+  let debug_sprite: Sprite;
+  let galaxy: Galaxy;
+  function allocSprite(): void {
     if (!debug_sprite) {
       let tex = galaxy.getCellTextured(0, 0).tex;
+      assert(tex);
       debug_sprite = spriteCreate({
         texs: [tex, tex, tex],
       });
     }
   }
 
-  function round4(v) {
+  function round4(v: number): number {
     return round(v * 1000)/1000;
   }
-  function roundZoom(v) {
+  function roundZoom(v: number): number {
     return view === 1 ? round(v) : v;
   }
 
-  function format(v) {
+  function format(v: number): string {
     assert(v >= 0);
     if (!v) {
       return '0';
@@ -267,7 +280,7 @@ export function main() {
   let zoom_level = local_storage.getJSON('zoom', 0);
   let solar_view = local_storage.getJSON('solar_view', 0);
   let solar_override = local_storage.getJSON('solar_override', false);
-  let solar_override_system = null;
+  let solar_override_system: null | SolarSystem = null;
   let selected_star_id = local_storage.getJSON('selected_star', null);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
@@ -278,7 +291,7 @@ export function main() {
   const color_legend_fade = vec4(1,1,1,0.25);
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
-  function doZoomActual(x, y, delta) {
+  function doZoomActual(x: number, y: number, delta: number): void {
     let cur_zoom = pow(2, zoom_level);
     let new_zoom_level = max(0, min(zoom_level + delta, MAX_ZOOM));
     let new_zoom = pow(2, new_zoom_level);
@@ -298,13 +311,18 @@ export function main() {
     local_storage.setJSON('offsy', zoom_offs[1]);
     local_storage.setJSON('zoom', zoom_level);
   }
-  let queued_zooms = [];
+  let queued_zooms: {
+    x: number;
+    y: number;
+    progress: number;
+    delta: number;
+  }[] = [];
   let eff_solar_view = solar_view;
   let eff_solar_view_unsmooth = solar_view;
-  function zoomTime(amount) {
+  function zoomTime(amount: number): number {
     return abs(amount) * 500;
   }
-  function zoomTick(max_okay_zoom) {
+  function zoomTick(max_okay_zoom: number): void {
     let dt = getFrameDt();
     for (let ii = 0; ii < queued_zooms.length; ++ii) {
       let zm = queued_zooms[ii];
@@ -340,12 +358,12 @@ export function main() {
     let iesvu = floor(eff_solar_view_unsmooth);
     eff_solar_view = round4(iesvu + easeInOut(eff_solar_view_unsmooth - iesvu, 2));
   }
-  function solarZoom(delta) {
+  function solarZoom(delta: number): void {
     solar_view = clamp(solar_view + delta, 0, MAX_SOLAR_VIEW);
     local_storage.setJSON('solar_view', solar_view);
     local_storage.setJSON('selected_star', solar_view ? selected_star_id : null);
   }
-  function doZoom(x, y, delta) {
+  function doZoom(x: number, y: number, delta: number): void {
     if (target_zoom_level === MAX_ZOOM && delta > 0) {
       if (selected_star_id !== null) {
         solarZoom(1);
@@ -363,9 +381,9 @@ export function main() {
     });
   }
 
-  let last_img;
+  let last_img: string;
   let img_id = 0;
-  function saveSnapshot() {
+  function saveSnapshot(): void {
     let src = engine.canvas;
     let viewport = engine.viewport;
 
@@ -373,6 +391,7 @@ export function main() {
     canvas_full.width = game_width * 4;
     canvas_full.height = game_height * 4;
     let ctx = canvas_full.getContext('2d');
+    assert(ctx);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(src, viewport[0], src.height - viewport[3] + viewport[1], viewport[2], viewport[3],
       0, 0, canvas_full.width, canvas_full.height);
@@ -391,6 +410,7 @@ export function main() {
       pak.send();
     } else {
       let win = window.open('', 'img_preview');
+      assert(win);
       let elems = win.document.getElementsByTagName('img');
       if (elems && elems.length) {
         elems[0].remove();
@@ -400,10 +420,10 @@ export function main() {
   }
 
   const VSCALE = 0.5;
-  function drawHollowElipse(x, y, z, r0, r1, color) {
+  function drawHollowElipse(x: number, y: number, z: number, r0: number, r1: number, color: ROVec4): void {
     let segments = max(20, r0 - 10);
-    let last_pos = [0,0];
-    let cur_pos = [0,0];
+    let last_pos: JSVec2 = [0,0];
+    let cur_pos: JSVec2 = [0,0];
     for (let ii = 0; ii <= segments + 1; ++ii) {
       v2copy(last_pos, cur_pos);
       let theta = ii / segments * PI * 2 + 0.1;
@@ -418,7 +438,17 @@ export function main() {
     }
   }
   const ORBIT_RATE = 0.0002;
-  function drawSolarSystem(solar_system, x0, y0, z, w, h, star_xp, star_yp, fade) {
+  function drawSolarSystem(
+    solar_system: SolarSystem,
+    x0: number,
+    y0: number,
+    z: number,
+    w: number,
+    h: number,
+    star_xp: number,
+    star_yp: number,
+    fade: number
+  ): void {
     let pmtex = planetMapTexture();
     x0 = lerp(fade, star_xp, x0);
     y0 = lerp(fade, star_yp, y0);
@@ -468,7 +498,7 @@ export function main() {
   }
 
   let drag_temp = vec2();
-  function test(dt) {
+  function test(dt: number): void {
 
     gl.clearColor(0, 0, 0, 1);
     let z = Z.UI;
@@ -484,7 +514,7 @@ export function main() {
     let map_x0 = show_panel ? game_width - w : (game_width - w)/2;
     let map_y0 = 0;
 
-    function checkLevel(check_zoom_level) {
+    function checkLevel(check_zoom_level: number): boolean {
       let zoom = pow(2, zoom_level);
       let layer_idx = floor(check_zoom_level / (LAYER_STEP/ 2));
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
@@ -639,17 +669,18 @@ export function main() {
           let layer_idx = round(zoom_level / (LAYER_STEP / 2));
           print(style, x, y, z, `Layer #${layer_idx}:`);
           y += font_height + 2;
-          let key = `layer${layer_idx}`;
-          if (params[key]) {
-            print(style, x, y, z, `Noise Freq: ${params[key].noise_freq}`);
+          let key = `layer${layer_idx}` as 'layer1' | 'layer2'; // etc
+          let param = params[key];
+          if (param) {
+            print(style, x, y, z, `Noise Freq: ${param.noise_freq}`);
             y += font_height;
-            params[key].noise_freq = round4(slider(params[key].noise_freq,
+            param.noise_freq = round4(slider(param.noise_freq,
               { x, y, z, min: 0.1, max: 100 * pow(2, layer_idx) }));
             y += button_spacing;
 
-            print(style, x, y, z, `Noise Weight: ${params[key].noise_weight}`);
+            print(style, x, y, z, `Noise Weight: ${param.noise_weight}`);
             y += font_height;
-            params[key].noise_weight = round4(slider(params[key].noise_weight, { x, y, z, min: 0, max: 4 }));
+            param.noise_weight = round4(slider(param.noise_weight, { x, y, z, min: 0, max: 4 }));
             y += button_spacing;
           }
         }
@@ -780,7 +811,7 @@ export function main() {
     let overlay_y = 0;
     let overlay_x = show_panel ? map_x0 + 2 : button_height * 2;
     let overlay_w = 0;
-    function overlayText(line) {
+    function overlayText(line: string): void {
       if (debugDefineIsSet('ATTRACT')) {
         return;
       }
@@ -791,7 +822,7 @@ export function main() {
     if (0) {
       overlayText(`${use_mouse_pos?'Mouse':'Target'}: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
     }
-    function highlightCell(cell) {
+    function highlightCell(cell: GalaxyCellAlloced): void {
       let xp = x + (cell.x0 - zoom_offs[0]) * zoom * w;
       let yp = y + (cell.y0 - zoom_offs[1]) * zoom * w;
       let wp = w * zoom * cell.w;
@@ -829,7 +860,7 @@ export function main() {
     }
 
     let did_highlight = false;
-    function checkCellHighlight(cell) {
+    function checkCellHighlight(cell: GalaxyCellAlloced): void {
       if (cell.ready && !did_highlight &&
         mouse_pos[0] >= cell.x0 && mouse_pos[0] < cell.x0 + cell.w &&
         mouse_pos[1] >= cell.y0 && mouse_pos[1] < cell.y0 + cell.h
@@ -840,7 +871,10 @@ export function main() {
     }
 
     cells_drawn = 0;
-    function drawCell(alpha, parent, cell) {
+    type GalaxyCellTexCache = GalaxyCellAlloced & {
+      texs?: Texture[];
+    };
+    function drawCell(alpha: number, parent: GalaxyCellAlloced, cell: GalaxyCellTexCache): void {
       ++cells_drawn;
       let qx = cell.cx - parent.cx * LAYER_STEP;
       let qy = cell.cy - parent.cy * LAYER_STEP;
@@ -851,6 +885,8 @@ export function main() {
         h: w * zoom * cell.h,
         z: Z.UI - 10,
         nozoom: true,
+        shader: view === 1 ? shader_galaxy_pixel : shader_galaxy_blend,
+        shader_params: undefined! as ShaderParams,
       };
       let partial = false;
       if (!parent.tex) {
@@ -863,7 +899,6 @@ export function main() {
         alpha = 0;
         partial = true;
       }
-      draw_param.shader = view === 1 ? shader_galaxy_pixel : shader_galaxy_blend;
       let dither = lerp(clamp(zoom_level - 12.5, 0, 1), params.dither, 0);
       draw_param.shader_params = {
         params: [alpha ? buf_dim : buf_dim / LAYER_STEP, dither],
@@ -879,7 +914,7 @@ export function main() {
       debug_sprite.texs = texs;
       debug_sprite.draw(draw_param);
     }
-    function drawLevel(layer_idx, alpha, do_highlight) {
+    function drawLevel(layer_idx: number, alpha: number, do_highlight: boolean): void {
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_y0 = (camera2d.y0Real() - map_y0) / w / zoom + zoom_offs[1];
@@ -1012,7 +1047,7 @@ export function main() {
     }
   }
 
-  function testInit(dt) {
+  function testInit(dt: number): void {
     engine.setState(test);
     test(dt);
   }

@@ -60,11 +60,11 @@ let hue_buf_pool: Uint8Array[] = [];
 
 let noise = new Array(2);
 let rand = randCreate(0);
-type PerturbParams = {
+export type PerturbParams = {
   noise_freq: number;
   noise_weight: number;
 };
-type GenGalaxyParams = {
+export type GenGalaxyParams = {
   seed: number;
   arms: number;
   buf_dim: number;
@@ -211,7 +211,7 @@ let tex_id_idx = 0;
 
 type GalaxyLayer = GalaxyCell[];
 
-class Galaxy {
+export class Galaxy {
   buf_dim: number;
   tex_total_size: number;
   tex_data: Uint8Array;
@@ -229,7 +229,9 @@ class Galaxy {
   last_sample_buf?: string;
   declare getSampleBuf: (layer_idx: number, cx: number, cy: number) => Float32Array | null;
 
-  declare getCell: (layer_idx: number, cell_idx: number, just_alloc?: boolean) => GalaxyCell;
+  declare getCell: (layer_idx: number, cell_idx: number) => GalaxyCellAlloced;
+  declare getCellJustAlloc: (layer_idx: number, cell_idx: number) => GalaxyCell;
+  declare getCellInternal: (layer_idx: number, cell_idx: number, just_alloc: boolean) => GalaxyCell;
   declare realizeStars: (cell: GalaxyCell) => boolean;
   declare renderStars: (cell: GalaxyCell) => boolean;
   declare assignChildStars: (cell: GalaxyCell) => void;
@@ -239,7 +241,7 @@ class Galaxy {
   declare getStar: (star_id: number) => Star | null;
   declare getStarData: (star: Star) => asserts star is WithRequired<Star, 'solar_system'>;
   declare dispose: () => void;
-  declare getCellTextured: (layer_idx: number, cell_idx: number) => GalaxyCell;
+  declare getCellTextured: (layer_idx: number, cell_idx: number) => GalaxyCellAlloced;
   declare starsNear: (x: number, y: number, num: number) => number[];
 }
 
@@ -598,7 +600,7 @@ function starVisTypeFromID(id: number): number {
         if (ncy < 0 || ncy >= layer_res || ncx < 0 || ncx >= layer_res) {
           n = cell;
         } else {
-          n = this.getCell(layer_idx, ncx + ncy * layer_res, true);
+          n = this.getCellJustAlloc(layer_idx, ncx + ncy * layer_res);
         }
         assert(!n.tex); // just for debug, make sure this neighbor we're writing into hasn't already made a texture
         if (!n.star_buf) {
@@ -837,7 +839,7 @@ Galaxy.prototype.perturb = function (cell: GalaxyCell, params: PerturbParams): v
   ++counts.perturb;
 };
 
-type GalaxyCell = {
+export type GalaxyCell = {
   x0: number;
   y0: number;
   w: number;
@@ -863,7 +865,14 @@ type GalaxyCell = {
   tex: Texture | null;
   child_data?: CellChildData[];
 };
-Galaxy.prototype.getCell = function (layer_idx: number, cell_idx: number, just_alloc?: boolean): GalaxyCell {
+export type GalaxyCellAlloced = WithRequired<GalaxyCell, 'pois' | 'star_count' | 'sum' | 'sumsq' | 'star_idx' | 'data'>;
+Galaxy.prototype.getCellJustAlloc = function (layer_idx: number, cell_idx: number): GalaxyCell {
+  return this.getCellInternal(layer_idx, cell_idx, true);
+};
+Galaxy.prototype.getCell = function (layer_idx: number, cell_idx: number): GalaxyCellAlloced {
+  return this.getCellInternal(layer_idx, cell_idx, false) as GalaxyCellAlloced;
+};
+Galaxy.prototype.getCellInternal = function (layer_idx: number, cell_idx: number, just_alloc: boolean): GalaxyCell {
   if (layer_idx > MAX_LAYER) {
     return {} as GalaxyCell;
   }
@@ -1079,7 +1088,7 @@ Galaxy.prototype.getCell = function (layer_idx: number, cell_idx: number, just_a
      0,1,1,1,0,
      0,0,0,0,0],
   ];
-  Galaxy.prototype.getCellTextured = function (layer_idx: number, cell_idx: number): GalaxyCell {
+  Galaxy.prototype.getCellTextured = function (layer_idx: number, cell_idx: number): GalaxyCellAlloced {
     let { buf_dim, tex_data, tex_total_size } = this;
     let cell = this.getCell(layer_idx, cell_idx);
     if (cell.tex) {
