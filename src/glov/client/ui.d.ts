@@ -21,6 +21,7 @@ export const Z_MIN_INC: number;
 export const LINE_ALIGN: number;
 export const LINE_CAP_SQUARE: number;
 export const LINE_CAP_ROUND: number;
+export const LINE_NO_AA: number;
 export function makeColorSet(color: ROVec4): ColorSet;
 export function colorSetMakeCustom(regular: ROVec4, rollover: ROVec4, down: ROVec4, disabled: ROVec4): ColorSet;
 export interface UIBox extends Box {
