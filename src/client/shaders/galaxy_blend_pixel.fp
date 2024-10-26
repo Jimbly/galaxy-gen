@@ -2,9 +2,9 @@
 
 precision lowp float;
 
-uniform sampler2D tex0;
-uniform sampler2D tex1;
-uniform sampler2D tex2;
+uniform sampler2D tex0; // cell tex
+uniform sampler2D tex1; // parent tex
+uniform sampler2D tex2; // palette
 uniform vec4 params;
 uniform vec4 scale;
 

@@ -218,7 +218,7 @@ type PlanetType = {
   name: PlanetTypeName;
   size: [number, number];
   bias?: number;
-  color: ROVec4;
+  color?: ROVec4; // unused
   color_table: number[] | number[][];
   noise: NoiseOpts;
 };

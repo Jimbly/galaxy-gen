@@ -1,7 +1,6 @@
 /*eslint global-require:off*/
-// eslint-disable-next-line import/order
-const local_storage = require('glov/client/local_storage.js');
-local_storage.setStoragePrefix('galaxy-gen'); // Before requiring anything else that might load from this
+// Before requiring anything else that might load from this
+require('glov/client/local_storage.js').setStoragePrefix('galaxy-gen'); // eslint-disable-line import/order
 
 import assert from 'assert';
 import * as camera2d from 'glov/client/camera2d';
@@ -22,6 +21,10 @@ import {
   mousePos,
   mouseWheel,
 } from 'glov/client/input';
+import {
+  localStorageGetJSON,
+  localStorageSetJSON,
+} from 'glov/client/local_storage';
 import {
   netClient,
   netDisconnected,
@@ -69,6 +72,7 @@ import {
   easeInOut,
   easeOut,
   lerp,
+  merge,
 } from 'glov/common/util';
 import {
   JSVec2,
@@ -122,8 +126,8 @@ export function main(): void {
     netInit({ engine });
   }
 
-  let view = local_storage.getJSON('view', 1);
-  let show_panel = local_storage.getJSON('panel', 0);
+  let view = localStorageGetJSON('view', 1);
+  let show_panel = Boolean(localStorageGetJSON('panel', false));
 
   const font_info_04b03x2 = require('./img/font/04b03_8x2.json');
   const font_info_04b03x1 = require('./img/font/04b03_8x1.json');
@@ -223,20 +227,20 @@ export function main(): void {
       noise_weight: 0.3,
     },
   };
-  let solar_params = {
+  let solar_params = merge({
     seed: 80,
     star_id: 55,
-  };
+  }, localStorageGetJSON('solar_params', {}));
   let planet_params: Required<PlanetOverrideParams> & {
     orbit: number;
     rot: number;
-  } = {
-    name: 'M',
+  } = merge({
+    name: 'M' as const,
     size: 12,
     seed: 50,
     orbit: 0,
     rot: 0,
-  };
+  }, localStorageGetJSON('planet_params', {}));
   let gen_params: typeof params;
   let gen_solar_params: typeof solar_params;
   let gen_planet_params: typeof planet_params;
@@ -297,17 +301,17 @@ export function main(): void {
   });
 
 
-  let zoom_level = local_storage.getJSON('zoom', 0);
-  let solar_view = local_storage.getJSON('solar_view', 0);
-  let solar_override = local_storage.getJSON('solar_override', false);
+  let zoom_level = localStorageGetJSON('zoom', 0);
+  let solar_view = localStorageGetJSON('solar_view', 0);
+  let solar_override = localStorageGetJSON('solar_override', false);
   let solar_override_system: null | SolarSystem = null;
-  let selected_star_id = local_storage.getJSON('selected_star', null);
-  let planet_view = local_storage.getJSON('planet_view', 0);
-  let planet_override = local_storage.getJSON('planet_override', false);
+  let selected_star_id: number | null = localStorageGetJSON('selected_star', null);
+  let planet_view = localStorageGetJSON('planet_view', 0);
+  let planet_override = localStorageGetJSON('planet_override', false);
   let planet_override_planet: null | Planet = null;
-  let selected_planet_index = local_storage.getJSON('selected_planet', null);
+  let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
   let target_zoom_level = zoom_level;
-  let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
+  let zoom_offs = vec2(localStorageGetJSON('offsx', 0),localStorageGetJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let use_mouse_pos = false;
@@ -331,9 +335,9 @@ export function main(): void {
       // recenter
       zoom_offs[0] = zoom_offs[1] = 0;
     }
-    local_storage.setJSON('offsx', zoom_offs[0]);
-    local_storage.setJSON('offsy', zoom_offs[1]);
-    local_storage.setJSON('zoom', zoom_level);
+    localStorageSetJSON('offsx', zoom_offs[0]);
+    localStorageSetJSON('offsy', zoom_offs[1]);
+    localStorageSetJSON('zoom', zoom_level);
   }
   let queued_zooms: {
     x: number;
@@ -395,13 +399,13 @@ export function main(): void {
   }
   function solarZoom(delta: number): void {
     solar_view = clamp(solar_view + delta, 0, MAX_SOLAR_VIEW);
-    local_storage.setJSON('solar_view', solar_view);
-    local_storage.setJSON('selected_star', solar_view ? selected_star_id : null);
+    localStorageSetJSON('solar_view', solar_view);
+    localStorageSetJSON('selected_star', solar_view ? selected_star_id : null);
   }
   function planetZoom(delta: number): void {
     planet_view = clamp(planet_view + delta, 0, MAX_PLANET_VIEW);
-    local_storage.setJSON('planet_view', planet_view);
-    local_storage.setJSON('selected_planet', planet_view ? selected_planet_index : null);
+    localStorageSetJSON('planet_view', planet_view);
+    localStorageSetJSON('selected_planet', planet_view ? selected_planet_index : null);
   }
   function doZoom(x: number, y: number, delta: number): void {
     if (target_zoom_level === MAX_ZOOM && delta > 0) {
@@ -615,7 +619,7 @@ export function main(): void {
     // draw selected planet
     if (closest_planet) {
       let planet = planets[closest_planet.idx];
-      drawCircle(closest_planet.x, closest_planet.y, closest_planet.z - 0.1,
+      drawCircle(closest_planet.x, closest_planet.y, closest_planet.z - 0.01,
         planet.size + 2, 0.85, [0.5, 1, 1, fade], BLEND_ADDITIVE);
       selected_planet_index = closest_planet.idx;
     } else {
@@ -711,7 +715,7 @@ export function main(): void {
         keyDownEdge(KEYS.V)
       ) {
         view = (view + 1) % 2;
-        local_storage.setJSON('view', view);
+        localStorageSetJSON('view', view);
         setTimeout(() => engine.setPixelyStrict(view === 1), 0);
         //engine.reloadSafe();
       }
@@ -720,7 +724,7 @@ export function main(): void {
         keyDownEdge(KEYS.ESC)
       ) {
         show_panel = !show_panel;
-        local_storage.setJSON('panel', show_panel);
+        localStorageSetJSON('panel', show_panel);
       }
 
       y += button_spacing;
@@ -735,7 +739,7 @@ export function main(): void {
       if (planet_view) {
         if (buttonText({ x, y, z, text: planet_override ? 'Override' : 'Generated' })) {
           planet_override = !planet_override;
-          local_storage.setJSON('planet_override', planet_override);
+          localStorageSetJSON('planet_override', planet_override);
           planet_override_planet = null;
         }
         y += button_spacing;
@@ -774,6 +778,7 @@ export function main(): void {
 
             if (!planet_override_planet || !deepEqual(planet_params, gen_planet_params)) {
               gen_planet_params = clone(planet_params);
+              localStorageSetJSON('planet_params', planet_params);
               planet_override_planet = planetCreate(
                 solar_override ? solar_params.seed : galaxy.params.seed,
                 last_solar_system && last_solar_system.star_id || 0,
@@ -799,7 +804,7 @@ export function main(): void {
       } else if (solar_view) {
         if (buttonText({ x, y, z, text: solar_override ? 'Override' : 'Generated' })) {
           solar_override = !solar_override;
-          local_storage.setJSON('solar_override', solar_override);
+          localStorageSetJSON('solar_override', solar_override);
           solar_override_system = null;
         }
         y += button_spacing;
@@ -816,6 +821,7 @@ export function main(): void {
 
           if (!solar_override_system || !deepEqual(solar_params, gen_solar_params)) {
             gen_solar_params = clone(solar_params);
+            localStorageSetJSON('solar_params', solar_params);
             solar_override_system = solarSystemCreate(solar_params.seed, {
               // Fake Star structure
               id: solar_params.star_id,
@@ -892,7 +898,7 @@ export function main(): void {
         keyDownEdge(KEYS.ESC)
       ) {
         show_panel = !show_panel;
-        local_storage.setJSON('panel', show_panel);
+        localStorageSetJSON('panel', show_panel);
       }
       y += button_spacing;
     }
@@ -987,8 +993,8 @@ export function main(): void {
     if (drag_temp[0] || drag_temp[1]) {
       zoom_offs[0] -= drag_temp[0] / w / zoom;
       zoom_offs[1] -= drag_temp[1] / w / zoom;
-      local_storage.setJSON('offsx', zoom_offs[0]);
-      local_storage.setJSON('offsy', zoom_offs[1]);
+      localStorageSetJSON('offsx', zoom_offs[0]);
+      localStorageSetJSON('offsy', zoom_offs[1]);
     }
     if (debugDefineIsSet('ATTRACT')) {
       zoom_offs[0] = clamp(zoom_offs[0], 0, 1 - 1/zoom);

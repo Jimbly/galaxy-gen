@@ -26,9 +26,15 @@ Want:
 
 Next:
   select a planet and enter "orbit" zoom level
-    can tweak planet params
-    can toggle view of a big rotating globe or a flat map
-  then re-use/expand existing generate planet gen to generate a world map
+    X can tweak planet params
+    can tweak PlanetType data too?
+    debug: can toggle view of a big rotating globe or a flat map
+  expand existing generate planet gen to generate a world map
+    adjust to 7-8 colors instead of 3
+      what palette are we using, switched to AAP64?
+      base 4 are depth height (2 ocean, ground, mountain)
+      add specific biomes w/ per-planet-type logic:
+        M: forests in ground; ice everywhere; desert in ground or mountain
 
 
 
