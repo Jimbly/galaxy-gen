@@ -61,6 +61,7 @@ import {
   uiButtonWidth,
   uiTextHeight,
 } from 'glov/client/ui';
+import walltime from 'glov/client/walltime';
 import {
   clamp,
   clone,
@@ -91,7 +92,11 @@ import {
   distSq,
 } from './galaxy';
 import {
+  PLANET_TYPE_NAMES,
+  Planet,
+  PlanetOverrideParams,
   SolarSystem,
+  planetCreate,
   planetMapTexture,
   solarSystemCreate,
 } from './solar_system';
@@ -222,8 +227,19 @@ export function main(): void {
     seed: 80,
     star_id: 55,
   };
+  let planet_params: Required<PlanetOverrideParams> & {
+    orbit: number;
+    rot: number;
+  } = {
+    name: 'M',
+    size: 12,
+    seed: 50,
+    orbit: 0,
+    rot: 0,
+  };
   let gen_params: typeof params;
   let gen_solar_params: typeof solar_params;
+  let gen_planet_params: typeof planet_params;
   let debug_sprite: Sprite;
   let galaxy: Galaxy;
   function allocSprite(): void {
@@ -287,6 +303,8 @@ export function main(): void {
   let solar_override_system: null | SolarSystem = null;
   let selected_star_id = local_storage.getJSON('selected_star', null);
   let planet_view = local_storage.getJSON('planet_view', 0);
+  let planet_override = local_storage.getJSON('planet_override', false);
+  let planet_override_planet: null | Planet = null;
   let selected_planet_index = local_storage.getJSON('selected_planet', null);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
@@ -469,9 +487,10 @@ export function main(): void {
   }
 
   const ORBIT_RATE = 0.0002;
+  const ROTATION_RATE = 0.0003*0.5;
   function drawPlanet(
     solar_system: SolarSystem,
-    planet_index: number,
+    selected_planet: SelectedPlanet,
     x0: number,
     y0: number,
     z: number,
@@ -479,28 +498,50 @@ export function main(): void {
     h: number,
     fade: number,
   ): void {
-    let pmtex = planetMapTexture();
+    let pmtex = planetMapTexture(true);
+    let { planets } = solar_system;
+    let planet = planets[selected_planet.idx];
+    let theta = planet.orbit + planet.orbit_speed * walltime()*ORBIT_RATE;
+    theta %= 2 * PI;
+    let rot = getFrameTimestamp() * ROTATION_RATE;
+    if (planet_override && planet_override_planet) {
+      planet = planet_override_planet;
+      if (planet_params.orbit) {
+        theta = planet_params.orbit / 360 * 2 * PI;
+      }
+      if (planet_params.rot) {
+        rot = planet_params.rot / 360;
+      }
+    }
+
+    x0 = lerp(fade, selected_planet.x, x0);
+    y0 = lerp(fade, selected_planet.y, y0);
+    w *= fade;
+    h *= fade;
+    const FULL_SIZE = 128;
+    let sprite_size = lerp(fade, planet.size, FULL_SIZE);
 
     let xmid = x0 + w/2;
     let ymid = y0 + h/2;
 
-    let { planets } = solar_system;
-    let planet = planets[planet_index];
-    let theta = planet.orbit + planet.orbit_speed * getFrameTimestamp()*ORBIT_RATE;
-    theta %= 2 * PI;
 
-    let sprite_size = 128;
-    let planet_params = {
-      params: [getFrameTimestamp() * 0.0003, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
+    let planet_shader_params = {
+      params: [rot, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
     };
     let x = xmid;
     let y = ymid;
-    spriteQueueRaw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
+    spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
       x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
-      [1,1,1,fade], shader_planet_pixel, planet_params);
+      [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
 
   }
   let solar_mouse_pos = vec2();
+  type SelectedPlanet = {
+    idx: number;
+    x: number;
+    y: number;
+    z: number;
+  };
   function drawSolarSystem(
     solar_system: SolarSystem,
     x0: number,
@@ -511,9 +552,9 @@ export function main(): void {
     star_xp: number,
     star_yp: number,
     fade: number
-  ): void {
+  ): null | SelectedPlanet {
     mousePos(solar_mouse_pos);
-    let pmtex = planetMapTexture();
+    let pmtex = planetMapTexture(false);
     x0 = lerp(fade, star_xp, x0);
     y0 = lerp(fade, star_yp, y0);
     w *= fade;
@@ -528,18 +569,13 @@ export function main(): void {
     drawCircle(xmid, ymid, z + 0.005, sun_radius, 0.95, [c[0], c[1], c[2], fade]);
     let rstep = (w/2 - sun_pad) / (planets.length + 2);
     let r0 = sun_pad + rstep;
-    let closest_planet: null | {
-      idx: number;
-      x: number;
-      y: number;
-      z: number;
-    } = null;
+    let closest_planet: null | SelectedPlanet = null;
     let closest_dist = Infinity;
     let allow_planet_select = !planet_view && !eff_planet_view;
     for (let ii = 0; ii < planets.length; ++ii) {
       let r = r0 + rstep * ii;
       let planet = planets[ii];
-      let theta = planet.orbit + planet.orbit_speed * getFrameTimestamp()*ORBIT_RATE;
+      let theta = planet.orbit + planet.orbit_speed * walltime()*ORBIT_RATE;
       theta %= 2 * PI;
       let x = xmid + cos(theta) * r;
       let y = ymid + sin(theta) * r * VSCALE;
@@ -567,12 +603,13 @@ export function main(): void {
       drawHollowElipse(xmid, ymid, z - 2, r, r * VSCALE, [0.5, 0.5, 0, fade]);
 
       let sprite_size = planet.size;
-      let planet_params = {
-        params: [getFrameTimestamp() * 0.0003, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
+      let planet_shader_params = {
+        params: [getFrameTimestamp() * ROTATION_RATE, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
-      spriteQueueRaw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
+      // with pixely view, looks a lot better with a /2 on the texture resolution
+      spriteQueueRaw([pmtex, planet.getTexture(0, sprite_size*2/2), tex_palette_planets],
         x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
-        [1,1,1,fade], shader_planet_pixel, planet_params);
+        [1,1,1,fade], shader_planet_pixel, planet_shader_params);
     }
 
     // draw selected planet
@@ -589,8 +626,11 @@ export function main(): void {
     let br0 = w/2 * 1.5;
     let br1 = h/2*VSCALE * 1.5;
     drawElipse(xmid - br0, ymid - br1, xmid + br0, ymid + br1, z - 2.1, 0, [0,0,0,fade]);
+    return closest_planet;
   }
 
+  let last_solar_system: SolarSystem | null = null;
+  let last_selected_planet: SelectedPlanet | null = null;
   let drag_temp = vec2();
   function test(dt: number): void {
 
@@ -692,7 +732,71 @@ export function main(): void {
       //   y += button_spacing;
       // }
 
-      if (solar_view) {
+      if (planet_view) {
+        if (buttonText({ x, y, z, text: planet_override ? 'Override' : 'Generated' })) {
+          planet_override = !planet_override;
+          local_storage.setJSON('planet_override', planet_override);
+          planet_override_planet = null;
+        }
+        y += button_spacing;
+        let solar_system = last_solar_system;
+        if (solar_system) {
+          print(style, x, y, z, `StarID: ${solar_system.star_id}`);
+          y += font_height;
+
+          if (planet_override) {
+            print(style, x, y, z, `Type: ${planet_params.name}`);
+            y += font_height;
+            let name_idx = (PLANET_TYPE_NAMES.indexOf(planet_params.name) + 1) || 1;
+            name_idx = round(slider(name_idx, { x, y, z, min: 1, max: PLANET_TYPE_NAMES.length }));
+            planet_params.name = PLANET_TYPE_NAMES[name_idx - 1];
+            y += button_spacing;
+
+            // print(style, x, y, z, `Size: ${round4(planet_params.size)}`);
+            // y += font_height;
+            // planet_params.size = round(slider(planet_params.size, { x, y, z, min: 4, max: 128 }));
+            // y += button_spacing;
+
+            print(style, x, y, z, `Orbit: ${round4(planet_params.orbit)}`);
+            y += font_height;
+            planet_params.orbit = round(slider(planet_params.orbit, { x, y, z, min: 0, max: 360 }));
+            y += button_spacing;
+
+            print(style, x, y, z, `Rotation: ${round4(planet_params.rot)}`);
+            y += font_height;
+            planet_params.rot = round(slider(planet_params.rot, { x, y, z, min: 0, max: 360 }));
+            y += button_spacing;
+
+            print(style, x, y, z, `Seed: ${planet_params.seed}`);
+            y += font_height;
+            planet_params.seed = round(slider(planet_params.seed, { x, y, z, min: 1, max: 99 }));
+            y += button_spacing;
+
+            if (!planet_override_planet || !deepEqual(planet_params, gen_planet_params)) {
+              gen_planet_params = clone(planet_params);
+              planet_override_planet = planetCreate(
+                solar_override ? solar_params.seed : galaxy.params.seed,
+                last_solar_system && last_solar_system.star_id || 0,
+                planet_params
+              );
+            }
+          } else if (last_selected_planet) {
+            let planet = solar_system.planets[last_selected_planet.idx];
+            print(style, x, y, z, `Type: ${planet.type.name}`);
+            y += font_height;
+
+            print(style, x, y, z, `Size: ${round4(planet.size)}`);
+            y += font_height;
+
+            print(style, x, y, z, `Seed: ${planet.seed}`);
+            y += font_height;
+
+            y += button_spacing;
+          }
+
+        }
+
+      } else if (solar_view) {
         if (buttonText({ x, y, z, text: solar_override ? 'Override' : 'Generated' })) {
           solar_override = !solar_override;
           local_storage.setJSON('solar_override', solar_override);
@@ -1115,6 +1219,7 @@ export function main(): void {
         galaxy.getStarData(star);
       }
       let solar_system = solar_override_system || star && star.solar_system;
+      last_solar_system = solar_system || null;
       if (solar_system) {
         let { planets, star_data, name } = solar_system;
         overlayText(`${name || (star && star.id ? `Star #${star.id}` : '') || 'Override Star'}` +
@@ -1130,16 +1235,28 @@ export function main(): void {
         let do_solar_view = eff_solar_view ? eff_solar_view :
           debugDefineIsSet('AUTOSOLAR') && zoom_level > 15.5 ? 1 : 0;
         if (do_solar_view) {
-          drawSolarSystem(solar_system, map_x0, map_y0, Z.SOLAR, w, w, xp, yp, do_solar_view);
+          let selected_planet = drawSolarSystem(solar_system, map_x0, map_y0, Z.SOLAR, w, w, xp, yp, do_solar_view);
+          last_selected_planet = selected_planet;
           if (solar_view) {
             let do_planet_view = eff_planet_view ? eff_planet_view : 0;
-            if (do_planet_view && selected_planet_index !== null) {
-              drawPlanet(solar_system, selected_planet_index,
+            if (do_planet_view && selected_planet_index !== null && (
+              selected_planet || planet_override && planet_override_planet
+            )) {
+              drawPlanet(solar_system,
+                selected_planet || {
+                  idx: 0,
+                  x: 0, y: 0, z: Z.SOLAR,
+                },
                 map_x0,
                 map_y0,
                 Z.PLANET,
                 w, w,
                 do_planet_view);
+            } else {
+              if (!selected_planet) {
+                selected_planet_index = null;
+                planet_view = 0;
+              }
             }
           }
         }

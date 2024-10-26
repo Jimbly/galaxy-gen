@@ -2,10 +2,10 @@
 
 precision lowp float;
 
-uniform sampler2D tex0;
-uniform sampler2D tex1;
-uniform sampler2D tex2;
-uniform vec4 params;
+uniform sampler2D tex0; // pmtex
+uniform sampler2D tex1; // planet generated
+uniform sampler2D tex2; // palette
+uniform vec4 params; // [ rotation, border, sun_dir, unused]
 uniform vec4 scale;
 
 varying lowp vec4 interp_color;
@@ -15,7 +15,7 @@ void main(void) {
   vec4 pmtex = texture2D(tex0, interp_texcoord);
   float v = pmtex.b < 0.5 + params.y ? 1.0 : 0.0;
   // use a softened longitude to reduce texture sampling artifacts
-  float raw_longitude = mix(interp_texcoord.x, pmtex.x, 0.5);
+  float raw_longitude = mix(interp_texcoord.x, pmtex.x, 0.5) * 0.5;
   float longitude = raw_longitude + params.x;
   float latitude = pmtex.y;
   vec4 plantex = texture2D(tex1, vec2(longitude, latitude));

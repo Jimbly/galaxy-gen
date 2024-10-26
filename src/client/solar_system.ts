@@ -211,8 +211,11 @@ const noise_waterworld = noiseMod({
   warp_amp: 0.3,
 });
 
+export const PLANET_TYPE_NAMES = ['D', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'T', 'W', 'Y'] as const;
+export type PlanetTypeName = typeof PLANET_TYPE_NAMES[number];
+
 type PlanetType = {
-  name: string;
+  name: PlanetTypeName;
   size: [number, number];
   bias?: number;
   color: ROVec4;
@@ -275,17 +278,24 @@ function typeFromName(name: string): PlanetType {
   assert(false);
 }
 
-class Planet {
+export type PlanetOverrideParams = {
+  name?: PlanetTypeName;
+  size?: number;
+  seed?: number;
+};
+
+type TexPair = {
+  tex: Texture & { planet_tex_id?: number };
+  tex_id: number;
+};
+
+export class Planet {
   type: PlanetType;
   size: number;
   orbit: number;
   orbit_speed: number;
   seed: number;
-  constructor(solar_system: SolarSystem, override_data?: {
-    name?: string;
-    size?: number;
-    seed?: number;
-  }) {
+  constructor(override_data?: PlanetOverrideParams) {
     override_data = override_data || {};
     this.type = override_data.name ?
       typeFromName(override_data.name) :
@@ -294,12 +304,10 @@ class Planet {
     this.orbit = rand[0].floatBetween(0, PI*2) * 11;
     this.orbit_speed = randExp(1, 0.1, 1);
     this.seed = override_data.seed || rand[2].uint32();
-    // this.parent = solar_system;
   }
 
-  declare tex?: Texture & { planet_tex_id?: number };
-  declare tex_id?: number;
-  declare getTexture: (onscreen_size: number) => Texture;
+  texpairs: TexPair[] = [];
+  declare getTexture: (layer: number, onscreen_size: number) => Texture;
 }
 
 let noise: SimplexNoise[];
@@ -349,7 +357,7 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
 
   const PLANET_MIN_RES = 8;
   const PLANET_MAX_RES = 128;
-  let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES);
+  let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES * 2);
 
   let sample_pos = vec2();
   function get(field: NoiseOptsRangeField): number {
@@ -396,9 +404,10 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
     return Array.isArray(a[0]);
   }
 
-  Planet.prototype.getTexture = function (onscreen_size: number): Texture {
-    if (this.tex && this.tex.planet_tex_id === this.tex_id) {
-      return this.tex;
+  Planet.prototype.getTexture = function (layer: number, onscreen_size: number): Texture {
+    let tp = this.texpairs[layer];
+    if (tp && tp.tex.planet_tex_id === tp.tex_id) {
+      return tp.tex;
     }
 
     for (let ii = 0; ii < rand.length; ++ii) {
@@ -412,58 +421,67 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
     } else {
       color_table = color_table_test;
     }
-    // with pixely view, looks a lot better with a /2 on the texture resolution
-    let planet_res = clamp(nextHighestPowerOfTwo(onscreen_size)/2, PLANET_MIN_RES, PLANET_MAX_RES);
+    let planet_h = clamp(nextHighestPowerOfTwo(onscreen_size), PLANET_MIN_RES, PLANET_MAX_RES);
+    let planet_w = planet_h * 2;
     initNoise(this.seed, this.type.noise);
-    for (let idx=0, jj = 0; jj < planet_res; ++jj) {
+    for (let idx=0, jj = 0; jj < planet_h; ++jj) {
       let last_wrap = false;
-      for (let ii = 0; ii < planet_res; ++ii, ++idx) {
-        let v = sample(ii/planet_res, jj/planet_res);
-        if (last_wrap || ii === planet_res - 1 && rand[1].range(2)) { // blend around to other side by 1 texel
-          v = sample(-1/planet_res, jj/planet_res);
-        } else if (ii === planet_res - 2 && !rand[1].range(4)) {
-          v = sample(-2/planet_res, jj/planet_res);
+      for (let ii = 0; ii < planet_w; ++ii, ++idx) {
+        let v = sample(ii/planet_w, jj/planet_h);
+        if (last_wrap || ii === planet_w - 1 && rand[1].range(2)) { // blend around to other side by 1 texel
+          v = sample(-1/planet_w, jj/planet_h);
+        } else if (ii === planet_w - 2 && !rand[1].range(4)) {
+          v = sample(-2/planet_w, jj/planet_h);
           last_wrap = true;
         }
         let b = colorIndex(color_table, v);
         tex_data[idx] = b;
       }
     }
-    if (tex_pool[tex_idx]) {
-      this.tex = tex_pool[tex_idx];
-      this.tex.updateData(planet_res, planet_res, tex_data);
+    let tex = tex_pool[tex_idx];
+    if (tex) {
+      tex.updateData(planet_w, planet_h, tex_data);
     } else {
-      this.tex = tex_pool[tex_idx] = textureLoad({
+      tex = tex_pool[tex_idx] = textureLoad({
         name: `planet_${++tex_idx}`,
         format: TEXTURE_FORMAT.R8,
-        width: planet_res,
-        height: planet_res,
+        width: planet_w,
+        height: planet_h,
         data: tex_data,
         filter_min: gl.NEAREST,
         filter_mag: gl.NEAREST,
         wrap_s: gl.REPEAT,
         wrap_t: gl.CLAMP_TO_EDGE,
       });
-      assert(this.tex);
     }
     tex_idx = (tex_idx + 1) % MAX_TEXTURES;
-    this.tex_id = ++planet_tex_id;
-    this.tex.planet_tex_id = this.tex_id;
-    return this.tex;
+    tp = {
+      tex,
+      tex_id: ++planet_tex_id,
+    };
+    tp.tex.planet_tex_id = tp.tex_id;
+    this.texpairs[layer] = tp;
+    return tp.tex;
   };
 }
 
-const PMRES = 128;
+const PMRES_LOW = 128;
+const PMRES_HIGH = 256;
 const PMBORDER = 16;
 let pmtex: Texture | undefined;
-export function planetMapTexture(): Texture {
-  if (pmtex) {
+let pmtex_hires: Texture | undefined;
+export function planetMapTexture(high_res: boolean): Texture {
+  if (pmtex && !high_res) {
     return pmtex;
   }
-  let tex_data = new Uint8Array(PMRES * PMRES * 3);
+  if (pmtex_hires && high_res) {
+    return pmtex_hires;
+  }
+  const res = high_res ? PMRES_HIGH : PMRES_LOW;
+  let tex_data = new Uint8Array(res * res * 3);
   let idx = 0;
-  let mid = PMRES / 2;
-  const PMR = PMRES / 2 - PMBORDER;
+  let mid = res / 2;
+  const PMR = res / 2 - PMBORDER;
   function encodeRadian(rad: number): number {
     if (rad < 0) {
       rad += PI * 2;
@@ -471,9 +489,9 @@ export function planetMapTexture(): Texture {
     return clamp(round((rad - PI/2) / PI * 255), 0, 255);
     //return round(rad / (PI * 2) * 255);
   }
-  for (let yy = 0; yy < PMRES; ++yy) {
+  for (let yy = 0; yy < res; ++yy) {
     let unif_y = (yy - mid) / PMR;
-    for (let xx = 0; xx < PMRES; ++xx) {
+    for (let xx = 0; xx < res; ++xx) {
       let unif_x = (xx - mid) / PMR;
       let dsq = unif_x * unif_x + unif_y * unif_y;
       let r = sqrt(dsq);
@@ -490,19 +508,24 @@ export function planetMapTexture(): Texture {
     }
   }
   assert.equal(idx, tex_data.length);
-  pmtex = textureLoad({
-    name: 'pmtex',
+  let tex = textureLoad({
+    name: `pmtex${high_res ? 'hi' : 'lo'}`,
     format: TEXTURE_FORMAT.RGB8,
-    width: PMRES,
-    height: PMRES,
+    width: res,
+    height: res,
     data: tex_data,
     filter_min: gl.NEAREST,
     filter_mag: gl.NEAREST,
     wrap_s: gl.CLAMP_TO_EDGE,
     wrap_t: gl.CLAMP_TO_EDGE,
   });
+  if (high_res) {
+    pmtex_hires = tex;
+  } else {
+    pmtex = tex;
+  }
 
-  return pmtex!;
+  return tex;
 }
 
 function cmpSize(a: Planet, b: Planet): number {
@@ -514,33 +537,34 @@ export class SolarSystem {
   star_data: StarType;
   name?: string;
   planets: Planet[];
+  star_id: number;
   constructor(global_seed: number, star: Pick<Star, 'id'>) {
     let { /*x, y,*/ id } = star;
     let classif = starTypeFromID(id);
     let star_data = starTypeData(classif);
     this.star_data = star_data;
-    // this.star_id = id;
+    this.star_id = id;
     for (let ii = 0; ii < rand.length; ++ii) {
       rand[ii].reseed(mashString(`${id}_${global_seed}_${ii}`));
     }
     let planets = [];
     if (id === 98897686813) { // Sol
       this.name = 'Sol';
-      planets.push(new Planet(this, { name: 'D', size: 4 })); // Mercury
-      planets.push(new Planet(this, { name: 'K', size: 6 })); // Venus
-      planets.push(new Planet(this, { name: 'M', size: 8, seed: 5 })); // Earth
-      planets.push(new Planet(this, { name: 'Y', size: 5 })); // Mars
+      planets.push(new Planet({ name: 'D', size: 4 })); // Mercury
+      planets.push(new Planet({ name: 'K', size: 6 })); // Venus
+      planets.push(new Planet({ name: 'M', size: 8, seed: 5 })); // Earth
+      planets.push(new Planet({ name: 'Y', size: 5 })); // Mars
 
-      planets.push(new Planet(this, { name: 'T', size: 16, seed: 1 })); // Jupiter
-      planets.push(new Planet(this, { name: 'J', size: 12, seed: 1 })); // Saturn
+      planets.push(new Planet({ name: 'T', size: 16, seed: 1 })); // Jupiter
+      planets.push(new Planet({ name: 'J', size: 12, seed: 1 })); // Saturn
 
-      planets.push(new Planet(this, { name: 'P', size: 9 })); // Uranus
-      planets.push(new Planet(this, { name: 'W', size: 8 })); // Neptune
+      planets.push(new Planet({ name: 'P', size: 9 })); // Uranus
+      planets.push(new Planet({ name: 'W', size: 8 })); // Neptune
     } else {
       let num_planets = rand[0].range(4);
       let chance = 0.5;
       while (num_planets) {
-        planets.push(new Planet(this));
+        planets.push(new Planet());
         --num_planets;
         if (!num_planets) {
           if (rand[1].random() < chance) {
@@ -573,4 +597,11 @@ export class SolarSystem {
 
 export function solarSystemCreate(global_seed: number, star: Pick<Star, 'id'>): SolarSystem {
   return new SolarSystem(global_seed, star);
+}
+
+export function planetCreate(global_seed: number, star_id: number, params: PlanetOverrideParams): Planet {
+  for (let ii = 0; ii < rand.length; ++ii) {
+    rand[ii].reseed(mashString(`${star_id}_${global_seed}_${ii}`));
+  }
+  return new Planet(params);
 }
