@@ -76,6 +76,7 @@ import {
   v2add,
   v2addScale,
   v2copy,
+  v2distSq,
   v2floor,
   v2set,
   vec2,
@@ -101,7 +102,9 @@ window.Z = window.Z || {};
 Z.BACKGROUND = 1;
 Z.SPRITES = 10;
 Z.PARTICLES = 20;
-Z.UI_TEST = 200;
+Z.SOLAR = 80;
+Z.PLANET = 90;
+Z.UI = 100;
 
 // let app = exports;
 // Virtual viewport for our game logic
@@ -174,6 +177,7 @@ export function main(): void {
 
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
+  const MAX_PLANET_VIEW = 1;
   const buf_dim = 256;
   let params: GenGalaxyParams & {
     dither: number;
@@ -282,6 +286,8 @@ export function main(): void {
   let solar_override = local_storage.getJSON('solar_override', false);
   let solar_override_system: null | SolarSystem = null;
   let selected_star_id = local_storage.getJSON('selected_star', null);
+  let planet_view = local_storage.getJSON('planet_view', 0);
+  let selected_planet_index = local_storage.getJSON('selected_planet', null);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(local_storage.getJSON('offsx', 0),local_storage.getJSON('offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
@@ -319,6 +325,8 @@ export function main(): void {
   }[] = [];
   let eff_solar_view = solar_view;
   let eff_solar_view_unsmooth = solar_view;
+  let eff_planet_view = planet_view;
+  let eff_planet_view_unsmooth = planet_view;
   function zoomTime(amount: number): number {
     return abs(amount) * 500;
   }
@@ -357,21 +365,43 @@ export function main(): void {
     }
     let iesvu = floor(eff_solar_view_unsmooth);
     eff_solar_view = round4(iesvu + easeInOut(eff_solar_view_unsmooth - iesvu, 2));
+
+    let dplanet = dt * 0.003;
+    if (eff_planet_view_unsmooth < planet_view) {
+      eff_planet_view_unsmooth = min(planet_view, eff_planet_view_unsmooth + dplanet);
+    } else if (eff_planet_view_unsmooth > planet_view) {
+      eff_planet_view_unsmooth = max(planet_view, eff_planet_view_unsmooth - dplanet);
+    }
+    let iepvu = floor(eff_planet_view_unsmooth);
+    eff_planet_view = round4(iepvu + easeInOut(eff_planet_view_unsmooth - iepvu, 2));
   }
   function solarZoom(delta: number): void {
     solar_view = clamp(solar_view + delta, 0, MAX_SOLAR_VIEW);
     local_storage.setJSON('solar_view', solar_view);
     local_storage.setJSON('selected_star', solar_view ? selected_star_id : null);
   }
+  function planetZoom(delta: number): void {
+    planet_view = clamp(planet_view + delta, 0, MAX_PLANET_VIEW);
+    local_storage.setJSON('planet_view', planet_view);
+    local_storage.setJSON('selected_planet', planet_view ? selected_planet_index : null);
+  }
   function doZoom(x: number, y: number, delta: number): void {
     if (target_zoom_level === MAX_ZOOM && delta > 0) {
       if (selected_star_id !== null) {
-        solarZoom(1);
+        if (solar_view && selected_planet_index !== null) {
+          planetZoom(1);
+        } else {
+          solarZoom(1);
+        }
       }
       return;
     }
     if (solar_view && delta < 0) {
-      solarZoom(-1);
+      if (planet_view) {
+        planetZoom(-1);
+      } else {
+        solarZoom(-1);
+      }
       return;
     }
     target_zoom_level = max(0, min(target_zoom_level + delta, MAX_ZOOM));
@@ -437,7 +467,40 @@ export function main(): void {
       }
     }
   }
+
   const ORBIT_RATE = 0.0002;
+  function drawPlanet(
+    solar_system: SolarSystem,
+    planet_index: number,
+    x0: number,
+    y0: number,
+    z: number,
+    w: number,
+    h: number,
+    fade: number,
+  ): void {
+    let pmtex = planetMapTexture();
+
+    let xmid = x0 + w/2;
+    let ymid = y0 + h/2;
+
+    let { planets } = solar_system;
+    let planet = planets[planet_index];
+    let theta = planet.orbit + planet.orbit_speed * getFrameTimestamp()*ORBIT_RATE;
+    theta %= 2 * PI;
+
+    let sprite_size = 128;
+    let planet_params = {
+      params: [getFrameTimestamp() * 0.0003, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
+    };
+    let x = xmid;
+    let y = ymid;
+    spriteQueueRaw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
+      x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
+      [1,1,1,fade], shader_planet_pixel, planet_params);
+
+  }
+  let solar_mouse_pos = vec2();
   function drawSolarSystem(
     solar_system: SolarSystem,
     x0: number,
@@ -449,6 +512,7 @@ export function main(): void {
     star_yp: number,
     fade: number
   ): void {
+    mousePos(solar_mouse_pos);
     let pmtex = planetMapTexture();
     x0 = lerp(fade, star_xp, x0);
     y0 = lerp(fade, star_yp, y0);
@@ -464,6 +528,14 @@ export function main(): void {
     drawCircle(xmid, ymid, z + 0.005, sun_radius, 0.95, [c[0], c[1], c[2], fade]);
     let rstep = (w/2 - sun_pad) / (planets.length + 2);
     let r0 = sun_pad + rstep;
+    let closest_planet: null | {
+      idx: number;
+      x: number;
+      y: number;
+      z: number;
+    } = null;
+    let closest_dist = Infinity;
+    let allow_planet_select = !planet_view && !eff_planet_view;
     for (let ii = 0; ii < planets.length; ++ii) {
       let r = r0 + rstep * ii;
       let planet = planets[ii];
@@ -477,6 +549,18 @@ export function main(): void {
       // }
 
       let zz = z + (y - ymid)/h;
+      let dist = v2distSq(solar_mouse_pos, [x, y]);
+      if (dist < closest_dist && dist < 30*30 && allow_planet_select ||
+        !allow_planet_select && ii === selected_planet_index
+      ) {
+        closest_dist = dist;
+        closest_planet = {
+          idx: ii,
+          x, y,
+          z: zz,
+        };
+      }
+
       // drawCircle(x, y, zz, planet.size + 2, 0.99, [0,0,0,fade]);
       // c = planet.type.color;
       // drawCircle(x, y, zz + 0.00001, planet.size, 0.99, [c[0], c[1], c[2], fade]);
@@ -489,6 +573,16 @@ export function main(): void {
       spriteQueueRaw([pmtex, planet.getTexture(sprite_size*2), tex_palette_planets],
         x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
         [1,1,1,fade], shader_planet_pixel, planet_params);
+    }
+
+    // draw selected planet
+    if (closest_planet) {
+      let planet = planets[closest_planet.idx];
+      drawCircle(closest_planet.x, closest_planet.y, closest_planet.z - 0.1,
+        planet.size + 2, 0.85, [0.5, 1, 1, fade], BLEND_ADDITIVE);
+      selected_planet_index = closest_planet.idx;
+    } else {
+      selected_planet_index = null;
     }
 
     // draw backdrop
@@ -710,10 +804,11 @@ export function main(): void {
     }
     x += button_height + 2;
     const SLIDER_W = 110;
-    let new_zoom = roundZoom(slider(target_zoom_level + solar_view,
-      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 1 }));
-    if (abs(new_zoom - target_zoom_level) > 0.000001) {
-      doZoom(0.5, 0.5, new_zoom - target_zoom_level);
+    let eff_zoom = target_zoom_level + solar_view + planet_view;
+    let new_zoom = roundZoom(slider(eff_zoom,
+      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 2 }));
+    if (abs(new_zoom - eff_zoom) > 0.000001) {
+      doZoom(0.5, 0.5, new_zoom - eff_zoom);
     }
     x += SLIDER_W + 2;
     if (buttonText({ x, y, z, w: button_height, text: '+' }) ||
@@ -731,7 +826,10 @@ export function main(): void {
     if (mouse_wheel) {
       use_mouse_pos = true;
       mousePos(mouse_pos);
-      if (mouse_wheel < 0 && eff_solar_view_unsmooth && !solar_view) {
+      if (mouse_wheel < 0 && eff_solar_view_unsmooth && !solar_view ||
+        mouse_wheel < 0 && eff_planet_view_unsmooth && !planet_view ||
+        mouse_wheel > 0 && solar_view && eff_solar_view_unsmooth < solar_view
+      ) {
         // ignore
       } else {
         doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, mouse_wheel);
@@ -742,7 +840,7 @@ export function main(): void {
     let zoom = pow(2, zoom_level);
     let zoom_text_y = floor(y + (button_height - font_height)/2);
     let zoom_text_w = print(null, x, zoom_text_y, z,
-      solar_view ? 'Solar' : `${zoom.toFixed(0)}X`);
+      solar_view ? planet_view ? 'Orbit ' : 'Solar' : `${zoom.toFixed(0)}X`);
     drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + font_height, z - 1, color_text_backdrop);
 
     x = game_width - w;
@@ -883,7 +981,7 @@ export function main(): void {
         y: y + (cell.y0 - zoom_offs[1]) * zoom * w,
         w: w * zoom * cell.w,
         h: w * zoom * cell.h,
-        z: Z.UI - 10,
+        z: Z.BACKGROUND,
         nozoom: true,
         shader: view === 1 ? shader_galaxy_pixel : shader_galaxy_blend,
         shader_params: undefined! as ShaderParams,
@@ -1021,13 +1119,29 @@ export function main(): void {
         let { planets, star_data, name } = solar_system;
         overlayText(`${name || (star && star.id ? `Star #${star.id}` : '') || 'Override Star'}` +
           `, Type: ${star_data.label}`);
+
         for (let ii = 0; ii < planets.length; ++ii) {
           let planet = planets[ii];
-          overlayText(`  Planet #${ii+1}: Class ${planet.type.name}`);
+          if (!planet_view || selected_planet_index === ii) {
+            overlayText(`${!planet_view && selected_planet_index === ii ? '*' : ' '}` +
+              ` Planet #${ii+1}: Class ${planet.type.name}`);
+          }
         }
-        let do_view = eff_solar_view ? eff_solar_view : debugDefineIsSet('AUTOSOLAR') && zoom_level > 15.5 ? 1 : 0;
-        if (do_view) {
-          drawSolarSystem(solar_system, map_x0, map_y0, Z.UI - 1, w, w, xp, yp, do_view);
+        let do_solar_view = eff_solar_view ? eff_solar_view :
+          debugDefineIsSet('AUTOSOLAR') && zoom_level > 15.5 ? 1 : 0;
+        if (do_solar_view) {
+          drawSolarSystem(solar_system, map_x0, map_y0, Z.SOLAR, w, w, xp, yp, do_solar_view);
+          if (solar_view) {
+            let do_planet_view = eff_planet_view ? eff_planet_view : 0;
+            if (do_planet_view && selected_planet_index !== null) {
+              drawPlanet(solar_system, selected_planet_index,
+                map_x0,
+                map_y0,
+                Z.PLANET,
+                w, w,
+                do_planet_view);
+            }
+          }
         }
       } else if (star) {
         overlayText(`Star #${star.id}`);
@@ -1037,7 +1151,9 @@ export function main(): void {
     if (inputClick()) {
       use_mouse_pos = true;
       mousePos(mouse_pos);
-      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w, solar_view ? -1 : 1);
+      doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w,
+        solar_view && (selected_planet_index === null || planet_view) ? -1 :
+        1);
     }
 
     drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
