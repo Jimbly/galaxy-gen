@@ -499,10 +499,14 @@ export function planetMapTexture(high_res: boolean): Texture {
       // calc latitude / longitude for texturing and lighting
       let unif_z = r >= 1 ? 0 : sqrt(eff_r * eff_r - dsq);
       let longitude = -atan2(unif_x, -unif_z);
+      let flat_uv_longitude = round((unif_x * 0.5 + 0.5) * 255);
       let xz_len = sqrt(unif_x*unif_x + unif_z*unif_z);
       let latitude = atan2(-unif_y, -xz_len);
 
-      tex_data[idx++] = encodeRadian(longitude);
+      // use a softened longitude to reduce texture sampling artifacts
+      // also /2 to sample from X at double resolution
+      tex_data[idx++] = round((flat_uv_longitude + encodeRadian(longitude)) / 4);
+
       tex_data[idx++] = encodeRadian(latitude);
       tex_data[idx++] = round(r / 2 * 255); // radius of 2D circle / distance field: 0 to 2
     }
@@ -525,6 +529,40 @@ export function planetMapTexture(high_res: boolean): Texture {
     pmtex = tex;
   }
 
+  return tex;
+}
+
+let pmflattex: Texture;
+export function planetMapFlatTexture(): Texture {
+  if (pmflattex) {
+    return pmflattex;
+  }
+  const res = PMRES_HIGH;
+  let tex_data = new Uint8Array(res * res * 3);
+  let idx = 0;
+  for (let yy = 0; yy < res; ++yy) {
+    // let unif_y = (yy - mid) / PMR;
+    for (let xx = 0; xx < res; ++xx) {
+      // let unif_x = (xx - mid) / PMR;
+
+      tex_data[idx++] = round(xx / res * 255);
+      tex_data[idx++] = round(yy / res * 255);
+      tex_data[idx++] = 0;
+    }
+  }
+  assert.equal(idx, tex_data.length);
+  let tex = textureLoad({
+    name: 'pmtexflat',
+    format: TEXTURE_FORMAT.RGB8,
+    width: res,
+    height: res,
+    data: tex_data,
+    filter_min: gl.NEAREST,
+    filter_mag: gl.NEAREST,
+    wrap_s: gl.CLAMP_TO_EDGE,
+    wrap_t: gl.CLAMP_TO_EDGE,
+  });
+  pmflattex = tex;
   return tex;
 }
 

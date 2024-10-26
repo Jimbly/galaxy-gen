@@ -73,6 +73,7 @@ import {
   easeOut,
   lerp,
   merge,
+  mod,
 } from 'glov/common/util';
 import {
   JSVec2,
@@ -101,6 +102,7 @@ import {
   PlanetOverrideParams,
   SolarSystem,
   planetCreate,
+  planetMapFlatTexture,
   planetMapTexture,
   solarSystemCreate,
 } from './solar_system';
@@ -308,6 +310,7 @@ export function main(): void {
   let selected_star_id: number | null = localStorageGetJSON('selected_star', null);
   let planet_view = localStorageGetJSON('planet_view', 0);
   let planet_override = localStorageGetJSON('planet_override', false);
+  let planet_flatmap = localStorageGetJSON('planet_flatmap', false);
   let planet_override_planet: null | Planet = null;
   let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
   let target_zoom_level = zoom_level;
@@ -502,7 +505,6 @@ export function main(): void {
     h: number,
     fade: number,
   ): void {
-    let pmtex = planetMapTexture(true);
     let { planets } = solar_system;
     let planet = planets[selected_planet.idx];
     let theta = planet.orbit + planet.orbit_speed * walltime()*ORBIT_RATE;
@@ -517,6 +519,7 @@ export function main(): void {
         rot = planet_params.rot / 360;
       }
     }
+    rot = mod(rot, 1);
 
     x0 = lerp(fade, selected_planet.x, x0);
     y0 = lerp(fade, selected_planet.y, y0);
@@ -525,19 +528,27 @@ export function main(): void {
     const FULL_SIZE = 128;
     let sprite_size = lerp(fade, planet.size, FULL_SIZE);
 
-    let xmid = x0 + w/2;
-    let ymid = y0 + h/2;
-
-
-    let planet_shader_params = {
-      params: [rot, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
-    };
-    let x = xmid;
-    let y = ymid;
-    spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
-      x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
-      [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
-
+    if (planet_flatmap) {
+      let pmtex = planetMapFlatTexture();
+      let planet_shader_params = {
+        params: [0, pmtex.width / (sprite_size)*1.5 / 255, mod(2 - theta / PI + rot*2, 2), 0],
+      };
+      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
+        x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
+        [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
+    } else {
+      let pmtex = planetMapTexture(true);
+      let xmid = x0 + w/2;
+      let ymid = y0 + h/2;
+      let planet_shader_params = {
+        params: [rot, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
+      };
+      let x = xmid;
+      let y = ymid;
+      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
+        x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
+        [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
+    }
   }
   let solar_mouse_pos = vec2();
   type SelectedPlanet = {
@@ -741,6 +752,11 @@ export function main(): void {
           planet_override = !planet_override;
           localStorageSetJSON('planet_override', planet_override);
           planet_override_planet = null;
+        }
+        y += button_spacing;
+        if (buttonText({ x, y, z, text: planet_flatmap ? 'Flatmap' : 'Globe' })) {
+          planet_flatmap = !planet_flatmap;
+          localStorageSetJSON('planet_flatmap', planet_flatmap);
         }
         y += button_spacing;
         let solar_system = last_solar_system;

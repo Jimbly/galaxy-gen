@@ -14,12 +14,11 @@ varying vec2 interp_texcoord;
 void main(void) {
   vec4 pmtex = texture2D(tex0, interp_texcoord);
   float v = pmtex.b < 0.5 + params.y ? 1.0 : 0.0;
-  // use a softened longitude to reduce texture sampling artifacts
-  float raw_longitude = mix(interp_texcoord.x, pmtex.x, 0.5) * 0.5;
+  float raw_longitude = pmtex.x;
   float longitude = raw_longitude + params.x;
   float latitude = pmtex.y;
   vec4 plantex = texture2D(tex1, vec2(longitude, latitude));
-  float long_dist = abs(raw_longitude - params.z);
+  float long_dist = abs(raw_longitude*2.0 - params.z);
   if (long_dist > 1.0) {
     long_dist = 2.0 - long_dist;
   }
