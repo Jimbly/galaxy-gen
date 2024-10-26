@@ -36,25 +36,29 @@ let rand = [
   randCreate(0),
 ];
 
+type ColorTable = number[];
+
 const color_table_earthlike = [
   0.4, 24,
-  0.5, 0,
-  0.6, 1,
-  1, 2,
+  0.5, 25,
+  0.65, 26,
+  0.75, 27,
+  1, 28,
 ];
 
 const color_table_earthlike_islands = [
   0.6, 24,
-  0.7, 0,
-  0.8, 1,
-  1, 2,
+  0.7, 25,
+  0.8, 29,
+  1, 26,
 ];
 
 const color_table_earthlike_pangea = [
-  0.2, 24,
-  0.3, 0,
-  0.7, 1,
-  1, 2,
+  0.25, 24,
+  0.3, 25,
+  0.68, 29,
+  0.75, 26,
+  1, 27,
 ];
 
 const color_table_water_world = [
@@ -222,23 +226,23 @@ type PlanetType = {
   size: [number, number];
   bias?: number;
   color?: ROVec4; // unused
-  color_table: number[] | number[][];
+  color_table: ColorTable[];
   noise: NoiseOpts;
 };
 const planet_types: PlanetType[] = [
   // Class D (planetoid or moon with little to no atmosphere)
-  { name: 'D', size: [4,8], color: vec4(0.7,0.7,0.7,1), color_table: color_table_gray, noise: noise_base },
+  { name: 'D', size: [4,8], color: vec4(0.7,0.7,0.7,1), color_table: [color_table_gray], noise: noise_base },
   // Class H (generally uninhabitable)
-  { name: 'H', size: [6,10], color: vec4(0.3,0.4,0.5,1), color_table: color_table_gray, noise: noise_base },
+  { name: 'H', size: [6,10], color: vec4(0.3,0.4,0.5,1), color_table: [color_table_gray], noise: noise_base },
   // Class J (gas giant)
   { name: 'J', size: [12,20], color: vec4(0.9,0.6,0,1),
     color_table: [color_table_gasgiant1, color_table_gasgiant4],
     noise: noise_gasgiant },
   // Class K (habitable, as long as pressure domes are used)
-  { name: 'K', size: [8,12], color: vec4(0.5,0.3,0.2,1), color_table: color_table_dirt, noise: noise_dirt },
+  { name: 'K', size: [8,12], color: vec4(0.5,0.3,0.2,1), color_table: [color_table_dirt], noise: noise_dirt },
   // Class L (marginally habitable, with vegetation but no animal life)
   { name: 'L', size: [6,10], bias: 1, color: vec4(0.3,0.7,0.3,1),
-    color_table: color_table_frozen,
+    color_table: [color_table_frozen],
     noise: noise_base },
   // Class M (terrestrial)
   { name: 'M', size: [9,12], color: vec4(0,1,0,1),
@@ -246,24 +250,24 @@ const planet_types: PlanetType[] = [
     noise: noise_base },
   // Class N (sulfuric)
   { name: 'N', size: [4,8], bias: -1, color: vec4(0.6,0.6,0,1),
-    color_table: color_table_molten_small,
+    color_table: [color_table_molten_small],
     noise: noise_molten },
   // Class P (glacial)
   { name: 'P', size: [4,14], bias: 1, color: vec4(0.5,0.7,1,1),
-    color_table: color_table_frozen,
+    color_table: [color_table_frozen],
     noise: noise_base },
   // Class R (a rogue planet, not as habitable as a terrestrial planet)
-  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), color_table: color_table_low_life, noise: noise_base },
+  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), color_table: [color_table_low_life], noise: noise_base },
   // Class T (gas giant)
   { name: 'T', size: [12,20], color: vec4(0.6,0.9,0,1),
     color_table: [color_table_gasgiant2, color_table_gasgiant3, color_table_gasgiant5],
     noise: noise_gasgiant },
   // Class W (water world)
   { name: 'W', size: [8,18], color: vec4(0.3,0.3,1.0,1),
-    color_table: color_table_water_world,
+    color_table: [color_table_water_world],
     noise: noise_waterworld },
   // Class Y (toxic atmosphere, high temperatures)
-  { name: 'Y', size: [8,18], color: vec4(1,0.3,0,1), color_table: color_table_molten, noise: noise_base },
+  { name: 'Y', size: [8,18], color: vec4(1,0.3,0,1), color_table: [color_table_molten], noise: noise_base },
 ];
 
 function randExp(idx: number, min: number, mx: number): number {
@@ -403,10 +407,6 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
     return table[table.length - 1];
   }
 
-  function is2DArray(a: number[] | number[][]): a is number[][] {
-    return Array.isArray(a[0]);
-  }
-
   Planet.prototype.getTexture = function (layer: number, onscreen_size: number): Texture {
     let tp = this.texpairs[layer];
     if (tp && tp.tex.planet_tex_id === tp.tex_id) {
@@ -418,12 +418,7 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
     }
 
     let color_table_test = this.type.color_table;
-    let color_table: number[];
-    if (is2DArray(color_table_test)) {
-      color_table = color_table_test[rand[0].range(color_table_test.length)];
-    } else {
-      color_table = color_table_test;
-    }
+    let color_table = color_table_test[rand[0].range(color_table_test.length)];
     let planet_h = clamp(nextHighestPowerOfTwo(onscreen_size), PLANET_MIN_RES, PLANET_MAX_RES);
     let planet_w = planet_h * 2;
     initNoise(this.seed, this.type.noise);
