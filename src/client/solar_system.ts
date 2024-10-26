@@ -37,18 +37,21 @@ let rand = [
 ];
 
 const color_table_earthlike = [
+  0.4, 24,
   0.5, 0,
   0.6, 1,
   1, 2,
 ];
 
 const color_table_earthlike_islands = [
+  0.6, 24,
   0.7, 0,
   0.8, 1,
   1, 2,
 ];
 
 const color_table_earthlike_pangea = [
+  0.2, 24,
   0.3, 0,
   0.7, 1,
   1, 2,
