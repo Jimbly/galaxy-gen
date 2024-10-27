@@ -27,7 +27,7 @@ import {
   starTypeFromID,
 } from './star_types';
 
-const { atan2, max, round, sqrt, PI } = Math;
+const { abs, atan2, max, min, round, sqrt, PI } = Math;
 
 let rand = [
   randCreate(0),
@@ -36,7 +36,35 @@ let rand = [
   randCreate(0),
 ];
 
+let planet_gen_layer: number;
+
+// returns roughly 0.4...0.7 with default settings
+let sampleBiomeMap: (x: number, y: number) => number;
+
+type WeightFunc = (x: number, y: number, h: number) => number;
+function weightDefault(): number {
+  return 0.5;
+}
+
+function weightBiomeRange(mn: number, mx: number, weight: number): WeightFunc {
+  return function (x: number, y: number, h: number): number {
+    let v = sampleBiomeMap(x, y);
+    return v > mn && v < mx ? weight : 0;
+  };
+}
+
 type ColorTable = number[];
+type BiomeTableEntry = {
+  weight_func: WeightFunc;
+  color_table: ColorTable;
+};
+type BiomeTable = BiomeTableEntry[];
+
+const color_table_frozen = [
+  0.23, 11,
+  0.77, 10,
+  1, 9,
+];
 
 const color_table_earthlike = [
   0.4, 24,
@@ -45,113 +73,216 @@ const color_table_earthlike = [
   0.75, 27,
   1, 28,
 ];
-
-const color_table_earthlike_islands = [
-  0.6, 24,
-  0.7, 25,
-  0.8, 29,
-  1, 26,
+const color_table_earthlike_forest = [
+  0.4, 24,
+  0.5, 25,
+  0.52, 26,
+  0.65, 29,
+  0.69, 26,
+  0.76, 27,
+  1, 28,
+];
+const color_table_earthlike_desert = [
+  0.4, 24,
+  0.5, 25,
+  0.65, 30,
+  0.75, 27,
+  1, 28,
 ];
 
-const color_table_earthlike_pangea = [
-  0.25, 24,
-  0.3, 25,
-  0.68, 29,
-  0.75, 26,
-  1, 27,
+const biome_entry_earthlike: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: color_table_earthlike,
+};
+const biome_entry_icecaps: BiomeTableEntry = {
+  weight_func: function (x: number, y: number, h: number): number {
+    let d = 1 - min(y, 1 - y) * 5;
+    return d + (h - 0.5) * 1.8;
+  },
+  color_table: color_table_frozen,
+};
+const biome_table_earthlike: BiomeTable = [
+  biome_entry_earthlike,
+  biome_entry_icecaps,
+  {
+    weight_func: weightBiomeRange(0.6, 1, 0.55),
+    color_table: color_table_earthlike_forest,
+  },
+  {
+    weight_func: function (x: number, y: number, h: number): number {
+      if (planet_gen_layer === 0) {
+        // too noisy on this layer
+        return 0;
+      }
+      let v = sampleBiomeMap(x, y);
+      let d = 1 - abs(y - 0.5) * 8;
+      return d - h * 4 + 2.5 + v - 0.5;
+    },
+    color_table: color_table_earthlike_desert,
+  },
 ];
 
-const color_table_water_world = [
-  0.5, 22,
-  0.8, 0,
-  1, 22,
+const biome_entry_earthlike_islands: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.6, 24,
+    0.7, 25,
+    0.8, 29,
+    1, 26,
+  ]
+};
+const biome_table_earthlike_islands = [biome_entry_earthlike_islands];
+
+const biome_entry_earthlike_pangea: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.25, 24,
+    0.3, 25,
+    0.68, 29,
+    0.75, 26,
+    1, 27,
+  ]
+};
+const biome_table_earthlike_pangea = [
+  biome_entry_earthlike_pangea,
+  biome_entry_icecaps,
 ];
 
-const color_table_low_life = [
-  0.3, 0,
-  0.7, 14,
-  1, 1,
-];
+const biome_entry_water_world: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.5, 22,
+    0.8, 0,
+    1, 22,
+  ]
+};
+const biome_table_water_world = [biome_entry_water_world];
 
-const color_table_molten = [
-  0.25, 4,
-  0.46, 3,
-  0.54, 5,
-  0.75, 3,
-  1, 4,
-];
+const biome_entry_low_life: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.3, 0,
+    0.7, 14,
+    1, 1,
+  ]
+};
+const biome_table_low_life = [biome_entry_low_life];
 
-const color_table_molten_small = [
-  0.4, 3,
-  0.6, 5,
-  1, 4,
-];
+const biome_entry_molten: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.25, 4,
+    0.46, 3,
+    0.54, 5,
+    0.75, 3,
+    1, 4,
+  ]
+};
+const biome_table_molten = [biome_entry_molten];
 
-const color_table_gray = [
-  0.25, 6,
-  0.5, 7,
-  0.75, 8,
-  1, 9,
-];
+const biome_entry_molten_small: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.4, 3,
+    0.6, 5,
+    1, 4,
+  ]
+};
+const biome_table_molten_small = [biome_entry_molten_small];
 
-const color_table_frozen = [
-  0.23, 11,
-  0.77, 10,
-  1, 9,
-];
+const biome_entry_gray: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.25, 6,
+    0.5, 7,
+    0.75, 8,
+    1, 9,
+  ]
+};
+const biome_table_gray = [biome_entry_gray];
+
+const biome_entry_frozen: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: color_table_frozen,
+};
+const biome_table_frozen = [biome_entry_frozen];
 
 // saturn-like, greys and oranges
-const color_table_gasgiant1 = [
-  0.2, 12,
-  0.35, 13,
-  0.5, 9,
-  0.65, 12,
-  0.8, 13,
-  1, 9,
-];
+const biome_entry_gasgiant1: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.2, 12,
+    0.35, 13,
+    0.5, 9,
+    0.65, 12,
+    0.8, 13,
+    1, 9,
+  ]
+};
+const biome_table_gasgiant1 = [biome_entry_gasgiant1];
 
-const color_table_dirt = [
-  0.5, 14,
-  1, 15,
-];
+const biome_entry_dirt: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.5, 14,
+    1, 15,
+  ]
+};
+const biome_table_dirt = [biome_entry_dirt];
 
 // purples
-const color_table_gasgiant2 = [
-  0.2, 16,
-  0.4, 17,
-  0.6, 16,
-  0.8, 17,
-  1, 16,
-];
+const biome_entry_gasgiant2: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.2, 16,
+    0.4, 17,
+    0.6, 16,
+    0.8, 17,
+    1, 16,
+  ]
+};
+const biome_table_gasgiant2 = [biome_entry_gasgiant2];
 
 // reds
-const color_table_gasgiant3 = [
-  0.2, 18,
-  0.4, 5,
-  0.6, 18,
-  0.8, 5,
-  1, 18,
-];
+const biome_entry_gasgiant3: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.2, 18,
+    0.4, 5,
+    0.6, 18,
+    0.8, 5,
+    1, 18,
+  ]
+};
+const biome_table_gasgiant3 = [biome_entry_gasgiant3];
 
 // blues
-const color_table_gasgiant4 = [
-  0.2, 19,
-  0.35, 20,
-  0.5, 21,
-  0.65, 19,
-  0.8, 20,
-  1, 21,
-];
+const biome_entry_gasgiant4: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.2, 19,
+    0.35, 20,
+    0.5, 21,
+    0.65, 19,
+    0.8, 20,
+    1, 21,
+  ]
+};
+const biome_table_gasgiant4 = [biome_entry_gasgiant4];
 
 // yellows
-const color_table_gasgiant5 = [
-  0.2, 23,
-  0.35, 5,
-  0.5, 12,
-  0.65, 23,
-  0.8, 5,
-  1, 12,
-];
+const biome_entry_gasgiant5: BiomeTableEntry = {
+  weight_func: weightDefault,
+  color_table: [
+    0.2, 23,
+    0.35, 5,
+    0.5, 12,
+    0.65, 23,
+    0.8, 5,
+    1, 12,
+  ]
+};
+const biome_table_gasgiant5 = [biome_entry_gasgiant5];
 
 type NoiseOptRange = {
   min: number;
@@ -196,6 +327,11 @@ function noiseMod(opts: Partial<NoiseOpts>, base?: NoiseOpts): NoiseOpts {
   return defaults(opts, base || noise_base);
 }
 
+const noise_biome_base: NoiseOpts = noiseMod({
+  // note: no NoiseOptRange supported
+  lacunarity: 2.0,
+});
+
 const noise_gasgiant = noiseMod({
   skew_x: 0.2,
   domain_warp: 1,
@@ -226,54 +362,55 @@ type PlanetType = {
   size: [number, number];
   bias?: number;
   color?: ROVec4; // unused
-  color_table: ColorTable[];
+  biome_tables: BiomeTable[];
   noise: NoiseOpts;
+  noise_biome?: NoiseOpts;
 };
 const planet_types: PlanetType[] = [
   // Class D (planetoid or moon with little to no atmosphere)
-  { name: 'D', size: [4,8], color: vec4(0.7,0.7,0.7,1), color_table: [color_table_gray], noise: noise_base },
+  { name: 'D', size: [4,8], color: vec4(0.7,0.7,0.7,1), biome_tables: [biome_table_gray], noise: noise_base },
   // Class H (generally uninhabitable)
-  { name: 'H', size: [6,10], color: vec4(0.3,0.4,0.5,1), color_table: [color_table_gray], noise: noise_base },
+  { name: 'H', size: [6,10], color: vec4(0.3,0.4,0.5,1), biome_tables: [biome_table_gray], noise: noise_base },
   // Class J (gas giant)
   { name: 'J', size: [12,20], color: vec4(0.9,0.6,0,1),
-    color_table: [color_table_gasgiant1, color_table_gasgiant4],
+    biome_tables: [biome_table_gasgiant1, biome_table_gasgiant4],
     noise: noise_gasgiant },
   // Class K (habitable, as long as pressure domes are used)
-  { name: 'K', size: [8,12], color: vec4(0.5,0.3,0.2,1), color_table: [color_table_dirt], noise: noise_dirt },
+  { name: 'K', size: [8,12], color: vec4(0.5,0.3,0.2,1), biome_tables: [biome_table_dirt], noise: noise_dirt },
   // Class L (marginally habitable, with vegetation but no animal life)
   { name: 'L', size: [6,10], bias: 1, color: vec4(0.3,0.7,0.3,1),
-    color_table: [color_table_frozen],
+    biome_tables: [biome_table_frozen],
     noise: noise_base },
   // Class M (terrestrial)
   { name: 'M', size: [9,12], color: vec4(0,1,0,1),
-    color_table: [color_table_earthlike, color_table_earthlike_islands, color_table_earthlike_pangea],
+    biome_tables: [biome_table_earthlike, biome_table_earthlike_islands, biome_table_earthlike_pangea],
     noise: noise_base },
   // Class N (sulfuric)
   { name: 'N', size: [4,8], bias: -1, color: vec4(0.6,0.6,0,1),
-    color_table: [color_table_molten_small],
+    biome_tables: [biome_table_molten_small],
     noise: noise_molten },
   // Class P (glacial)
   { name: 'P', size: [4,14], bias: 1, color: vec4(0.5,0.7,1,1),
-    color_table: [color_table_frozen],
+    biome_tables: [biome_table_frozen],
     noise: noise_base },
   // Class R (a rogue planet, not as habitable as a terrestrial planet)
-  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), color_table: [color_table_low_life], noise: noise_base },
+  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), biome_tables: [biome_table_low_life], noise: noise_base },
   // Class T (gas giant)
   { name: 'T', size: [12,20], color: vec4(0.6,0.9,0,1),
-    color_table: [color_table_gasgiant2, color_table_gasgiant3, color_table_gasgiant5],
+    biome_tables: [biome_table_gasgiant2, biome_table_gasgiant3, biome_table_gasgiant5],
     noise: noise_gasgiant },
   // Class W (water world)
   { name: 'W', size: [8,18], color: vec4(0.3,0.3,1.0,1),
-    color_table: [color_table_water_world],
+    biome_tables: [biome_table_water_world],
     noise: noise_waterworld },
   // Class Y (toxic atmosphere, high temperatures)
-  { name: 'Y', size: [8,18], color: vec4(1,0.3,0,1), color_table: [color_table_molten], noise: noise_base },
+  { name: 'Y', size: [8,18], color: vec4(1,0.3,0,1), biome_tables: [biome_table_molten], noise: noise_base },
 ];
 
-function randExp(idx: number, min: number, mx: number): number {
+function randExp(idx: number, mn: number, mx: number): number {
   let v = rand[idx].random();
   v *= v;
-  return min + (mx - min) * v;
+  return mn + (mx - mn) * v;
 }
 
 function typeFromName(name: string): PlanetType {
@@ -351,9 +488,39 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
       v.add = v.min + v.mul;
     }
   }
-  noise_skew[0] = subopts.skew_x;
+  noise_skew[0] = subopts.skew_x * 2;
   noise_skew[1] = subopts.skew_y;
 }
+
+let biome_subopts: NoiseOpts;
+let biome_total_amplitude: number;
+function initBiomeNoise(subopts_in: NoiseOpts): void {
+  biome_subopts = subopts_in;
+  biome_total_amplitude = 0;  // Used for normalizing result to 0.0 - 1.0
+  let amp = subopts.amplitude;
+  let p = biome_subopts.persistence as number;
+  for (let ii=0; ii<biome_subopts.octaves; ii++) {
+    biome_total_amplitude += amp;
+    amp *= p;
+  }
+}
+let sample_pos = vec2();
+// eslint-disable-next-line @typescript-eslint/no-shadow
+sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
+  sample_pos[0] = x * 2 + 77;
+  sample_pos[1] = y + 77;
+  let total = 0;
+  let amp = biome_subopts.amplitude;
+  let freq = biome_subopts.frequency as number;
+  let p = biome_subopts.persistence as number;
+  let lac = biome_subopts.lacunarity as number;
+  for (let i=0; i<biome_subopts.octaves; i++) {
+    total += (0.5 + 0.5 * noise[i].noise2D(sample_pos[0] * freq, sample_pos[1] * freq)) * amp;
+    amp *= p;
+    freq *= lac;
+  }
+  return total/biome_total_amplitude;
+};
 
 
 {
@@ -366,7 +533,6 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
   const PLANET_MAX_RES = 128;
   let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES * 2);
 
-  let sample_pos = vec2();
   function get(field: NoiseOptsRangeField): number {
     let v = subopts[field] as NoiseOptRangeRT;
     if (typeof v !== 'object') {
@@ -398,7 +564,7 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
     return total/total_amplitude;
   }
 
-  function colorIndex(table: number[], value: number): number {
+  function colorIndex(table: ColorTable, value: number): number {
     for (let ii = 0; ii < table.length; ii+=2) {
       if (value <= table[ii]) {
         return table[ii+1];
@@ -417,22 +583,36 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
       rand[ii].reseed(mashString(`${this.seed}_${ii}`));
     }
 
-    let color_table_test = this.type.color_table;
-    let color_table = color_table_test[rand[0].range(color_table_test.length)];
+    let biome_tables = this.type.biome_tables;
+    let biome_table = biome_tables[rand[0].range(biome_tables.length)];
     let planet_h = clamp(nextHighestPowerOfTwo(onscreen_size), PLANET_MIN_RES, PLANET_MAX_RES);
     let planet_w = planet_h * 2;
     initNoise(this.seed, this.type.noise);
+    initBiomeNoise(this.type.noise_biome || noise_biome_base);
+    planet_gen_layer = layer;
     for (let idx=0, jj = 0; jj < planet_h; ++jj) {
       let last_wrap = false;
+      let unif_y = jj / planet_h;
       for (let ii = 0; ii < planet_w; ++ii, ++idx) {
-        let v = sample(ii/planet_w, jj/planet_h);
+        let unif_x = ii/planet_w;
+        let v = sample(unif_x, unif_y);
         if (last_wrap || ii === planet_w - 1 && rand[1].range(2)) { // blend around to other side by 1 texel
-          v = sample(-1/planet_w, jj/planet_h);
+          v = sample(-1/planet_w, unif_y);
         } else if (ii === planet_w - 2 && !rand[1].range(4)) {
-          v = sample(-2/planet_w, jj/planet_h);
+          v = sample(-2/planet_w, unif_y);
           last_wrap = true;
         }
-        let b = colorIndex(color_table, v);
+        let winner = 0;
+        let winner_weight = 0;
+        for (let kk = 0; kk < biome_table.length; ++kk) {
+          let entry = biome_table[kk];
+          let w = entry.weight_func(unif_x, unif_y, v);
+          if (w > winner_weight) {
+            winner_weight = w;
+            winner = kk;
+          }
+        }
+        let b = colorIndex(biome_table[winner].color_table, v);
         tex_data[idx] = b;
       }
     }

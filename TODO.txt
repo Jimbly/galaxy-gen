@@ -23,6 +23,7 @@ Want:
         try a 200x100 to start with?
       2 explorable
         probably fixed scale, pick somewhere between 16x -> 256x to go from world map -> surface tiles
+  always show frontish area when in planet view?
 
 Next:
   select a planet and enter "orbit" zoom level
@@ -32,14 +33,14 @@ Next:
   expand existing generate planet gen to generate a world map
     adjust to 7-8 colors instead of 3
       what palette are we using, switched to AAP64?; color 25+ will be AAP64
-      separate biome map - each biome has a color table
-      add specific biomes w/ per-planet-type logic:
+      ~X separate biome map - each biome has a color table
+      X add specific biomes w/ per-planet-type logic:
         M:
           X regular looks like now, except add mountains
-          forests looks like regular, except swap light green for dark green, and encroach on mountains
-          ice generates at extreme latitudes
-          desert generates around equator
-
+          X forests looks like regular, except swap light green for dark green, and encroach on mountains
+          X ice generates at extreme latitudes
+          X desert generates around equator
+  better blending across horizontal seam
 
 
 # Galaxy
