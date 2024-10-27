@@ -26,22 +26,7 @@ Want:
   always show frontish area when in planet view?
 
 Next:
-  select a planet and enter "orbit" zoom level
-    X can tweak planet params
-    X debug: can toggle view of a big rotating globe or a flat map
-    can tweak PlanetType data too?
-  expand existing generate planet gen to generate a world map
-    adjust to 7-8 colors instead of 3
-      what palette are we using, switched to AAP64?; color 25+ will be AAP64
-      ~X separate biome map - each biome has a color table
-      X add specific biomes w/ per-planet-type logic:
-        M:
-          X regular looks like now, except add mountains
-          X forests looks like regular, except swap light green for dark green, and encroach on mountains
-          X ice generates at extreme latitudes
-          X desert generates around equator
-  X better blending across horizontal seam
-
+  zoom from orbit level zoom to "google maps" mode
 
 # Galaxy
 

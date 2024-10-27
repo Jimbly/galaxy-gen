@@ -1287,7 +1287,12 @@ export function main(): void {
       }
     }
 
-    if (inputClick()) {
+    if (inputClick({
+      x: -Infinity,
+      y: -Infinity,
+      w: Infinity,
+      h: Infinity,
+    })) {
       use_mouse_pos = true;
       mousePos(mouse_pos);
       doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w,
