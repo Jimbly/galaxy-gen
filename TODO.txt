@@ -40,7 +40,7 @@ Next:
           X forests looks like regular, except swap light green for dark green, and encroach on mountains
           X ice generates at extreme latitudes
           X desert generates around equator
-  better blending across horizontal seam
+  X better blending across horizontal seam
 
 
 # Galaxy

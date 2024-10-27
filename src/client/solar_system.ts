@@ -12,6 +12,7 @@ import { KeysMatching } from 'glov/common/types';
 import {
   clamp,
   defaults,
+  lerp,
   nextHighestPowerOfTwo,
 } from 'glov/common/util';
 import {
@@ -591,16 +592,20 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     initBiomeNoise(this.type.noise_biome || noise_biome_base);
     planet_gen_layer = layer;
     for (let idx=0, jj = 0; jj < planet_h; ++jj) {
-      let last_wrap = false;
       let unif_y = jj / planet_h;
+      // 0.1...0.2
+      let blend_offs = clamp((noise[noise.length-1].noise2D(unif_y*5, 0.5) + 1) * 0.05, 0, 0.1) + 0.1;
       for (let ii = 0; ii < planet_w; ++ii, ++idx) {
         let unif_x = ii/planet_w;
         let v = sample(unif_x, unif_y);
-        if (last_wrap || ii === planet_w - 1 && rand[1].range(2)) { // blend around to other side by 1 texel
-          v = sample(-1/planet_w, unif_y);
-        } else if (ii === planet_w - 2 && !rand[1].range(4)) {
-          v = sample(-2/planet_w, unif_y);
-          last_wrap = true;
+        if (unif_x > 1 - blend_offs) {
+          let w = min((unif_x - (1 - blend_offs)) / 0.1, 1);
+          let v2 = sample(unif_x - 1, unif_y);
+          v = lerp(w, v, v2);
+          if (w > 0.5) {
+            // use this pos for biome funcs
+            unif_x--;
+          }
         }
         let winner = 0;
         let winner_weight = 0;
