@@ -531,7 +531,7 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
   let planet_tex_id = 0;
 
   const PLANET_MIN_RES = 8;
-  const PLANET_MAX_RES = 128;
+  const PLANET_MAX_RES = 256;
   let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES * 2);
 
   function get(field: NoiseOptsRangeField): number {

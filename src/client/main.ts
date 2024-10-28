@@ -113,8 +113,9 @@ window.Z = window.Z || {};
 Z.BACKGROUND = 1;
 Z.SPRITES = 10;
 Z.PARTICLES = 20;
-Z.SOLAR = 80;
-Z.PLANET = 90;
+Z.SOLAR = 60;
+Z.PLANET = 70;
+Z.PLANET_MAP = 80;
 Z.UI = 100;
 
 // let app = exports;
@@ -184,11 +185,12 @@ export function main(): void {
   let shader_galaxy_pixel = shaderCreate('shaders/galaxy_blend_pixel.fp');
   let shader_galaxy_blend = shaderCreate('shaders/galaxy_blend.fp');
   let shader_planet_pixel = shaderCreate('shaders/planet_pixel.fp');
+  let shader_planet_pixel_flat = shaderCreate('shaders/planet_pixel_flat.fp');
   let white_tex = textureWhite();
 
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
-  const MAX_PLANET_VIEW = 1;
+  const MAX_PLANET_VIEW = 3;
   const buf_dim = 256;
   let params: GenGalaxyParams & {
     dither: number;
@@ -233,16 +235,18 @@ export function main(): void {
     seed: 80,
     star_id: 55,
   }, localStorageGetJSON('solar_params', {}));
-  let planet_params: Required<PlanetOverrideParams> & {
-    orbit: number;
-    rot: number;
-  } = merge({
+  let planet_params: Required<PlanetOverrideParams> = merge({
     name: 'M' as const,
     size: 12,
     seed: 50,
+  }, localStorageGetJSON('planet_params', {}));
+  let planet_view_params: {
+    orbit: number;
+    rot: number;
+  } = merge({
     orbit: 0,
     rot: 0,
-  }, localStorageGetJSON('planet_params', {}));
+  }, localStorageGetJSON('planet_view_params', {}));
   let gen_params: typeof params;
   let gen_solar_params: typeof solar_params;
   let gen_planet_params: typeof planet_params;
@@ -315,6 +319,7 @@ export function main(): void {
   let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
   let target_zoom_level = zoom_level;
   let zoom_offs = vec2(localStorageGetJSON('offsx', 0),localStorageGetJSON('offsy', 0));
+  let planet_zoom_offs = vec2(localStorageGetJSON('planet_offsx', 0),localStorageGetJSON('planet_offsy', 0));
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let use_mouse_pos = false;
@@ -512,11 +517,11 @@ export function main(): void {
     let rot = getFrameTimestamp() * ROTATION_RATE;
     if (planet_override && planet_override_planet) {
       planet = planet_override_planet;
-      if (planet_params.orbit) {
-        theta = planet_params.orbit / 360 * 2 * PI;
+      if (planet_view_params.orbit) {
+        theta = planet_view_params.orbit / 360 * 2 * PI;
       }
-      if (planet_params.rot) {
-        rot = planet_params.rot / 360;
+      if (planet_view_params.rot) {
+        rot = planet_view_params.rot / 360;
       }
     }
     rot = mod(rot, 1);
@@ -534,7 +539,7 @@ export function main(): void {
       let planet_shader_params = {
         params: [0, 0, mod(2 - theta / PI + rot*2, 2), 0],
       };
-      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
+      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE), tex_palette_planets],
         x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
         [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
     } else {
@@ -546,11 +551,27 @@ export function main(): void {
       };
       let x = xmid;
       let y = ymid;
-      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
+      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE), tex_palette_planets],
         x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
         [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
     }
   }
+
+  function planetMapMode(
+    planet: Planet,
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    h: number,
+  ): void {
+    const MAP_FULL_SIZE = 256;
+    let planet_shader_params = {};
+    spriteQueueRaw([planet.getTexture(2, MAP_FULL_SIZE), tex_palette_planets],
+      x - 128, y, z, 512, 256, 0, 0, 1, 1,
+      [1,1,1,1], shader_planet_pixel_flat, planet_shader_params);
+  }
+
   let solar_mouse_pos = vec2();
   type SelectedPlanet = {
     idx: number;
@@ -722,6 +743,8 @@ export function main(): void {
       copyCanvasToClipboard();
     }
 
+    let hide_solar = eff_planet_view >= 2;
+
     if (show_panel) {
       if (buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: button_width * 0.75 }) ||
         keyDownEdge(KEYS.V)
@@ -755,11 +778,13 @@ export function main(): void {
           planet_override_planet = null;
         }
         y += button_spacing;
-        if (buttonText({ x, y, z, text: planet_flatmap ? 'Flatmap' : 'Globe' })) {
-          planet_flatmap = !planet_flatmap;
-          localStorageSetJSON('planet_flatmap', planet_flatmap);
+        if (!hide_solar) {
+          if (buttonText({ x, y, z, text: planet_flatmap ? 'Flatmap' : 'Globe' })) {
+            planet_flatmap = !planet_flatmap;
+            localStorageSetJSON('planet_flatmap', planet_flatmap);
+          }
+          y += button_spacing;
         }
-        y += button_spacing;
         let solar_system = last_solar_system;
         if (solar_system) {
           print(style, x, y, z, `StarID: ${solar_system.star_id}`);
@@ -778,20 +803,31 @@ export function main(): void {
             // planet_params.size = round(slider(planet_params.size, { x, y, z, min: 4, max: 128 }));
             // y += button_spacing;
 
-            print(style, x, y, z, `Orbit: ${round4(planet_params.orbit)}`);
-            y += font_height;
-            planet_params.orbit = round(slider(planet_params.orbit, { x, y, z, min: 0, max: 360 }));
-            y += button_spacing;
+            if (!hide_solar) {
+              let orbit = planet_view_params.orbit;
+              print(style, x, y, z, `Orbit: ${round(orbit)}`);
+              y += font_height;
+              planet_view_params.orbit = round(slider(orbit, { x, y, z, min: 0, max: 360 }));
+              y += button_spacing;
+              if (planet_view_params.orbit !== orbit) {
+                localStorageSetJSON('planet_view_params', planet_view_params);
+              }
 
-            print(style, x, y, z, `Rotation: ${round4(planet_params.rot)}`);
-            y += font_height;
-            planet_params.rot = round(slider(planet_params.rot, { x, y, z, min: 0, max: 360 }));
-            y += button_spacing;
+              let rot = planet_view_params.rot;
+              print(style, x, y, z, `Rotation: ${round(rot)}`);
+              y += font_height;
+              planet_view_params.rot = round(slider(rot, { x, y, z, min: 0, max: 360 }));
+              y += button_spacing;
+              if (planet_view_params.rot !== rot) {
+                localStorageSetJSON('planet_view_params', planet_view_params);
+              }
+            }
 
             print(style, x, y, z, `Seed: ${planet_params.seed}`);
             y += font_height;
             planet_params.seed = round(slider(planet_params.seed, { x, y, z, min: 1, max: 99 }));
             y += button_spacing;
+
 
           } else if (last_selected_planet) {
             let planet = solar_system.planets[last_selected_planet.idx];
@@ -979,21 +1015,23 @@ export function main(): void {
     // y -= font_height;
     // print(null, x+2, y, z, `Offset: ${round4(zoom_offs[0])},${round4(zoom_offs[1])}`);
 
-    let legend_scale = 0.25;
-    let legend_x0 = game_width - w*legend_scale - 2;
-    let legend_x1 = game_width - 4;
-    let legend_color = solar_view ? color_legend_fade : unit_vec;
-    y = w;
+    if (!solar_view) {
+      let legend_scale = 0.25;
+      let legend_x0 = game_width - w*legend_scale - 2;
+      let legend_x1 = game_width - 4;
+      let legend_color = solar_view ? color_legend_fade : unit_vec;
+      y = w;
 
-    drawLine(legend_x0, y - 4.5, legend_x1, y - 4.5, z, 1, 1, legend_color);
-    drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, legend_color);
-    drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, legend_color);
-    let ly = legend_scale * params.width_ly / zoom;
-    let legend_y = y - 6 - font_height;
-    font.drawSizedAligned(solar_view ? font_style_fade : null,
-      legend_x0, legend_y, z, font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
-      `${format(ly)}ly`);
-    drawRect(legend_x0 - 2, legend_y, legend_x1 + 2, y, z - 1, color_text_backdrop);
+      drawLine(legend_x0, y - 4.5, legend_x1, y - 4.5, z, 1, 1, legend_color);
+      drawLine(legend_x0 - 0.5, y - 7, legend_x0 - 0.5, y - 2, z, 1, 1, legend_color);
+      drawLine(legend_x1 + 0.5, y - 7, legend_x1 + 0.5, y - 2, z, 1, 1, legend_color);
+      let ly = legend_scale * params.width_ly / zoom;
+      let legend_y = y - 6 - font_height;
+      font.drawSizedAligned(solar_view ? font_style_fade : null,
+        legend_x0, legend_y, z, font_height, font.ALIGN.HCENTER, legend_x1 - legend_x0, 0,
+        `${format(ly)}ly`);
+      drawRect(legend_x0 - 2, legend_y, legend_x1 + 2, y, z - 1, color_text_backdrop);
+    }
 
     x = map_x0;
     y = map_y0;
@@ -1250,23 +1288,28 @@ export function main(): void {
       last_solar_system = solar_system || null;
       if (solar_system) {
         let { planets, star_data, name } = solar_system;
-        overlayText(`${name || (star && star.id ? `Star #${star.id}` : '') || 'Override Star'}` +
-          `, Type: ${star_data.label}`);
+        if (!hide_solar) {
+          overlayText(`${name || (star && star.id ? `Star #${star.id}` : '') || 'Override Star'}` +
+            `, Type: ${star_data.label}`);
 
-        for (let ii = 0; ii < planets.length; ++ii) {
-          let planet = planets[ii];
-          if (!planet_view || selected_planet_index === ii) {
-            overlayText(`${!planet_view && selected_planet_index === ii ? '*' : ' '}` +
-              ` Planet #${ii+1}: Class ${planet.type.name}`);
+          for (let ii = 0; ii < planets.length; ++ii) {
+            let planet = planets[ii];
+            if (!planet_view || selected_planet_index === ii) {
+              overlayText(`${!planet_view && selected_planet_index === ii ? '*' : ' '}` +
+                ` Planet #${ii+1}: Class ${planet.type.name}`);
+            }
           }
         }
         let do_solar_view = eff_solar_view ? eff_solar_view :
           debugDefineIsSet('AUTOSOLAR') && zoom_level > 15.5 ? 1 : 0;
+        if (hide_solar) {
+          do_solar_view = 0;
+        }
         if (do_solar_view) {
           let selected_planet = drawSolarSystem(solar_system, map_x0, map_y0, Z.SOLAR, w, w, xp, yp, do_solar_view);
           last_selected_planet = selected_planet;
           if (solar_view) {
-            let do_planet_view = eff_planet_view ? eff_planet_view : 0;
+            let do_planet_view = eff_planet_view ? min(eff_planet_view, 1) : 0;
             if (do_planet_view && selected_planet_index !== null && (
               selected_planet || planet_override && planet_override_planet
             )) {
@@ -1290,6 +1333,22 @@ export function main(): void {
         }
       } else if (star) {
         overlayText(`Star #${star.id}`);
+      }
+
+      if (eff_planet_view > 1) {
+        assert(solar_system);
+        assert(selected_planet_index !== null);
+        let { planets } = solar_system;
+        let planet = planet_override ? planet_override_planet : planets[selected_planet_index];
+        if (!planet) {
+          planet_view = 0;
+        } else {
+          planetMapMode(planet,
+            map_x0,
+            map_y0,
+            Z.PLANET_MAP,
+            w, w);
+        }
       }
     }
 
