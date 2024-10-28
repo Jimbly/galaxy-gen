@@ -529,9 +529,10 @@ export function main(): void {
     let sprite_size = lerp(fade, planet.size, FULL_SIZE);
 
     if (planet_flatmap) {
+      // note: w/h happen to be 256 here, which makes this pixel-perfect
       let pmtex = planetMapFlatTexture();
       let planet_shader_params = {
-        params: [0, pmtex.width / (sprite_size)*1.5 / 255, mod(2 - theta / PI + rot*2, 2), 0],
+        params: [0, 0, mod(2 - theta / PI + rot*2, 2), 0],
       };
       spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE*2), tex_palette_planets],
         x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
@@ -792,15 +793,6 @@ export function main(): void {
             planet_params.seed = round(slider(planet_params.seed, { x, y, z, min: 1, max: 99 }));
             y += button_spacing;
 
-            if (!planet_override_planet || !deepEqual(planet_params, gen_planet_params)) {
-              gen_planet_params = clone(planet_params);
-              localStorageSetJSON('planet_params', planet_params);
-              planet_override_planet = planetCreate(
-                solar_override ? solar_params.seed : galaxy.params.seed,
-                last_solar_system && last_solar_system.star_id || 0,
-                planet_params
-              );
-            }
           } else if (last_selected_planet) {
             let planet = solar_system.planets[last_selected_planet.idx];
             print(style, x, y, z, `Type: ${planet.type.name}`);
@@ -834,15 +826,6 @@ export function main(): void {
           y += font_height;
           solar_params.seed = round(slider(solar_params.seed, { x, y, z, min: 1, max: 99 }));
           y += button_spacing;
-
-          if (!solar_override_system || !deepEqual(solar_params, gen_solar_params)) {
-            gen_solar_params = clone(solar_params);
-            localStorageSetJSON('solar_params', solar_params);
-            solar_override_system = solarSystemCreate(solar_params.seed, {
-              // Fake Star structure
-              id: solar_params.star_id,
-            });
-          }
         }
       } else {
         print(style, x, y, z, `Seed: ${params.seed}`);
@@ -917,6 +900,29 @@ export function main(): void {
         localStorageSetJSON('panel', show_panel);
       }
       y += button_spacing;
+    }
+
+    if (solar_view && solar_override) {
+      if (!solar_override_system || !deepEqual(solar_params, gen_solar_params)) {
+        gen_solar_params = clone(solar_params);
+        localStorageSetJSON('solar_params', solar_params);
+        solar_override_system = solarSystemCreate(solar_params.seed, {
+          // Fake Star structure
+          id: solar_params.star_id,
+        });
+        planet_override_planet = null;
+      }
+    }
+    if (planet_view && planet_override) {
+      if (!planet_override_planet || !deepEqual(planet_params, gen_planet_params)) {
+        gen_planet_params = clone(planet_params);
+        localStorageSetJSON('planet_params', planet_params);
+        planet_override_planet = planetCreate(
+          solar_override ? solar_params.seed : galaxy.params.seed,
+          last_solar_system && last_solar_system.star_id || 0,
+          planet_params
+        );
+      }
     }
 
     x = game_width - w + 4;

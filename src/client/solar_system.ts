@@ -701,8 +701,8 @@ export function planetMapTexture(high_res: boolean): Texture {
     width: res,
     height: res,
     data: tex_data,
-    filter_min: gl.NEAREST,
-    filter_mag: gl.NEAREST,
+    filter_min: gl.LINEAR,
+    filter_mag: gl.LINEAR,
     wrap_s: gl.CLAMP_TO_EDGE,
     wrap_t: gl.CLAMP_TO_EDGE,
   });
