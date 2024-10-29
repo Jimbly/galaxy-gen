@@ -8,7 +8,7 @@ import {
   mashString,
   randCreate,
 } from 'glov/common/rand_alea';
-import { KeysMatching } from 'glov/common/types';
+import { KeysMatching, TSMap } from 'glov/common/types';
 import {
   clamp,
   defaults,
@@ -28,7 +28,7 @@ import {
   starTypeFromID,
 } from './star_types';
 
-const { abs, atan2, max, min, round, sqrt, PI } = Math;
+const { abs, atan2, max, min, round, sqrt, PI, pow } = Math;
 
 let rand = [
   randCreate(0),
@@ -432,6 +432,7 @@ export type PlanetOverrideParams = {
 type TexPair = {
   tex: Texture & { planet_tex_id?: number };
   tex_id: number;
+  tex_idx: number; // for planet textures
 };
 
 export class Planet {
@@ -440,6 +441,8 @@ export class Planet {
   orbit: number;
   orbit_speed: number;
   seed: number;
+  biome_table: BiomeTable;
+  tex_idx = 0;
   constructor(override_data?: PlanetOverrideParams) {
     override_data = override_data || {};
     this.type = override_data.name ?
@@ -449,10 +452,18 @@ export class Planet {
     this.orbit = rand[0].floatBetween(0, PI*2) * 11;
     this.orbit_speed = randExp(1, 0.1, 1);
     this.seed = override_data.seed || rand[2].uint32();
+    let biome_tables = this.type.biome_tables;
+    this.biome_table = biome_tables[rand[1].range(biome_tables.length)];
   }
 
-  texpairs: TexPair[] = [];
-  declare getTexture: (layer: number, onscreen_size: number) => Texture;
+  texpairs: Partial<Record<number, TexPair>> = {};
+  declare getTexture: (
+    layer: number,
+    texture_size: number,
+    sublayer: number,
+    sub_x: number,
+    sub_y: number,
+  ) => Texture;
 }
 
 let noise: SimplexNoise[];
@@ -526,8 +537,11 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
 
 {
   const MAX_TEXTURES = 20;
-  let tex_pool: Texture[] = [];
-  let tex_idx = 0;
+  type TexPool = {
+    texs: Texture[];
+    tex_idx: number;
+  };
+  let tex_pools: TSMap<TexPool> = {};
   let planet_tex_id = 0;
 
   const PLANET_MIN_RES = 8;
@@ -574,29 +588,46 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     return table[table.length - 1];
   }
 
-  Planet.prototype.getTexture = function (layer: number, onscreen_size: number): Texture {
-    let tp = this.texpairs[layer];
+  Planet.prototype.getTexture = function (
+    layer: number,
+    texture_size: number,
+    sublayer: number,
+    sub_x: number,
+    sub_y: number,
+  ): Texture {
+    if (layer !== 2) {
+      assert(!sublayer && !sub_x && !sub_y);
+    }
+    let tp_idx = layer + ((sublayer * 65536 + sub_y) * 65536) + sub_x;
+    let tp = this.texpairs[tp_idx];
     if (tp && tp.tex.planet_tex_id === tp.tex_id) {
       return tp.tex;
     }
 
-    for (let ii = 0; ii < rand.length; ++ii) {
-      rand[ii].reseed(mashString(`${this.seed}_${ii}`));
-    }
+    // for (let ii = 0; ii < rand.length; ++ii) {
+    //   rand[ii].reseed(mashString(`${this.seed}_${ii}`));
+    // }
 
-    let biome_tables = this.type.biome_tables;
-    let biome_table = biome_tables[rand[0].range(biome_tables.length)];
-    let planet_h = clamp(nextHighestPowerOfTwo(onscreen_size), PLANET_MIN_RES, PLANET_MAX_RES);
+    let biome_table = this.biome_table;
+    let planet_h = clamp(nextHighestPowerOfTwo(texture_size), PLANET_MIN_RES, PLANET_MAX_RES);
     let planet_w = planet_h * 2;
+    let tex_h = planet_h;
+    let tex_w = planet_w;
+    let zoom = pow(2, sublayer);
+    if (sublayer) {
+      tex_w = tex_h;
+      planet_h *= zoom;
+      planet_w *= zoom;
+    }
     initNoise(this.seed, this.type.noise);
     initBiomeNoise(this.type.noise_biome || noise_biome_base);
     planet_gen_layer = layer;
-    for (let idx=0, jj = 0; jj < planet_h; ++jj) {
-      let unif_y = jj / planet_h;
+    for (let idx=0, jj = 0; jj < tex_h; ++jj) {
+      let unif_y = (sub_y * tex_h + jj) / planet_h;
       // 0.1...0.2
       let blend_offs = clamp((noise[noise.length-1].noise2D(unif_y*5, 0.5) + 1) * 0.05, 0, 0.1) + 0.1;
-      for (let ii = 0; ii < planet_w; ++ii, ++idx) {
-        let unif_x = ii/planet_w;
+      for (let ii = 0; ii < tex_w; ++ii, ++idx) {
+        let unif_x = (sub_x * tex_w + ii)/planet_w;
         let v = sample(unif_x, unif_y);
         if (unif_x > 1 - blend_offs) {
           let w = min((unif_x - (1 - blend_offs)) / 0.1, 1);
@@ -621,29 +652,52 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
         tex_data[idx] = b;
       }
     }
-    let tex = tex_pool[tex_idx];
-    if (tex) {
-      tex.updateData(planet_w, planet_h, tex_data);
+    let tex_key = sublayer === 0 ? `${tex_w}x${tex_h}` : 'planet';
+    let tex_pool = tex_pools[tex_key];
+    if (!tex_pool) {
+      tex_pool = tex_pools[tex_key] = { texs: [], tex_idx: 0 };
+    }
+    let tex: Texture;
+    let tex_idx: number;
+    if (sublayer === 0) {
+      // orrey view and planet globe view
+      // (basically) never two in the same frame, so just loop through the pool
+      tex_idx = tex_pool.tex_idx;
+      tex_pool.tex_idx = (tex_pool.tex_idx + 1) % MAX_TEXTURES;
     } else {
-      tex = tex_pool[tex_idx] = textureLoad({
-        name: `planet_${++tex_idx}`,
+      // more complicated caching on the planet level;
+      // always the same resolution
+      if (tp) {
+        assert(tp.tex_idx !== undefined);
+        tex_idx = tp.tex_idx;
+        assert(tp.tex === tex_pool.texs[tex_idx]); // same texture, just needs updating
+      } else {
+        tex_idx = this.tex_idx++;
+      }
+    }
+    tex = tex_pool.texs[tex_idx];
+    if (tex) {
+      tex.updateData(tex_w, tex_h, tex_data);
+    } else {
+      tex = tex_pool.texs[tex_idx] = textureLoad({
+        name: `planet_${planet_tex_id}`,
         format: TEXTURE_FORMAT.R8,
-        width: planet_w,
-        height: planet_h,
+        width: tex_w,
+        height: tex_h,
         data: tex_data,
         filter_min: gl.NEAREST,
         filter_mag: gl.NEAREST,
-        wrap_s: gl.REPEAT,
+        wrap_s: sublayer === 0 ? gl.REPEAT : gl.CLAMP_TO_EDGE,
         wrap_t: gl.CLAMP_TO_EDGE,
       });
     }
-    tex_idx = (tex_idx + 1) % MAX_TEXTURES;
     tp = {
       tex,
       tex_id: ++planet_tex_id,
+      tex_idx,
     };
     tp.tex.planet_tex_id = tp.tex_id;
-    this.texpairs[layer] = tp;
+    this.texpairs[tp_idx] = tp;
     return tp.tex;
   };
 }

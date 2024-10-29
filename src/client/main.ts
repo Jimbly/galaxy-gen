@@ -435,7 +435,7 @@ export function main(): void {
   function zoomTick(max_okay_zoom: number): void {
     let dt = getFrameDt();
     gal_zoomer.zoomTick(max_okay_zoom, dt);
-    planet_zoomer.zoomTick(MAX_PLANET_ZOOM, dt);
+    planet_zoomer.zoomTick(planet_zoomer.max_zoom, dt);
     let dsolar = dt * 0.003;
     if (eff_solar_view_unsmooth < solar_view) {
       eff_solar_view_unsmooth = min(solar_view, eff_solar_view_unsmooth + dsolar);
@@ -555,6 +555,7 @@ export function main(): void {
 
   const ORBIT_RATE = 0.0002;
   const ROTATION_RATE = 0.0003*0.5;
+  let temp_fade = vec4(1, 1, 1, 1);
   function drawPlanet(
     solar_system: SolarSystem,
     selected_planet: SelectedPlanet,
@@ -594,7 +595,7 @@ export function main(): void {
       let planet_shader_params = {
         params: [0, 0, mod(2 - theta / PI + rot*2, 2), 0],
       };
-      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE), tex_palette_planets],
+      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE, 0, 0, 0), tex_palette_planets],
         x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
         [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
     } else {
@@ -606,25 +607,56 @@ export function main(): void {
       };
       let x = xmid;
       let y = ymid;
-      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE), tex_palette_planets],
+      temp_fade[3] = min(fade * 8, 1);
+      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE, 0, 0, 0), tex_palette_planets],
         x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
-        [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
+        temp_fade, shader_planet_pixel, planet_shader_params);
     }
   }
 
   function planetMapMode(
     planet: Planet,
-    x: number,
+    x: number, // origin of the world in screen coords
     y: number,
     z: number,
-    h: number,
+    h: number, // height of the world in screen coords
     alpha: number,
+    zoom_level: number,
   ): void {
     const MAP_FULL_SIZE = 256;
     let planet_shader_params = {};
-    spriteQueueRaw([planet.getTexture(2, MAP_FULL_SIZE), tex_palette_planets],
-      x, y, z, h * 2, h, 0, 0, 1, 1,
-      [1,1,1,alpha], shader_planet_pixel_flat, planet_shader_params);
+    temp_fade[3] = alpha;
+    function drawSubLayer(sublayer: number): void {
+      let zoom = pow(2, sublayer);
+      if (sublayer === 0) {
+        // special: single texture, just fill the screen
+        let layer0 = planet.getTexture(2, MAP_FULL_SIZE, 0, 0, 0);
+        spriteQueueRaw([layer0, tex_palette_planets],
+          camera2d.x0Real(), y, z, camera2d.wReal(), h,
+          (camera2d.x0Real() - x) / (h * 2), 0, (camera2d.x1Real() - x) / (h * 2), 1,
+          temp_fade, shader_planet_pixel_flat, planet_shader_params);
+      } else {
+        // draw in parts
+        let sub_dim = h / zoom;
+        let sub_num_horiz = zoom * 2;
+        let sub_num_vert = zoom;
+        let sub_x0 = floor((camera2d.x0Real() - x) / sub_dim);
+        let sub_x1 = floor((camera2d.x1Real() - x) / sub_dim);
+        let sub_y0 = floor((camera2d.y0Real() - y) / sub_dim);
+        let sub_y1 = floor((camera2d.y1Real() - y) / sub_dim);
+        for (let yy = sub_y0; yy <= sub_y1; ++yy) {
+          for (let xx = sub_x0; xx <= sub_x1; ++xx) {
+            let layer = planet.getTexture(2, MAP_FULL_SIZE, sublayer, mod(xx, sub_num_horiz), mod(yy, sub_num_vert));
+            spriteQueueRaw([layer, tex_palette_planets],
+              x + xx * sub_dim,
+              y + yy * sub_dim, z, sub_dim, sub_dim,
+              0, 0, 1, 1,
+              temp_fade, shader_planet_pixel_flat, planet_shader_params);
+          }
+        }
+      }
+    }
+    drawSubLayer(round(zoom_level));
   }
 
   let solar_mouse_pos = vec2();
@@ -699,7 +731,7 @@ export function main(): void {
         params: [getFrameTimestamp() * ROTATION_RATE, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
       // with pixely view, looks a lot better with a /2 on the texture resolution
-      spriteQueueRaw([pmtex, planet.getTexture(0, sprite_size*2/2), tex_palette_planets],
+      spriteQueueRaw([pmtex, planet.getTexture(0, sprite_size*2/2, 0, 0, 0), tex_palette_planets],
         x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
         [1,1,1,fade], shader_planet_pixel, planet_shader_params);
     }
@@ -1033,7 +1065,7 @@ export function main(): void {
     const SLIDER_W = 110;
     let eff_zoom = gal_zoomer.target_zoom_level + solar_view + planet_view + planet_zoomer.target_zoom_level;
     let new_zoom = roundZoom(slider(eff_zoom,
-      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + MAX_PLANET_ZOOM }));
+      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + planet_zoomer.max_zoom }));
     if (abs(new_zoom - eff_zoom) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - eff_zoom);
     }
@@ -1428,7 +1460,8 @@ export function main(): void {
             map_y0 + (0 - planet_zoomer.zoom_offs[1]) * ww,
             Z.PLANET_MAP,
             ww,
-            clamp(eff_planet_view - 1, 0, 1));
+            clamp(eff_planet_view - 1, 0, 1),
+            planet_zoomer.zoom_level);
         }
       }
     }
