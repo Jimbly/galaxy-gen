@@ -78,6 +78,7 @@ import {
 import {
   JSVec2,
   ROVec4,
+  Vec2,
   unit_vec,
   v2add,
   v2addScale,
@@ -122,6 +123,106 @@ Z.UI = 100;
 // Virtual viewport for our game logic
 const game_width = 256 + 90;
 const game_height = 256;
+
+function zoomTime(amount: number): number {
+  return abs(amount) * 500;
+}
+
+class Zoomer {
+  zoom_level: number;
+  zoom_offs = vec2();
+  target_zoom_level: number;
+  queued_zooms: {
+    x: number;
+    y: number;
+    progress: number;
+    delta: number;
+  }[] = [];
+
+  constructor(
+    public zoom_level_key: string,
+    public zoom_offs_key: string,
+    public max_zoom: number
+  ) {
+    this.zoom_level = localStorageGetJSON(this.zoom_level_key, 0);
+    v2set(this.zoom_offs,
+      localStorageGetJSON(`${this.zoom_offs_key}x`, 0),
+      localStorageGetJSON(`${this.zoom_offs_key}y`, 0));
+    this.target_zoom_level = this.zoom_level;
+  }
+  resetZoom(zoom_level: number): void {
+    this.queued_zooms = [];
+    this.zoom_level = this.target_zoom_level = zoom_level;
+    v2set(this.zoom_offs, 0, 0); // TODO: get from caller?
+    localStorageSetJSON(this.zoom_level_key, zoom_level);
+  }
+  doZoomActual(x: number, y: number, delta: number): void {
+    const { zoom_offs } = this;
+    let { zoom_level } = this;
+    let cur_zoom = pow(2, zoom_level);
+    let new_zoom_level = max(0, min(zoom_level + delta, this.max_zoom));
+    let new_zoom = pow(2, new_zoom_level);
+    // Calc actual coords at [x,y]
+    let point_x = zoom_offs[0] + x / cur_zoom;
+    let point_y = zoom_offs[1] + y / cur_zoom;
+    // Calc new x0 at new zoom relative to these coords
+    zoom_offs[0] = point_x - x / new_zoom;
+    zoom_offs[1] = point_y - y / new_zoom;
+    zoom_level = new_zoom_level;
+
+    if (zoom_level === 0) {
+      // recenter
+      zoom_offs[0] = zoom_offs[1] = 0;
+    }
+    this.zoom_level = zoom_level;
+    localStorageSetJSON(`${this.zoom_offs_key}x`, zoom_offs[0]);
+    localStorageSetJSON(`${this.zoom_offs_key}y`, zoom_offs[1]);
+    localStorageSetJSON(this.zoom_level_key, zoom_level);
+  }
+  zoomTick(max_okay_zoom: number, dt: number): void {
+    const { queued_zooms } = this;
+    for (let ii = 0; ii < queued_zooms.length; ++ii) {
+      let zm = queued_zooms[ii];
+      let new_progress = min(1, zm.progress + dt/zoomTime(zm.delta));
+      let dp;
+      if (debugDefineIsSet('ATTRACT')) {
+        dp = new_progress - zm.progress;
+      } else {
+        // manual mode, smooth the application of zooming
+        dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
+      }
+      let new_zoom_level = min(this.zoom_level + zm.delta * dp, this.max_zoom);
+      // not limiting zoom, just feels worse?
+      if (zm.delta > 0 && new_zoom_level > max_okay_zoom && false) {
+        continue;
+      }
+      zm.progress = new_progress;
+      this.doZoomActual(zm.x, zm.y, zm.delta * dp);
+      if (new_progress === 1) {
+        queued_zooms.splice(ii, 1);
+      }
+    }
+    if (!queued_zooms.length) {
+      // recover from floating point issues
+      this.zoom_level = this.target_zoom_level;
+    }
+  }
+  doZoom(x: number, y: number, delta: number): void {
+    this.target_zoom_level = max(0, min(this.target_zoom_level + delta, this.max_zoom));
+    this.queued_zooms.push({
+      x, y, delta,
+      progress: 0,
+    });
+  }
+  drag(delta: Vec2, w: number): void {
+    let zoom = pow(2, this.zoom_level);
+    this.zoom_offs[0] -= delta[0] / w / zoom;
+    this.zoom_offs[1] -= delta[1] / w / zoom;
+    localStorageSetJSON(`${this.zoom_offs_key}x`, this.zoom_offs[0]);
+    localStorageSetJSON(`${this.zoom_offs_key}y`, this.zoom_offs[1]);
+  }
+}
+
 
 export function main(): void {
   if (engine.DEBUG) {
@@ -190,7 +291,8 @@ export function main(): void {
 
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
-  const MAX_PLANET_VIEW = 3;
+  const MAX_PLANET_VIEW = 2;
+  const MAX_PLANET_ZOOM = 6;
   const buf_dim = 256;
   let params: GenGalaxyParams & {
     dither: number;
@@ -306,8 +408,7 @@ export function main(): void {
     },
   });
 
-
-  let zoom_level = localStorageGetJSON('zoom', 0);
+  let gal_zoomer = new Zoomer('zoom', 'offs', MAX_ZOOM);
   let solar_view = localStorageGetJSON('solar_view', 0);
   let solar_override = localStorageGetJSON('solar_override', false);
   let solar_override_system: null | SolarSystem = null;
@@ -317,9 +418,7 @@ export function main(): void {
   let planet_flatmap = localStorageGetJSON('planet_flatmap', false);
   let planet_override_planet: null | Planet = null;
   let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
-  let target_zoom_level = zoom_level;
-  let zoom_offs = vec2(localStorageGetJSON('offsx', 0),localStorageGetJSON('offsy', 0));
-  let planet_zoom_offs = vec2(localStorageGetJSON('planet_offsx', 0),localStorageGetJSON('planet_offsy', 0));
+  let planet_zoomer = new Zoomer('planet_zoom', 'planet_offs', MAX_PLANET_ZOOM);
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let use_mouse_pos = false;
@@ -327,66 +426,14 @@ export function main(): void {
   const color_legend_fade = vec4(1,1,1,0.25);
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
-  function doZoomActual(x: number, y: number, delta: number): void {
-    let cur_zoom = pow(2, zoom_level);
-    let new_zoom_level = max(0, min(zoom_level + delta, MAX_ZOOM));
-    let new_zoom = pow(2, new_zoom_level);
-    // Calc actual coords at [x,y]
-    let point_x = zoom_offs[0] + x / cur_zoom;
-    let point_y = zoom_offs[1] + y / cur_zoom;
-    // Calc new x0 at new zoom relative to these coords
-    zoom_offs[0] = point_x - x / new_zoom;
-    zoom_offs[1] = point_y - y / new_zoom;
-    zoom_level = new_zoom_level;
-
-    if (zoom_level === 0) {
-      // recenter
-      zoom_offs[0] = zoom_offs[1] = 0;
-    }
-    localStorageSetJSON('offsx', zoom_offs[0]);
-    localStorageSetJSON('offsy', zoom_offs[1]);
-    localStorageSetJSON('zoom', zoom_level);
-  }
-  let queued_zooms: {
-    x: number;
-    y: number;
-    progress: number;
-    delta: number;
-  }[] = [];
   let eff_solar_view = solar_view;
   let eff_solar_view_unsmooth = solar_view;
   let eff_planet_view = planet_view;
   let eff_planet_view_unsmooth = planet_view;
-  function zoomTime(amount: number): number {
-    return abs(amount) * 500;
-  }
   function zoomTick(max_okay_zoom: number): void {
     let dt = getFrameDt();
-    for (let ii = 0; ii < queued_zooms.length; ++ii) {
-      let zm = queued_zooms[ii];
-      let new_progress = min(1, zm.progress + dt/zoomTime(zm.delta));
-      let dp;
-      if (debugDefineIsSet('ATTRACT')) {
-        dp = new_progress - zm.progress;
-      } else {
-        // manual mode, smooth the application of zooming
-        dp = easeOut(new_progress, 2) - easeOut(zm.progress, 2);
-      }
-      let new_zoom_level = min(zoom_level + zm.delta * dp, MAX_ZOOM);
-      // not limiting zoom, just feels worse?
-      if (zm.delta > 0 && new_zoom_level > max_okay_zoom && false) {
-        continue;
-      }
-      zm.progress = new_progress;
-      doZoomActual(zm.x, zm.y, zm.delta * dp);
-      if (new_progress === 1) {
-        queued_zooms.splice(ii, 1);
-      }
-    }
-    if (!queued_zooms.length) {
-      // recover from floating point issues
-      zoom_level = target_zoom_level;
-    }
+    gal_zoomer.zoomTick(max_okay_zoom, dt);
+    planet_zoomer.zoomTick(MAX_PLANET_ZOOM, dt);
     let dsolar = dt * 0.003;
     if (eff_solar_view_unsmooth < solar_view) {
       eff_solar_view_unsmooth = min(solar_view, eff_solar_view_unsmooth + dsolar);
@@ -410,16 +457,24 @@ export function main(): void {
     localStorageSetJSON('solar_view', solar_view);
     localStorageSetJSON('selected_star', solar_view ? selected_star_id : null);
   }
-  function planetZoom(delta: number): void {
+  function planetZoom(x: number, y: number, delta: number): void {
+    if (planet_view === MAX_PLANET_VIEW && delta > 0) {
+      return planet_zoomer.doZoom(x, y, delta);
+    } else if (planet_view === MAX_PLANET_VIEW && delta < 0) {
+      if (planet_zoomer.target_zoom_level > 0) {
+        return planet_zoomer.doZoom(x, y, delta);
+      }
+    }
+    planet_zoomer.resetZoom(0);
     planet_view = clamp(planet_view + delta, 0, MAX_PLANET_VIEW);
     localStorageSetJSON('planet_view', planet_view);
     localStorageSetJSON('selected_planet', planet_view ? selected_planet_index : null);
   }
   function doZoom(x: number, y: number, delta: number): void {
-    if (target_zoom_level === MAX_ZOOM && delta > 0) {
+    if (gal_zoomer.target_zoom_level === MAX_ZOOM && delta > 0) {
       if (selected_star_id !== null) {
         if (solar_view && selected_planet_index !== null) {
-          planetZoom(1);
+          planetZoom(x, y, delta);
         } else {
           solarZoom(1);
         }
@@ -428,17 +483,13 @@ export function main(): void {
     }
     if (solar_view && delta < 0) {
       if (planet_view) {
-        planetZoom(-1);
+        planetZoom(x, y, delta);
       } else {
         solarZoom(-1);
       }
       return;
     }
-    target_zoom_level = max(0, min(target_zoom_level + delta, MAX_ZOOM));
-    queued_zooms.push({
-      x, y, delta,
-      progress: 0,
-    });
+    gal_zoomer.doZoom(x, y, delta);
   }
 
   let last_img: string;
@@ -562,14 +613,14 @@ export function main(): void {
     x: number,
     y: number,
     z: number,
-    w: number,
     h: number,
+    alpha: number,
   ): void {
     const MAP_FULL_SIZE = 256;
     let planet_shader_params = {};
     spriteQueueRaw([planet.getTexture(2, MAP_FULL_SIZE), tex_palette_planets],
-      x - 128, y, z, 512, 256, 0, 0, 1, 1,
-      [1,1,1,1], shader_planet_pixel_flat, planet_shader_params);
+      x, y, z, h * 2, h, 0, 0, 1, 1,
+      [1,1,1,alpha], shader_planet_pixel_flat, planet_shader_params);
   }
 
   let solar_mouse_pos = vec2();
@@ -686,6 +737,7 @@ export function main(): void {
     let map_y0 = 0;
 
     function checkLevel(check_zoom_level: number): boolean {
+      const { zoom_level, zoom_offs } = gal_zoomer;
       let zoom = pow(2, zoom_level);
       let layer_idx = floor(check_zoom_level / (LAYER_STEP/ 2));
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
@@ -707,13 +759,13 @@ export function main(): void {
       }
       return true;
     }
-    let max_okay_zoom = zoom_level;
+    let max_okay_zoom = gal_zoomer.zoom_level;
     if (galaxy) {
       let zlis = [
-        (LAYER_STEP/2) * ceil(zoom_level / (LAYER_STEP/2)),
-        (LAYER_STEP/2) * ceil((zoom_level + 1) / (LAYER_STEP/2)),
+        (LAYER_STEP/2) * ceil(gal_zoomer.zoom_level / (LAYER_STEP/2)),
+        (LAYER_STEP/2) * ceil((gal_zoomer.zoom_level + 1) / (LAYER_STEP/2)),
       ];
-      // print(font.styleColored(null, 0x808080ff), 10, 20, 1000, `${zlis[0]} (${zoom_level})`);
+      // print(font.styleColored(null, 0x808080ff), 10, 20, 1000, `${zlis[0]} (${gal_zoomer.zoom_level})`);
       for (let ii = 0; ii < zlis.length; ++ii) {
         let r = checkLevel(zlis[ii]);
         if (r) {
@@ -744,6 +796,10 @@ export function main(): void {
     }
 
     let hide_solar = eff_planet_view >= 2;
+    if (eff_planet_view < 2 && planet_zoomer.target_zoom_level) {
+      planet_zoomer.resetZoom(0);
+    }
+    let planet_zoom = pow(2, planet_zoomer.zoom_level);
 
     if (show_panel) {
       if (buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: button_width * 0.75 }) ||
@@ -869,7 +925,7 @@ export function main(): void {
         params.seed = round(slider(params.seed, { x, y, z, min: 1, max: 9999 }));
         y += button_spacing;
 
-        if (zoom_level < 1.9) { // Galaxy
+        if (gal_zoomer.zoom_level < 1.9) { // Galaxy
           print(style, x, y, z, `Arms: ${params.arms}`);
           y += font_height;
           params.arms = round(slider(params.arms, { x, y, z, min: 1, max: 16 }));
@@ -905,7 +961,7 @@ export function main(): void {
           params.poi_count = round(slider(params.poi_count, { x, y, z, min: 0, max: 1000 }));
           y += button_spacing;
         } else {
-          let layer_idx = round(zoom_level / (LAYER_STEP / 2));
+          let layer_idx = round(gal_zoomer.zoom_level / (LAYER_STEP / 2));
           print(style, x, y, z, `Layer #${layer_idx}:`);
           y += font_height + 2;
           let key = `layer${layer_idx}` as 'layer1' | 'layer2'; // etc
@@ -972,9 +1028,9 @@ export function main(): void {
     }
     x += button_height + 2;
     const SLIDER_W = 110;
-    let eff_zoom = target_zoom_level + solar_view + planet_view;
+    let eff_zoom = gal_zoomer.target_zoom_level + solar_view + planet_view + planet_zoomer.target_zoom_level;
     let new_zoom = roundZoom(slider(eff_zoom,
-      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + 2 }));
+      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + MAX_PLANET_ZOOM }));
     if (abs(new_zoom - eff_zoom) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - eff_zoom);
     }
@@ -996,6 +1052,7 @@ export function main(): void {
       mousePos(mouse_pos);
       if (mouse_wheel < 0 && eff_solar_view_unsmooth && !solar_view ||
         mouse_wheel < 0 && eff_planet_view_unsmooth && !planet_view ||
+        mouse_wheel < 0 && planet_view && planet_zoomer.zoom_level && !planet_zoomer.target_zoom_level ||
         mouse_wheel > 0 && solar_view && eff_solar_view_unsmooth < solar_view
       ) {
         // ignore
@@ -1005,10 +1062,10 @@ export function main(): void {
     }
 
     zoomTick(max_okay_zoom);
-    let zoom = pow(2, zoom_level);
+    let zoom = pow(2, gal_zoomer.zoom_level);
     let zoom_text_y = floor(y + (button_height - font_height)/2);
     let zoom_text_w = print(null, x, zoom_text_y, z,
-      solar_view ? planet_view ? 'Orbit ' : 'Solar' : `${zoom.toFixed(0)}X`);
+      solar_view ? planet_view ? planet_view > 1 ? 'Atmos' : 'Orbit ' : 'Solar' : `${zoom.toFixed(0)}X`);
     drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + font_height, z - 1, color_text_backdrop);
 
     x = game_width - w;
@@ -1047,21 +1104,30 @@ export function main(): void {
       v2add(drag_temp, drag_temp, drag.delta);
       use_mouse_pos = true;
     }
-    if (solar_view) {
-      v2set(drag_temp, 0, 0);
-    }
     if (drag_temp[0] || drag_temp[1]) {
-      zoom_offs[0] -= drag_temp[0] / w / zoom;
-      zoom_offs[1] -= drag_temp[1] / w / zoom;
-      localStorageSetJSON('offsx', zoom_offs[0]);
-      localStorageSetJSON('offsy', zoom_offs[1]);
+      if (solar_view) {
+        if (eff_planet_view > 1) {
+          planet_zoomer.drag(drag_temp, w);
+        }
+      } else {
+        gal_zoomer.drag(drag_temp, w);
+      }
     }
     if (debugDefineIsSet('ATTRACT')) {
-      zoom_offs[0] = clamp(zoom_offs[0], 0, 1 - 1/zoom);
-      zoom_offs[1] = clamp(zoom_offs[1], 0, 1 - 1/zoom);
+      gal_zoomer.zoom_offs[0] = clamp(gal_zoomer.zoom_offs[0], 0, 1 - 1/zoom);
+      gal_zoomer.zoom_offs[1] = clamp(gal_zoomer.zoom_offs[1], 0, 1 - 1/zoom);
     } else {
-      zoom_offs[0] = clamp(zoom_offs[0], -1/zoom, 1);
-      zoom_offs[1] = clamp(zoom_offs[1], -1/zoom, 1);
+      gal_zoomer.zoom_offs[0] = clamp(gal_zoomer.zoom_offs[0], -1/zoom, 1);
+      gal_zoomer.zoom_offs[1] = clamp(gal_zoomer.zoom_offs[1], -1/zoom, 1);
+    }
+    if (eff_planet_view > 1) {
+      if (planet_zoomer.zoom_offs[0] < -1) {
+        planet_zoomer.zoom_offs[0] += 2;
+      }
+      if (planet_zoomer.zoom_offs[0] > 1) {
+        planet_zoomer.zoom_offs[0] -= 2;
+      }
+      planet_zoomer.zoom_offs[1] = clamp(planet_zoomer.zoom_offs[1], 0, 1 - 1/planet_zoom);
     }
 
     if (mouseMoved()) {
@@ -1073,8 +1139,8 @@ export function main(): void {
       mouse_pos[0] = map_x0 + w/2;
       mouse_pos[1] = map_y0 + w/2;
     }
-    mouse_pos[0] = zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
-    mouse_pos[1] = zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
+    mouse_pos[0] = gal_zoomer.zoom_offs[0] + (mouse_pos[0] - map_x0) / w / zoom;
+    mouse_pos[1] = gal_zoomer.zoom_offs[1] + (mouse_pos[1] - map_y0) / w / zoom;
 
     let overlay_y = 0;
     let overlay_x = show_panel ? map_x0 + 2 : button_height * 2;
@@ -1091,6 +1157,7 @@ export function main(): void {
       overlayText(`${use_mouse_pos?'Mouse':'Target'}: ${mouse_pos[0].toFixed(9)},${mouse_pos[1].toFixed(9)}`);
     }
     function highlightCell(cell: GalaxyCellAlloced): void {
+      const { zoom_offs } = gal_zoomer;
       let xp = x + (cell.x0 - zoom_offs[0]) * zoom * w;
       let yp = y + (cell.y0 - zoom_offs[1]) * zoom * w;
       let wp = w * zoom * cell.w;
@@ -1143,6 +1210,7 @@ export function main(): void {
       texs?: Texture[];
     };
     function drawCell(alpha: number, parent: GalaxyCellAlloced, cell: GalaxyCellTexCache): void {
+      const { zoom_level, zoom_offs } = gal_zoomer;
       ++cells_drawn;
       let qx = cell.cx - parent.cx * LAYER_STEP;
       let qy = cell.cy - parent.cy * LAYER_STEP;
@@ -1183,6 +1251,7 @@ export function main(): void {
       debug_sprite.draw(draw_param);
     }
     function drawLevel(layer_idx: number, alpha: number, do_highlight: boolean): void {
+      const { zoom_offs } = gal_zoomer;
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_y0 = (camera2d.y0Real() - map_y0) / w / zoom + zoom_offs[1];
@@ -1211,7 +1280,7 @@ export function main(): void {
       }
     }
     const blend_range = 1;
-    let draw_level = max(0, (zoom_level - 1) / (LAYER_STEP/2) + blend_range/2);
+    let draw_level = max(0, (gal_zoomer.zoom_level - 1) / (LAYER_STEP/2) + blend_range/2);
     let level0 = floor(draw_level);
     let extra = min((draw_level - level0) / blend_range, 1);
     if (!extra && level0) {
@@ -1220,7 +1289,7 @@ export function main(): void {
     }
     drawLevel(level0 + 1, extra, Boolean(extra));
 
-    if (zoom_level >= 12) {
+    if (gal_zoomer.zoom_level >= 12) {
       let star;
       const SELECT_DIST = 40;
       if (!solar_override_system) {
@@ -1249,7 +1318,7 @@ export function main(): void {
           overlayText(`star.y: ${star.y.toFixed(10)}`);
         }
 
-        let max_zoom = pow(2, MAX_ZOOM);
+        let max_zoom = pow(2, gal_zoomer.max_zoom);
         xp = star.x * max_zoom * buf_dim;
         yp = star.y * max_zoom * buf_dim;
         if (debugDefineIsSet('STAR')) {
@@ -1260,13 +1329,13 @@ export function main(): void {
           xp = floor(xp);
           yp = floor(yp);
         }
-        xp = x + (xp*zoom/max_zoom/buf_dim - zoom_offs[0] * zoom) * w;
-        yp = y + (yp*zoom/max_zoom/buf_dim - zoom_offs[1] * zoom) * w;
+        xp = x + (xp*zoom/max_zoom/buf_dim - gal_zoomer.zoom_offs[0] * zoom) * w;
+        yp = y + (yp*zoom/max_zoom/buf_dim - gal_zoomer.zoom_offs[1] * zoom) * w;
         if (view === 1) {
           xp = round(xp);
           yp = round(yp);
         }
-        let r = 4 / (1 + MAX_ZOOM - zoom_level);
+        let r = 4 / (1 + gal_zoomer.max_zoom - gal_zoomer.zoom_level);
         if (!solar_view) {
           drawHollowCircle(xp + 0.5, yp + 0.5, Z.UI - 5, r, 0.5, [1,1,0,1], BLEND_ADDITIVE);
           if (inputClick({
@@ -1275,8 +1344,8 @@ export function main(): void {
             w: SELECT_DIST * 2,
             h: SELECT_DIST * 2,
           })) {
-            if (zoom_level < MAX_ZOOM) {
-              doZoom((xp - map_x0) / w, (yp - map_y0) / w, MAX_ZOOM - zoom_level);
+            if (gal_zoomer.zoom_level < gal_zoomer.max_zoom) {
+              doZoom((xp - map_x0) / w, (yp - map_y0) / w, gal_zoomer.max_zoom - gal_zoomer.zoom_level);
             }
             solarZoom(1);
           }
@@ -1301,7 +1370,7 @@ export function main(): void {
           }
         }
         let do_solar_view = eff_solar_view ? eff_solar_view :
-          debugDefineIsSet('AUTOSOLAR') && zoom_level > 15.5 ? 1 : 0;
+          debugDefineIsSet('AUTOSOLAR') && gal_zoomer.zoom_level > 15.5 ? 1 : 0;
         if (hide_solar) {
           do_solar_view = 0;
         }
@@ -1342,12 +1411,17 @@ export function main(): void {
         let planet = planet_override ? planet_override_planet : planets[selected_planet_index];
         if (!planet) {
           planet_view = 0;
+          if (planet_zoomer.target_zoom_level) {
+            planet_zoomer.resetZoom(0);
+          }
         } else {
+          let ww = planet_zoom * w;
           planetMapMode(planet,
-            map_x0,
-            map_y0,
+            map_x0 + (0 - planet_zoomer.zoom_offs[0]) * ww,
+            map_y0 + (0 - planet_zoomer.zoom_offs[1]) * ww,
             Z.PLANET_MAP,
-            w, w);
+            ww,
+            clamp(eff_planet_view - 1, 0, 1));
         }
       }
     }
