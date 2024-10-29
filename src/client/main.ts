@@ -142,7 +142,8 @@ class Zoomer {
   constructor(
     public zoom_level_key: string,
     public zoom_offs_key: string,
-    public max_zoom: number
+    public max_zoom: number,
+    public auto_recenter: boolean
   ) {
     this.zoom_level = localStorageGetJSON(this.zoom_level_key, 0);
     v2set(this.zoom_offs,
@@ -151,6 +152,7 @@ class Zoomer {
     this.target_zoom_level = this.zoom_level;
   }
   resetZoom(zoom_level: number): void {
+    console.log('!!!!!!!!', new Error().stack);
     this.queued_zooms = [];
     this.zoom_level = this.target_zoom_level = zoom_level;
     v2set(this.zoom_offs, 0, 0); // TODO: get from caller?
@@ -170,7 +172,7 @@ class Zoomer {
     zoom_offs[1] = point_y - y / new_zoom;
     zoom_level = new_zoom_level;
 
-    if (zoom_level === 0) {
+    if (zoom_level === 0 && this.auto_recenter) {
       // recenter
       zoom_offs[0] = zoom_offs[1] = 0;
     }
@@ -408,7 +410,7 @@ export function main(): void {
     },
   });
 
-  let gal_zoomer = new Zoomer('zoom', 'offs', MAX_ZOOM);
+  let gal_zoomer = new Zoomer('zoom', 'offs', MAX_ZOOM, true);
   let solar_view = localStorageGetJSON('solar_view', 0);
   let solar_override = localStorageGetJSON('solar_override', false);
   let solar_override_system: null | SolarSystem = null;
@@ -418,7 +420,7 @@ export function main(): void {
   let planet_flatmap = localStorageGetJSON('planet_flatmap', false);
   let planet_override_planet: null | Planet = null;
   let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
-  let planet_zoomer = new Zoomer('planet_zoom', 'planet_offs', MAX_PLANET_ZOOM);
+  let planet_zoomer = new Zoomer('planet_zoom', 'planet_offs', MAX_PLANET_ZOOM, false);
   let style = font.styleColored(null, 0x000000ff);
   let mouse_pos = vec2();
   let use_mouse_pos = false;
@@ -465,10 +467,12 @@ export function main(): void {
         return planet_zoomer.doZoom(x, y, delta);
       }
     }
-    planet_zoomer.resetZoom(0);
     planet_view = clamp(planet_view + delta, 0, MAX_PLANET_VIEW);
     localStorageSetJSON('planet_view', planet_view);
     localStorageSetJSON('selected_planet', planet_view ? selected_planet_index : null);
+    if (planet_view === 2) {
+      planet_zoomer.resetZoom(0);
+    }
   }
   function doZoom(x: number, y: number, delta: number): void {
     if (gal_zoomer.target_zoom_level === MAX_ZOOM && delta > 0) {
@@ -796,10 +800,9 @@ export function main(): void {
     }
 
     let hide_solar = eff_planet_view >= 2;
-    if (eff_planet_view < 2 && planet_zoomer.target_zoom_level) {
+    if (eff_planet_view < 1 && planet_zoomer.target_zoom_level) {
       planet_zoomer.resetZoom(0);
     }
-    let planet_zoom = pow(2, planet_zoomer.zoom_level);
 
     if (show_panel) {
       if (buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: button_width * 0.75 }) ||
@@ -1053,6 +1056,8 @@ export function main(): void {
       if (mouse_wheel < 0 && eff_solar_view_unsmooth && !solar_view ||
         mouse_wheel < 0 && eff_planet_view_unsmooth && !planet_view ||
         mouse_wheel < 0 && planet_view && planet_zoomer.zoom_level && !planet_zoomer.target_zoom_level ||
+        mouse_wheel < 0 && planet_view && eff_planet_view_unsmooth > planet_view ||
+        mouse_wheel > 0 && planet_view && eff_planet_view_unsmooth < planet_view ||
         mouse_wheel > 0 && solar_view && eff_solar_view_unsmooth < solar_view
       ) {
         // ignore
@@ -1067,6 +1072,7 @@ export function main(): void {
     let zoom_text_w = print(null, x, zoom_text_y, z,
       solar_view ? planet_view ? planet_view > 1 ? 'Atmos' : 'Orbit ' : 'Solar' : `${zoom.toFixed(0)}X`);
     drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + font_height, z - 1, color_text_backdrop);
+    let planet_zoom = pow(2, planet_zoomer.zoom_level);
 
     x = game_width - w;
     // y -= font_height;
@@ -1345,7 +1351,8 @@ export function main(): void {
             h: SELECT_DIST * 2,
           })) {
             if (gal_zoomer.zoom_level < gal_zoomer.max_zoom) {
-              doZoom((xp - map_x0) / w, (yp - map_y0) / w, gal_zoomer.max_zoom - gal_zoomer.zoom_level);
+              doZoom((xp - map_x0) / w, (yp - map_y0) / w,
+                gal_zoomer.max_zoom - gal_zoomer.zoom_level);
             }
             solarZoom(1);
           }
