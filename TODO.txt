@@ -8,9 +8,6 @@ Next:
     0 = full
     max = pixel art
 
-    limit to 1 non-sublayer0 getTexture per frame; also shrink these down by half for perf?
-    limit zooming like on galaxy view if non-ready textures
-
     currently, at zoom=6, taxes ~15 seconds at full speed to go north to south
     if we want 1 min east to west, we only need double this
     clamp texture layer so that bottom layer is 16x16 onscreen pixels

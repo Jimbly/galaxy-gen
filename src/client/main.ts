@@ -33,6 +33,7 @@ import {
 import { addMetric } from 'glov/client/perf';
 import { shaderCreate } from 'glov/client/shaders';
 import { slider } from 'glov/client/slider';
+import { spotSuppressPad } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
 import {
   BLEND_ADDITIVE,
@@ -152,7 +153,6 @@ class Zoomer {
     this.target_zoom_level = this.zoom_level;
   }
   resetZoom(zoom_level: number): void {
-    console.log('!!!!!!!!', new Error().stack);
     this.queued_zooms = [];
     this.zoom_level = this.target_zoom_level = zoom_level;
     v2set(this.zoom_offs, 0, 0); // TODO: get from caller?
@@ -595,9 +595,12 @@ export function main(): void {
       let planet_shader_params = {
         params: [0, 0, mod(2 - theta / PI + rot*2, 2), 0],
       };
-      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE, 0, 0, 0), tex_palette_planets],
-        x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
-        [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
+      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0);
+      if (planet_tex) {
+        spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
+          x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
+          [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
+      }
     } else {
       let pmtex = planetMapTexture(true);
       let xmid = x0 + w/2;
@@ -608,9 +611,12 @@ export function main(): void {
       let x = xmid;
       let y = ymid;
       temp_fade[3] = min(fade * 8, 1);
-      spriteQueueRaw([pmtex, planet.getTexture(1, FULL_SIZE, 0, 0, 0), tex_palette_planets],
-        x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
-        temp_fade, shader_planet_pixel, planet_shader_params);
+      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0);
+      if (planet_tex) {
+        spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
+          x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
+          temp_fade, shader_planet_pixel, planet_shader_params);
+      }
     }
   }
 
@@ -618,25 +624,32 @@ export function main(): void {
     planet: Planet,
     x: number, // origin of the world in screen coords
     y: number,
-    z: number,
+    z_base: number,
     h: number, // height of the world in screen coords
     alpha: number,
     zoom_level: number,
   ): void {
     const MAP_FULL_SIZE = 256;
+    const MAP_SUBDIVIDE = 2; // how many extra steps to subdivide the top layer
+    const MAP_SUB_SIZE = MAP_FULL_SIZE / pow(2, MAP_SUBDIVIDE);
     let planet_shader_params = {};
     temp_fade[3] = alpha;
-    function drawSubLayer(sublayer: number): void {
-      let zoom = pow(2, sublayer);
+    function drawSubLayer(sublayer: number, z: number, no_draw: boolean): boolean {
+      let all_good = true;
       if (sublayer === 0) {
         // special: single texture, just fill the screen
         let layer0 = planet.getTexture(2, MAP_FULL_SIZE, 0, 0, 0);
-        spriteQueueRaw([layer0, tex_palette_planets],
-          camera2d.x0Real(), y, z, camera2d.wReal(), h,
-          (camera2d.x0Real() - x) / (h * 2), 0, (camera2d.x1Real() - x) / (h * 2), 1,
-          temp_fade, shader_planet_pixel_flat, planet_shader_params);
+        if (layer0 && !no_draw) {
+          spriteQueueRaw([layer0, tex_palette_planets],
+            camera2d.x0Real(), y, z, camera2d.wReal(), h,
+            (camera2d.x0Real() - x) / (h * 2), 0, (camera2d.x1Real() - x) / (h * 2), 1,
+            temp_fade, shader_planet_pixel_flat, planet_shader_params);
+        } else {
+          all_good = false;
+        }
       } else {
         // draw in parts
+        let zoom = pow(2, sublayer + MAP_SUBDIVIDE);
         let sub_dim = h / zoom;
         let sub_num_horiz = zoom * 2;
         let sub_num_vert = zoom;
@@ -646,17 +659,42 @@ export function main(): void {
         let sub_y1 = floor((camera2d.y1Real() - y) / sub_dim);
         for (let yy = sub_y0; yy <= sub_y1; ++yy) {
           for (let xx = sub_x0; xx <= sub_x1; ++xx) {
-            let layer = planet.getTexture(2, MAP_FULL_SIZE, sublayer, mod(xx, sub_num_horiz), mod(yy, sub_num_vert));
-            spriteQueueRaw([layer, tex_palette_planets],
-              x + xx * sub_dim,
-              y + yy * sub_dim, z, sub_dim, sub_dim,
-              0, 0, 1, 1,
-              temp_fade, shader_planet_pixel_flat, planet_shader_params);
+            let layer = planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
+              mod(xx, sub_num_horiz), mod(yy, sub_num_vert));
+            if (layer && !no_draw) {
+              spriteQueueRaw([layer, tex_palette_planets],
+                x + xx * sub_dim,
+                y + yy * sub_dim, z, sub_dim, sub_dim,
+                0, 0, 1, 1,
+                temp_fade, shader_planet_pixel_flat, planet_shader_params);
+            } else {
+              all_good = false;
+            }
+          }
+        }
+        // also preload off the sides
+        let pad = game_height / 4;
+        sub_x0 = floor((camera2d.x0Real() - pad - x) / sub_dim);
+        sub_x1 = floor((camera2d.x1Real() + pad - x) / sub_dim);
+        sub_y0 = floor((camera2d.y0Real() - pad - y) / sub_dim);
+        sub_y1 = floor((camera2d.y1Real() + pad - y) / sub_dim);
+        for (let yy = sub_y0; yy <= sub_y1; ++yy) {
+          for (let xx = sub_x0; xx <= sub_x1; ++xx) {
+            planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
+              mod(xx, sub_num_horiz), mod(yy, sub_num_vert));
           }
         }
       }
+      return all_good;
     }
-    drawSubLayer(round(zoom_level));
+    let sublayer = round(zoom_level);
+    let filled = false;
+    for (let ii = sublayer; ii >= 0; --ii) {
+      if (drawSubLayer(ii, z_base, filled)) {
+        filled = true;
+      }
+      --z_base;
+    }
   }
 
   let solar_mouse_pos = vec2();
@@ -731,9 +769,12 @@ export function main(): void {
         params: [getFrameTimestamp() * ROTATION_RATE, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
       // with pixely view, looks a lot better with a /2 on the texture resolution
-      spriteQueueRaw([pmtex, planet.getTexture(0, sprite_size*2/2, 0, 0, 0), tex_palette_planets],
-        x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
-        [1,1,1,fade], shader_planet_pixel, planet_shader_params);
+      let planet_tex = planet.getTexture(0, sprite_size*2/2, 0, 0, 0);
+      if (planet_tex) {
+        spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
+          x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
+          [1,1,1,fade], shader_planet_pixel, planet_shader_params);
+      }
     }
 
     // draw selected planet
@@ -771,6 +812,8 @@ export function main(): void {
     let w = min(game_width, game_height);
     let map_x0 = show_panel ? game_width - w : (game_width - w)/2;
     let map_y0 = 0;
+
+    spotSuppressPad();
 
     function checkLevel(check_zoom_level: number): boolean {
       const { zoom_level, zoom_offs } = gal_zoomer;

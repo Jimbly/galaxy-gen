@@ -1,4 +1,5 @@
 import assert from 'assert';
+import { getFrameIndex } from 'glov/client/engine';
 import { Texture } from 'glov/client/sprites';
 import {
   TEXTURE_FORMAT,
@@ -443,6 +444,7 @@ export class Planet {
   seed: number;
   biome_table: BiomeTable;
   tex_idx = 0;
+  work_frame = 0;
   constructor(override_data?: PlanetOverrideParams) {
     override_data = override_data || {};
     this.type = override_data.name ?
@@ -463,7 +465,7 @@ export class Planet {
     sublayer: number,
     sub_x: number,
     sub_y: number,
-  ) => Texture;
+  ) => Texture | null;
 }
 
 let noise: SimplexNoise[];
@@ -594,7 +596,7 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     sublayer: number,
     sub_x: number,
     sub_y: number,
-  ): Texture {
+  ): Texture | null {
     if (layer !== 2) {
       assert(!sublayer && !sub_x && !sub_y);
     }
@@ -603,6 +605,11 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     if (tp && tp.tex.planet_tex_id === tp.tex_id) {
       return tp.tex;
     }
+
+    if (getFrameIndex() === this.work_frame) {
+      return null;
+    }
+    this.work_frame = getFrameIndex();
 
     // for (let ii = 0; ii < rand.length; ++ii) {
     //   rand[ii].reseed(mashString(`${this.seed}_${ii}`));
