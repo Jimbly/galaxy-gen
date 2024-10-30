@@ -864,6 +864,18 @@ export function spriteDrawPartial(z) {
 }
 
 export function buildRects(ws, hs, tex) {
+  if (typeof ws === 'number') {
+    ws = new Array(ws);
+    for (let ii = 0; ii < ws.length; ++ii) {
+      ws[ii] = 1;
+    }
+  }
+  if (typeof hs === 'number') {
+    hs = new Array(hs);
+    for (let ii = 0; ii < hs.length; ++ii) {
+      hs[ii] = 1;
+    }
+  }
   let rects = [];
   let total_w = 0;
   for (let ii = 0; ii < ws.length; ++ii) {

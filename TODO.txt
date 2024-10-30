@@ -8,13 +8,11 @@ Next:
     0 = full
     max = pixel art
 
-    currently, at zoom=6, taxes ~15 seconds at full speed to go north to south
-    if we want 1 min east to west, we only need double this
-    clamp texture layer so that bottom layer is 16x16 onscreen pixels
-    keep generated U8 data on the texture
-    render from simple sprite sheet with this
-    add local variety (to all layers?)
+    fancier blending of biomes?
+    add local variety (to all layers?) by tile type/color
+    add local variety by details to pixel art layer
 
+  use parent layer for 25% of our procgen?
 
 Want:
   pixel art map we can explore

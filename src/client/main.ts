@@ -261,6 +261,8 @@ export function main(): void {
     do_borders: false,
     show_fps: debugDefineIsSet('ATTRACT') ? false : undefined,
     ui_sprites,
+    force_webgl2: true,
+    pixel_perfect: 0.8,
   })) {
     return;
   }
@@ -289,12 +291,59 @@ export function main(): void {
   let shader_galaxy_blend = shaderCreate('shaders/galaxy_blend.fp');
   let shader_planet_pixel = shaderCreate('shaders/planet_pixel.fp');
   let shader_planet_pixel_flat = shaderCreate('shaders/planet_pixel_flat.fp');
+  let shader_pixelart = shaderCreate('shaders/pixelart.fp');
   let white_tex = textureWhite();
+
+  let sprites = {
+    grass: spriteCreate({
+      name: 'grass',
+      filter_mag: gl.NEAREST,
+      filter_min: gl.NEAREST_MIPMAP_NEAREST,
+      ws: 16,
+      hs: 20,
+    }),
+    lava: spriteCreate({
+      name: 'lava',
+      filter_mag: gl.NEAREST,
+      filter_min: gl.NEAREST_MIPMAP_NEAREST,
+      ws: 16,
+      hs: 20,
+    }),
+    ice: spriteCreate({
+      name: 'ice',
+      filter_mag: gl.NEAREST,
+      filter_min: gl.NEAREST_MIPMAP_NEAREST,
+      ws: 16,
+      hs: 20,
+    }),
+    sand: spriteCreate({
+      name: 'sand',
+      filter_mag: gl.NEAREST,
+      filter_min: gl.NEAREST_MIPMAP_NEAREST,
+      ws: 16,
+      hs: 20,
+    }),
+    treesmountains: spriteCreate({
+      name: 'trees-mountains',
+      filter_mag: gl.NEAREST,
+      filter_min: gl.NEAREST_MIPMAP_NEAREST,
+      ws: 52,
+      hs: 31,
+    }),
+    ocean: spriteCreate({
+      name: 'ocean-animated',
+      filter_mag: gl.NEAREST,
+      filter_min: gl.NEAREST_MIPMAP_NEAREST,
+      ws: 8,
+      hs: 21,
+    }),
+  };
 
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
   const MAX_PLANET_VIEW = 2;
-  const MAX_PLANET_ZOOM = 6;
+  const MAX_PLANET_ZOOM = 7;
+  const PLANET_PIXELART_LEVEL = 3;
   const buf_dim = 256;
   let params: GenGalaxyParams & {
     dither: number;
@@ -620,6 +669,11 @@ export function main(): void {
     }
   }
 
+  const MAP_FULL_SIZE = 256;
+  const MAP_SUBDIVIDE = 2; // how many extra steps to subdivide the top layer
+  const MAP_SUB_SIZE = MAP_FULL_SIZE / pow(2, MAP_SUBDIVIDE);
+  const EMPTY_RAW_DATA = new Uint8Array(MAP_SUB_SIZE);
+
   function planetMapMode(
     planet: Planet,
     x: number, // origin of the world in screen coords
@@ -629,11 +683,9 @@ export function main(): void {
     alpha: number,
     zoom_level: number,
   ): void {
-    const MAP_FULL_SIZE = 256;
-    const MAP_SUBDIVIDE = 2; // how many extra steps to subdivide the top layer
-    const MAP_SUB_SIZE = MAP_FULL_SIZE / pow(2, MAP_SUBDIVIDE);
     let planet_shader_params = {};
     temp_fade[3] = alpha;
+    let z0 = z_base;
     function drawSubLayer(sublayer: number, z: number, no_draw: boolean): boolean {
       let all_good = true;
       if (sublayer === 0) {
@@ -689,11 +741,117 @@ export function main(): void {
     }
     let sublayer = round(zoom_level);
     let filled = false;
-    for (let ii = sublayer; ii >= 0; --ii) {
+    for (let ii = min(PLANET_PIXELART_LEVEL, sublayer); ii >= 0; --ii) {
       if (drawSubLayer(ii, z_base, filled)) {
         filled = true;
       }
       --z_base;
+    }
+    if (sublayer >= PLANET_PIXELART_LEVEL + 2) {
+      // also draw pixel art
+      let lod_shrink = MAX_PLANET_ZOOM - sublayer;
+      sublayer = PLANET_PIXELART_LEVEL;
+      let zoom = pow(2, sublayer + MAP_SUBDIVIDE);
+      let sub_dim = h / zoom; // in screen pixels
+      let sub_num_horiz = zoom * 2;
+      let sub_num_vert = zoom;
+      let sub_x0 = floor((camera2d.x0Real() - x) / sub_dim);
+      let sub_x1 = floor((camera2d.x1Real() - x) / sub_dim);
+      let sub_y0 = floor((camera2d.y0Real() - y) / sub_dim);
+      let sub_y1 = floor((camera2d.y1Real() - y) / sub_dim);
+      let raw_datas: Partial<Record<number, Partial<Record<number, Uint8Array>>>> = {};
+      for (let yy = sub_y0; yy <= sub_y1; ++yy) {
+        let row = raw_datas[yy] = {} as Partial<Record<number, Uint8Array>>;
+        for (let xx = sub_x0; xx <= sub_x1; ++xx) {
+          let eff_xx = mod(xx, sub_num_horiz);
+          let layer = planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
+            eff_xx, mod(yy, sub_num_vert));
+          if (layer) {
+            row[eff_xx] = layer.raw_data;
+          }
+        }
+      }
+      let anim_frame = floor(getFrameTimestamp() * 0.005) % 8;
+      const tile_h = h / MAP_SUB_SIZE / zoom;
+      let map_num_vert = MAP_SUB_SIZE * zoom;
+      let map_num_horiz = map_num_vert * 2;
+      let tile_x0 = floor((camera2d.x0Real() - x) / tile_h);
+      let tile_x1 = floor((camera2d.x1Real() - x) / tile_h);
+      let tile_y0 = floor((camera2d.y0Real() - y) / tile_h);
+      let tile_y1 = floor((camera2d.y1Real() - y) / tile_h);
+      for (let yy = tile_y0; yy <= tile_y1; ++yy) {
+        let eff_yy = mod(yy, map_num_vert);
+        let sub_y = floor(eff_yy / MAP_SUB_SIZE);
+        let row = raw_datas[sub_y]!;
+        let tile_y_offs = (eff_yy % MAP_SUB_SIZE) * MAP_SUB_SIZE;
+        for (let xx = tile_x0; xx <= tile_x1; ++xx) {
+          let eff_xx = mod(xx, map_num_horiz);
+          let sub_x = floor(eff_xx / MAP_SUB_SIZE);
+          let tile_x_offs = eff_xx % MAP_SUB_SIZE;
+          let data = row && row[sub_x] || EMPTY_RAW_DATA;
+          let v = data[tile_y_offs + tile_x_offs] || 0;
+          let draw_param = {
+            x: round(x + xx * tile_h),
+            y: round(y + yy * tile_h),
+            w: tile_h,
+            h: tile_h,
+            z: z0 + 1,
+            frame: 0,
+            shader: shader_pixelart,
+            shader_params: {
+              lod: [lod_shrink],
+            },
+            nozoom: true,
+          };
+          if (v === 29 || v === 26 || v === 27) {
+            // plains
+            draw_param.frame = 17;
+            sprites.grass.draw(draw_param);
+            draw_param.z++;
+            if (v === 29) {
+              // forest
+              draw_param.frame = 1;
+              sprites.treesmountains.draw(draw_param);
+            } else if (v === 27) {
+              // mountains
+              draw_param.frame = 22*52 + 1;
+              sprites.treesmountains.draw(draw_param);
+            }
+          } else if (v === 28) {
+            // dirt
+            draw_param.frame = 1;
+            sprites.lava.draw(draw_param);
+            draw_param.z++;
+            if (v === 28) {
+              // highmountains
+              draw_param.frame = 22*52 + 40;
+              sprites.treesmountains.draw(draw_param);
+            }
+          } else if (v === 10 || v === 9) {
+            // ice
+            draw_param.frame = 17;
+            sprites.ice.draw(draw_param);
+            draw_param.z++;
+            if (v === 9) {
+              // highice
+              draw_param.frame = 22*52 + 40;
+              sprites.treesmountains.draw(draw_param);
+            }
+          } else if (v === 25) {
+            // shallow water
+            draw_param.frame = 1*8 + anim_frame;
+            sprites.ocean.draw(draw_param);
+          } else if (v === 24) {
+            // deep water
+            draw_param.frame = 6*8 + anim_frame;
+            sprites.ocean.draw(draw_param);
+          } else if (v === 30) {
+            // desert
+            draw_param.frame = 17;
+            sprites.sand.draw(draw_param);
+          }
+        }
+      }
     }
   }
 

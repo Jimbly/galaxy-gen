@@ -13,5 +13,5 @@ Bfxr
 *.00?
 config/*.json
 .DS_Store
-img/
+/img/
 wsdebug.json

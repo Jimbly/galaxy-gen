@@ -431,7 +431,7 @@ export type PlanetOverrideParams = {
 };
 
 type TexPair = {
-  tex: Texture & { planet_tex_id?: number };
+  tex: Texture & { planet_tex_id?: number; raw_data: Uint8Array };
   tex_id: number;
   tex_idx: number; // for planet textures
 };
@@ -465,7 +465,7 @@ export class Planet {
     sublayer: number,
     sub_x: number,
     sub_y: number,
-  ) => Texture | null;
+  ) => (Texture & { raw_data: Uint8Array }) | null;
 }
 
 let noise: SimplexNoise[];
@@ -548,7 +548,7 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
 
   const PLANET_MIN_RES = 8;
   const PLANET_MAX_RES = 256;
-  let tex_data = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES * 2);
+  let tex_data_temp = new Uint8Array(PLANET_MAX_RES * PLANET_MAX_RES * 2);
 
   function get(field: NoiseOptsRangeField): number {
     let v = subopts[field] as NoiseOptRangeRT;
@@ -596,7 +596,7 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     sublayer: number,
     sub_x: number,
     sub_y: number,
-  ): Texture | null {
+  ): (Texture & { raw_data: Uint8Array }) | null {
     if (layer !== 2) {
       assert(!sublayer && !sub_x && !sub_y);
     }
@@ -615,6 +615,8 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     //   rand[ii].reseed(mashString(`${this.seed}_${ii}`));
     // }
 
+    let tex_data = tp ? tp.tex.raw_data : tex_data_temp;
+
     let biome_table = this.biome_table;
     let planet_h = clamp(nextHighestPowerOfTwo(texture_size), PLANET_MIN_RES, PLANET_MAX_RES);
     let planet_w = planet_h * 2;
@@ -626,6 +628,7 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
       planet_h *= zoom;
       planet_w *= zoom;
     }
+    assert(tex_data.length >= tex_h * tex_w);
     initNoise(this.seed, this.type.noise);
     initBiomeNoise(this.type.noise_biome || noise_biome_base);
     planet_gen_layer = layer;
@@ -698,14 +701,17 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
         wrap_t: gl.CLAMP_TO_EDGE,
       });
     }
+    let raw_data = (tex_data === tex_data_temp) ? tex_data.slice(0, tex_w * tex_h) : tex_data;
+    let ret = tex as (Texture & { raw_data: Uint8Array });
+    ret.raw_data = raw_data;
     tp = {
-      tex,
+      tex: ret,
       tex_id: ++planet_tex_id,
       tex_idx,
     };
     tp.tex.planet_tex_id = tp.tex_id;
     this.texpairs[tp_idx] = tp;
-    return tp.tex;
+    return ret;
   };
 }
 

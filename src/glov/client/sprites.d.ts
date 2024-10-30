@@ -110,8 +110,8 @@ export type SpriteParamBase = {
   size?: ROVec2;
   color?: ROVec4;
   uvs?: ROVec4;
-  ws?: number[]; // (relative) widths/heights for calculating frames within a sprite sheet / atlas
-  hs?: number[];
+  ws?: number | number[]; // (relative) widths/heights for calculating frames within a sprite sheet / atlas
+  hs?: number | number[];//   or just number of equal-sized frames
   shader?: Shader;
 };
 export type TextureOptions = {

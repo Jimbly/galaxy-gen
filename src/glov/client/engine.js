@@ -1308,7 +1308,7 @@ export function startup(params) {
     console.log('Disabling WebGL2 because a previous run encountered a related error');
     force_webgl1 = true;
   }
-  if (DEBUG && !defines.FORCEWEBGL2) {
+  if (DEBUG && !(defines.FORCEWEBGL2 || params.force_webgl2)) {
     let rc = local_storage.getJSON('run_count', 0) + 1;
     local_storage.setJSON('run_count', rc);
     if (rc % 2) {
