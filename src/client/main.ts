@@ -152,10 +152,10 @@ class Zoomer {
       localStorageGetJSON(`${this.zoom_offs_key}y`, 0));
     this.target_zoom_level = this.zoom_level;
   }
-  resetZoom(zoom_level: number): void {
+  resetZoom(zoom_level: number, offsx: number, offsy: number): void {
     this.queued_zooms = [];
     this.zoom_level = this.target_zoom_level = zoom_level;
-    v2set(this.zoom_offs, 0, 0); // TODO: get from caller?
+    v2set(this.zoom_offs, offsx, offsy);
     localStorageSetJSON(this.zoom_level_key, zoom_level);
   }
   doZoomActual(x: number, y: number, delta: number): void {
@@ -481,6 +481,7 @@ export function main(): void {
   let eff_solar_view_unsmooth = solar_view;
   let eff_planet_view = planet_view;
   let eff_planet_view_unsmooth = planet_view;
+  let last_planet_rot = 0;
   function zoomTick(max_okay_zoom: number): void {
     let dt = getFrameDt();
     gal_zoomer.zoomTick(max_okay_zoom, dt);
@@ -520,7 +521,7 @@ export function main(): void {
     localStorageSetJSON('planet_view', planet_view);
     localStorageSetJSON('selected_planet', planet_view ? selected_planet_index : null);
     if (planet_view === 2) {
-      planet_zoomer.resetZoom(0);
+      planet_zoomer.resetZoom(0, last_planet_rot * 2, 0);
     }
   }
   function doZoom(x: number, y: number, delta: number): void {
@@ -629,7 +630,7 @@ export function main(): void {
         rot = planet_view_params.rot / 360;
       }
     }
-    rot = mod(rot, 1);
+    last_planet_rot = rot = mod(rot, 1);
 
     x0 = lerp(fade, selected_planet.x, x0);
     y0 = lerp(fade, selected_planet.y, y0);
@@ -771,7 +772,7 @@ export function main(): void {
           }
         }
       }
-      let anim_frame = floor(getFrameTimestamp() * 0.005) % 8;
+      let anim_frame = floor(getFrameTimestamp() * 0.0086) % 8;
       const tile_h = h / MAP_SUB_SIZE / zoom;
       let map_num_vert = MAP_SUB_SIZE * zoom;
       let map_num_horiz = map_num_vert * 2;
@@ -1034,7 +1035,7 @@ export function main(): void {
 
     let hide_solar = eff_planet_view >= 2;
     if (eff_planet_view < 1 && planet_zoomer.target_zoom_level) {
-      planet_zoomer.resetZoom(0);
+      planet_zoomer.resetZoom(0, 0, 0);
     }
 
     if (show_panel) {
@@ -1246,8 +1247,8 @@ export function main(): void {
         gen_planet_params = clone(planet_params);
         localStorageSetJSON('planet_params', planet_params);
         planet_override_planet = planetCreate(
-          solar_override ? solar_params.seed : galaxy.params.seed,
-          last_solar_system && last_solar_system.star_id || 0,
+          (solar_override ? solar_params.seed : galaxy.params.seed) + planet_params.seed,
+          solar_override ? solar_params.star_id : (last_solar_system && last_solar_system.star_id || 0),
           planet_params
         );
       }
@@ -1266,7 +1267,7 @@ export function main(): void {
     const SLIDER_W = 110;
     let eff_zoom = gal_zoomer.target_zoom_level + solar_view + planet_view + planet_zoomer.target_zoom_level;
     let new_zoom = roundZoom(slider(eff_zoom,
-      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + planet_zoomer.max_zoom }));
+      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + planet_zoomer.max_zoom + 1 }));
     if (abs(new_zoom - eff_zoom) > 0.000001) {
       doZoom(0.5, 0.5, new_zoom - eff_zoom);
     }
@@ -1652,7 +1653,7 @@ export function main(): void {
         if (!planet) {
           planet_view = 0;
           if (planet_zoomer.target_zoom_level) {
-            planet_zoomer.resetZoom(0);
+            planet_zoomer.resetZoom(0, 0, 0);
           }
         } else {
           let ww = planet_zoom * w;
