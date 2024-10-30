@@ -1,0 +1,7 @@
+{
+  "default": {
+    "tile_res": 16,
+    "pad": 8,
+    "np2": true,
+  },
+}

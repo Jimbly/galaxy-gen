@@ -3,6 +3,7 @@
 require('glov/client/local_storage.js').setStoragePrefix('galaxy-gen'); // eslint-disable-line import/order
 
 import assert from 'assert';
+import { autoAtlas } from 'glov/client/autoatlas';
 import * as camera2d from 'glov/client/camera2d';
 import * as engine from 'glov/client/engine';
 import {
@@ -295,48 +296,12 @@ export function main(): void {
   let white_tex = textureWhite();
 
   let sprites = {
-    grass: spriteCreate({
-      name: 'grass',
-      filter_mag: gl.NEAREST,
-      filter_min: gl.NEAREST_MIPMAP_NEAREST,
-      ws: 16,
-      hs: 20,
-    }),
-    lava: spriteCreate({
-      name: 'lava',
-      filter_mag: gl.NEAREST,
-      filter_min: gl.NEAREST_MIPMAP_NEAREST,
-      ws: 16,
-      hs: 20,
-    }),
-    ice: spriteCreate({
-      name: 'ice',
-      filter_mag: gl.NEAREST,
-      filter_min: gl.NEAREST_MIPMAP_NEAREST,
-      ws: 16,
-      hs: 20,
-    }),
-    sand: spriteCreate({
-      name: 'sand',
-      filter_mag: gl.NEAREST,
-      filter_min: gl.NEAREST_MIPMAP_NEAREST,
-      ws: 16,
-      hs: 20,
-    }),
-    treesmountains: spriteCreate({
-      name: 'trees-mountains',
-      filter_mag: gl.NEAREST,
-      filter_min: gl.NEAREST_MIPMAP_NEAREST,
-      ws: 52,
-      hs: 31,
-    }),
-    ocean: spriteCreate({
-      name: 'ocean-animated',
-      filter_mag: gl.NEAREST,
-      filter_min: gl.NEAREST_MIPMAP_NEAREST,
-      ws: 8,
-      hs: 21,
-    }),
+    grass: autoAtlas('grass', 'def'), // 16x20
+    lava: autoAtlas('lava', 'def'), // 16x20
+    ice: autoAtlas('ice', 'def'), // 16x20
+    sand: autoAtlas('sand', 'def'), // 16x20
+    treesmountains: autoAtlas('trees-mountains', 'def'), // 52x31
+    ocean: autoAtlas('ocean-animated', 'def'), // 8x21
   };
 
   const MAX_ZOOM = 16;

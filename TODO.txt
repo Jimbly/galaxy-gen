@@ -9,8 +9,9 @@ Next:
     max = pixel art
 
     generate separate textures
+      didn't fix flicker upon zoom out!  presumably my sprites are just not perfectly aligned
       one-time, as a user action, the scaled down MIP level (just in photoshop/aseprite?)
-      automatically padded versions, I probably have a similar build step somewhere already?
+      X automatically padded versions, I probably have a similar build step somewhere already?
       can remove webgl2 requirement
     fancier blending of biomes?
     add local variety (to all layers?) by tile type/color
