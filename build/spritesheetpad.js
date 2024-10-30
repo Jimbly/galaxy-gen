@@ -18,7 +18,7 @@ function nextHighestPowerOfTwo(x) {
 }
 
 function makeAtlas(atlas_params, alpha_map, src, allocator) {
-  let { pad, tiles_per_row, tile_res, np2 } = atlas_params;
+  let { pad, tiles_per_row, tile_res, np2, tiled } = atlas_params;
   if (!tiles_per_row) {
     tiles_per_row = floor(src.width / tile_res);
   }
@@ -48,24 +48,48 @@ function makeAtlas(atlas_params, alpha_map, src, allocator) {
         dest.preClearRect(dx, dy, tile_w_extra, tile_w_extra);
       }
 
-      // LR to UL
-      dest.drawImage(src, sx + tile_w - pad, sy + tile_w - pad, pad, pad, dx, dy, pad, pad);
-      // bottom to top
-      dest.drawImage(src, sx, sy + tile_w - pad, tile_w, pad, dx + pad, dy, tile_w, pad);
-      // LL to UR
-      dest.drawImage(src, sx, sy + tile_w - pad, pad, pad, dx + pad + tile_w, dy, pad, pad);
-      // right to left
-      dest.drawImage(src, sx + tile_w - pad, sy, pad, tile_w, dx, dy + pad, pad, tile_w);
-      // copy body
-      dest.drawImage(src, sx, sy, tile_w, tile_w, dx + pad, dy + pad, tile_w, tile_w);
-      // left to right
-      dest.drawImage(src, sx, sy, pad, tile_w, dx + tile_w + pad, dy + pad, pad, tile_w);
-      // UR to LL
-      dest.drawImage(src, sx + tile_w - pad, sy, pad, pad, dx, dy + pad + tile_w, pad, pad);
-      // top to bottom
-      dest.drawImage(src, sx, sy, tile_w, pad, dx + pad, dy + pad + tile_w, tile_w, pad);
-      // UL to LR
-      dest.drawImage(src, sx, sy, pad, pad, dx + pad + tile_w, dy + pad + tile_w, pad, pad);
+
+      if (tiled) {
+        // LR to UL
+        dest.drawImage(src, sx + tile_w - pad, sy + tile_w - pad, pad, pad, dx, dy, pad, pad);
+        // bottom to top
+        dest.drawImage(src, sx, sy + tile_w - pad, tile_w, pad, dx + pad, dy, tile_w, pad);
+        // LL to UR
+        dest.drawImage(src, sx, sy + tile_w - pad, pad, pad, dx + pad + tile_w, dy, pad, pad);
+        // right to left
+        dest.drawImage(src, sx + tile_w - pad, sy, pad, tile_w, dx, dy + pad, pad, tile_w);
+        // copy body
+        dest.drawImage(src, sx, sy, tile_w, tile_w, dx + pad, dy + pad, tile_w, tile_w);
+        // left to right
+        dest.drawImage(src, sx, sy, pad, tile_w, dx + tile_w + pad, dy + pad, pad, tile_w);
+        // UR to LL
+        dest.drawImage(src, sx + tile_w - pad, sy, pad, pad, dx, dy + pad + tile_w, pad, pad);
+        // top to bottom
+        dest.drawImage(src, sx, sy, tile_w, pad, dx + pad, dy + pad + tile_w, tile_w, pad);
+        // UL to LR
+        dest.drawImage(src, sx, sy, pad, pad, dx + pad + tile_w, dy + pad + tile_w, pad, pad);
+      } else {
+        // repeated
+        // repeat top
+        for (let kk = 0; kk < pad; ++kk) {
+          dest.drawImage(src, sx, sy, tile_w, 1, dx + pad, dy + kk, tile_w, 1);
+        }
+        // copy body
+        dest.drawImage(src, sx, sy, tile_w, tile_w, dx + pad, dy + pad, tile_w, tile_w);
+        // repeat bottom
+        for (let kk = 0; kk < pad; ++kk) {
+          dest.drawImage(src, sx, sy + tile_w - 1, tile_w, 1, dx + pad, dy + pad + tile_w + kk, tile_w, 1);
+        }
+        // extend left
+        for (let kk = 0; kk < pad; ++kk) {
+          dest.drawImage(dest, dx + pad, dy, 1, tile_w + pad * 2, dx + kk, dy, 1, tile_w + pad * 2);
+        }
+        // extend right
+        for (let kk = 0; kk < pad; ++kk) {
+          dest.drawImage(dest, dx + pad + tile_w - 1, dy, 1, tile_w + pad * 2,
+            dx + pad + tile_w + kk, dy, 1, tile_w + pad * 2);
+        }
+      }
 
       // [tile_name, x, y, ws, hs, padh, padv]
       tiles.push([
@@ -164,7 +188,9 @@ module.exports = function (params_file) {
       let fn = cname(file.relative);
       let atlas_params = params_data.default;
       for (let key in params_data) {
-        if (params_data[key].fn === fn) {
+        if (params_data[key].fn === fn ||
+          params_data[key].suffix && fn.endsWith(params_data[key].suffix)
+        ) {
           atlas_params = params_data[key];
           break;
         }

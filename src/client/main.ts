@@ -262,7 +262,7 @@ export function main(): void {
     do_borders: false,
     show_fps: debugDefineIsSet('ATTRACT') ? false : undefined,
     ui_sprites,
-    force_webgl2: true,
+    // force_webgl2: true,
     pixel_perfect: 0.8,
   })) {
     return;
@@ -296,12 +296,24 @@ export function main(): void {
   let white_tex = textureWhite();
 
   let sprites = {
-    grass: autoAtlas('grass', 'def'), // 16x20
-    lava: autoAtlas('lava', 'def'), // 16x20
-    ice: autoAtlas('ice', 'def'), // 16x20
-    sand: autoAtlas('sand', 'def'), // 16x20
-    treesmountains: autoAtlas('trees-mountains', 'def'), // 52x31
-    ocean: autoAtlas('ocean-animated', 'def'), // 8x21
+    grass0: autoAtlas('grass', 'def'), // 16x20
+    grass1: autoAtlas('grass-l1', 'def'), // 16x20
+    grass2: autoAtlas('grass-l2', 'def'), // 16x20
+    lava0: autoAtlas('lava', 'def'), // 16x20
+    lava1: autoAtlas('lava-l1', 'def'), // 16x20
+    lava2: autoAtlas('lava-l2', 'def'), // 16x20
+    ice0: autoAtlas('ice', 'def'), // 16x20
+    ice1: autoAtlas('ice-l1', 'def'), // 16x20
+    ice2: autoAtlas('ice-l2', 'def'), // 16x20
+    sand0: autoAtlas('sand', 'def'), // 16x20
+    sand1: autoAtlas('sand-l1', 'def'), // 16x20
+    sand2: autoAtlas('sand-l2', 'def'), // 16x20
+    treesmountains0: autoAtlas('trees-mountains', 'def'), // 52x31
+    treesmountains1: autoAtlas('trees-mountains-l1', 'def'), // 52x31
+    treesmountains2: autoAtlas('trees-mountains-l2', 'def'), // 52x31
+    ocean0: autoAtlas('ocean-animated', 'def'), // 8x21
+    ocean1: autoAtlas('ocean-animated-l1', 'def'), // 8x21
+    ocean2: autoAtlas('ocean-animated-l2', 'def'), // 8x21
   };
 
   const MAX_ZOOM = 16;
@@ -715,7 +727,7 @@ export function main(): void {
     }
     if (sublayer >= PLANET_PIXELART_LEVEL + 2) {
       // also draw pixel art
-      let lod_shrink = MAX_PLANET_ZOOM - sublayer;
+      let lod = clamp(MAX_PLANET_ZOOM - sublayer, 0, 2) as 0|1|2;
       sublayer = PLANET_PIXELART_LEVEL;
       let zoom = pow(2, sublayer + MAP_SUBDIVIDE);
       let sub_dim = h / zoom; // in screen pixels
@@ -745,6 +757,12 @@ export function main(): void {
       let tile_x1 = floor((camera2d.x1Real() - x) / tile_h);
       let tile_y0 = floor((camera2d.y0Real() - y) / tile_h);
       let tile_y1 = floor((camera2d.y1Real() - y) / tile_h);
+      let sprite_grass = sprites[`grass${lod}`];
+      let sprite_trees = sprites[`treesmountains${lod}`];
+      let sprite_lava = sprites[`lava${lod}`];
+      let sprite_ice = sprites[`ice${lod}`];
+      let sprite_ocean = sprites[`ocean${lod}`];
+      let sprite_sand = sprites[`sand${lod}`];
       for (let yy = tile_y0; yy <= tile_y1; ++yy) {
         let eff_yy = mod(yy, map_num_vert);
         let sub_y = floor(eff_yy / MAP_SUB_SIZE);
@@ -768,57 +786,54 @@ export function main(): void {
             z: z0 + 1,
             frame: 0,
             shader: shader_pixelart,
-            shader_params: {
-              lod: [lod_shrink],
-            },
             nozoom: true,
           };
           if (v === 29 || v === 26 || v === 27) {
             // plains
             draw_param.frame = 17;
-            sprites.grass.draw(draw_param);
+            sprite_grass.draw(draw_param);
             draw_param.z++;
             if (v === 29) {
               // forest
               draw_param.frame = 1;
-              sprites.treesmountains.draw(draw_param);
+              sprite_trees.draw(draw_param);
             } else if (v === 27) {
               // mountains
               draw_param.frame = 22*52 + 1;
-              sprites.treesmountains.draw(draw_param);
+              sprite_trees.draw(draw_param);
             }
           } else if (v === 28) {
             // dirt
             draw_param.frame = 1;
-            sprites.lava.draw(draw_param);
+            sprite_lava.draw(draw_param);
             draw_param.z++;
             if (v === 28) {
               // highmountains
               draw_param.frame = 22*52 + 40;
-              sprites.treesmountains.draw(draw_param);
+              sprite_trees.draw(draw_param);
             }
           } else if (v === 10 || v === 9) {
             // ice
             draw_param.frame = 17;
-            sprites.ice.draw(draw_param);
+            sprite_ice.draw(draw_param);
             draw_param.z++;
             if (v === 9) {
               // highice
               draw_param.frame = 22*52 + 40;
-              sprites.treesmountains.draw(draw_param);
+              sprite_trees.draw(draw_param);
             }
           } else if (v === 25) {
             // shallow water
             draw_param.frame = 1*8 + anim_frame;
-            sprites.ocean.draw(draw_param);
+            sprite_ocean.draw(draw_param);
           } else if (v === 24) {
             // deep water
             draw_param.frame = 6*8 + anim_frame;
-            sprites.ocean.draw(draw_param);
+            sprite_ocean.draw(draw_param);
           } else if (v === 30) {
             // desert
             draw_param.frame = 17;
-            sprites.sand.draw(draw_param);
+            sprite_sand.draw(draw_param);
           }
         }
       }

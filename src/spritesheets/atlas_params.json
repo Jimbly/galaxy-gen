@@ -3,5 +3,20 @@
     "tile_res": 16,
     "pad": 8,
     "np2": true,
+    "tiled": false,
+  },
+  "l1": {
+    "suffix": "-l1",
+    "tile_res": 8,
+    "pad": 4,
+    "np2": true,
+    "tiled": false,
+  },
+  "l2": {
+    "suffix": "-l2",
+    "tile_res": 4,
+    "pad": 2,
+    "np2": true,
+    "tiled": false,
   },
 }

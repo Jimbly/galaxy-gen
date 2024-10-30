@@ -8,10 +8,6 @@ Next:
     0 = full
     max = pixel art
 
-    generate separate textures
-      one-time, as a user action, the scaled down MIP level (just in photoshop/aseprite?)
-      X automatically padded versions, I probably have a similar build step somewhere already?
-      can remove webgl2 requirement
     fancier blending of biomes?
     add local variety (to all layers?) by tile type/color
     add local variety by details to pixel art layer
