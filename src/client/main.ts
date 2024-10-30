@@ -750,17 +750,21 @@ export function main(): void {
         let sub_y = floor(eff_yy / MAP_SUB_SIZE);
         let row = raw_datas[sub_y]!;
         let tile_y_offs = (eff_yy % MAP_SUB_SIZE) * MAP_SUB_SIZE;
+        let pixy = round(y + yy * tile_h);
+        let next_pixy = round(y + (yy +1) * tile_h);
         for (let xx = tile_x0; xx <= tile_x1; ++xx) {
           let eff_xx = mod(xx, map_num_horiz);
           let sub_x = floor(eff_xx / MAP_SUB_SIZE);
           let tile_x_offs = eff_xx % MAP_SUB_SIZE;
           let data = row && row[sub_x] || EMPTY_RAW_DATA;
           let v = data[tile_y_offs + tile_x_offs] || 0;
+          let pixx = round(x + xx * tile_h);
+          let next_pixx = round(x + (xx +1) * tile_h);
           let draw_param = {
-            x: round(x + xx * tile_h),
-            y: round(y + yy * tile_h),
-            w: tile_h,
-            h: tile_h,
+            x: pixx,
+            y: pixy,
+            w: next_pixx - pixx,
+            h: next_pixy - pixy,
             z: z0 + 1,
             frame: 0,
             shader: shader_pixelart,
