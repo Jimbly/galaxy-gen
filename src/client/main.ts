@@ -100,6 +100,7 @@ import {
   distSq,
 } from './galaxy';
 import {
+  BIT_SAME_LOOSE,
   PLANET_TYPE_NAMES,
   Planet,
   PlanetOverrideParams,
@@ -622,7 +623,7 @@ export function main(): void {
       let planet_shader_params = {
         params: [0, 0, mod(2 - theta / PI + rot*2, 2), 0],
       };
-      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0);
+      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0, false);
       if (planet_tex) {
         spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
           x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
@@ -638,7 +639,7 @@ export function main(): void {
       let x = xmid;
       let y = ymid;
       temp_fade[3] = min(fade * 8, 1);
-      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0);
+      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0, false);
       if (planet_tex) {
         spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
           x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
@@ -668,7 +669,7 @@ export function main(): void {
       let all_good = true;
       if (sublayer === 0) {
         // special: single texture, just fill the screen
-        let layer0 = planet.getTexture(2, MAP_FULL_SIZE, 0, 0, 0);
+        let layer0 = planet.getTexture(2, MAP_FULL_SIZE, 0, 0, 0, false);
         if (layer0 && !no_draw) {
           spriteQueueRaw([layer0, tex_palette_planets],
             camera2d.x0Real(), y, z, camera2d.wReal(), h,
@@ -690,7 +691,7 @@ export function main(): void {
         for (let yy = sub_y0; yy <= sub_y1; ++yy) {
           for (let xx = sub_x0; xx <= sub_x1; ++xx) {
             let layer = planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
-              mod(xx, sub_num_horiz), mod(yy, sub_num_vert));
+              mod(xx, sub_num_horiz), mod(yy, sub_num_vert), false);
             if (layer && !no_draw) {
               spriteQueueRaw([layer, tex_palette_planets],
                 x + xx * sub_dim,
@@ -711,7 +712,7 @@ export function main(): void {
         for (let yy = sub_y0; yy <= sub_y1; ++yy) {
           for (let xx = sub_x0; xx <= sub_x1; ++xx) {
             planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
-              mod(xx, sub_num_horiz), mod(yy, sub_num_vert));
+              mod(xx, sub_num_horiz), mod(yy, sub_num_vert), false);
           }
         }
       }
@@ -737,15 +738,15 @@ export function main(): void {
       let sub_x1 = floor((camera2d.x1Real() - x) / sub_dim);
       let sub_y0 = floor((camera2d.y0Real() - y) / sub_dim);
       let sub_y1 = floor((camera2d.y1Real() - y) / sub_dim);
-      let raw_datas: Partial<Record<number, Partial<Record<number, Uint8Array>>>> = {};
+      let raw_datas: Partial<Record<number, Partial<Record<number, [Uint8Array, Uint8Array?]>>>> = {};
       for (let yy = sub_y0; yy <= sub_y1; ++yy) {
-        let row = raw_datas[yy] = {} as Partial<Record<number, Uint8Array>>;
+        let row = raw_datas[yy] = {} as Partial<Record<number, [Uint8Array, Uint8Array?]>>;
         for (let xx = sub_x0; xx <= sub_x1; ++xx) {
           let eff_xx = mod(xx, sub_num_horiz);
           let layer = planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
-            eff_xx, mod(yy, sub_num_vert));
+            eff_xx, mod(yy, sub_num_vert), true);
           if (layer) {
-            row[eff_xx] = layer.raw_data;
+            row[eff_xx] = [layer.raw_data, layer.details];
           }
         }
       }
@@ -774,8 +775,10 @@ export function main(): void {
           let eff_xx = mod(xx, map_num_horiz);
           let sub_x = floor(eff_xx / MAP_SUB_SIZE);
           let tile_x_offs = eff_xx % MAP_SUB_SIZE;
-          let data = row && row[sub_x] || EMPTY_RAW_DATA;
+          let data = row && row[sub_x] && row[sub_x]![0] || EMPTY_RAW_DATA;
           let v = data[tile_y_offs + tile_x_offs] || 0;
+          let details = row && row[sub_x] && row[sub_x]![1] || EMPTY_RAW_DATA;
+          let detailv = details[tile_y_offs + tile_x_offs] || 0;
           let pixx = round(x + xx * tile_h);
           let next_pixx = round(x + (xx +1) * tile_h);
           let draw_param = {
@@ -790,7 +793,7 @@ export function main(): void {
           };
           if (v === 29 || v === 26 || v === 27) {
             // plains
-            draw_param.frame = 17;
+            draw_param.frame = (detailv & BIT_SAME_LOOSE) ? 17 : 1;
             sprite_grass.draw(draw_param);
             draw_param.z++;
             if (v === 29) {
@@ -912,7 +915,7 @@ export function main(): void {
         params: [getFrameTimestamp() * ROTATION_RATE, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
       // with pixely view, looks a lot better with a /2 on the texture resolution
-      let planet_tex = planet.getTexture(0, sprite_size*2/2, 0, 0, 0);
+      let planet_tex = planet.getTexture(0, sprite_size*2/2, 0, 0, 0, false);
       if (planet_tex) {
         spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
           x - sprite_size, y - sprite_size, zz, sprite_size*2, sprite_size*2, 0, 0, 1, 1,

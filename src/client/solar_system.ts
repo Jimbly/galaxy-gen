@@ -1,3 +1,6 @@
+export const BIT_SAME9 = 1<<0;
+export const BIT_SAME_LOOSE = 1<<1;
+
 import assert from 'assert';
 import { getFrameIndex } from 'glov/client/engine';
 import { Texture } from 'glov/client/sprites';
@@ -22,6 +25,7 @@ import {
   vec4,
 } from 'glov/common/vmath';
 import SimplexNoise from 'simplex-noise';
+import { BIOMES, BIOMES_SAME_LOOSE } from './biomes';
 import { Star } from './galaxy';
 import {
   StarType,
@@ -64,32 +68,32 @@ type BiomeTable = BiomeTableEntry[];
 
 const color_table_frozen = [
   0.23, 11,
-  0.77, 10,
-  1, 9,
+  0.77, BIOMES.FROZEN_PLAINS,
+  1, BIOMES.FROZEN_MOUNTAINS,
 ];
 
 const color_table_earthlike = [
-  0.4, 24,
-  0.5, 25,
-  0.65, 26,
-  0.75, 27,
-  1, 28,
+  0.4, BIOMES.WATER_DEEP,
+  0.5, BIOMES.WATER_SHALLOW,
+  0.65, BIOMES.GREEN_PLAINS,
+  0.75, BIOMES.MOUNTAINS,
+  1, BIOMES.MOUNTAINS_SNOW,
 ];
 const color_table_earthlike_forest = [
-  0.4, 24,
-  0.5, 25,
-  0.52, 26,
-  0.65, 29,
-  0.69, 26,
-  0.76, 27,
-  1, 28,
+  0.4, BIOMES.WATER_DEEP,
+  0.5, BIOMES.WATER_SHALLOW,
+  0.52, BIOMES.GREEN_PLAINS,
+  0.65, BIOMES.GREEN_FOREST,
+  0.69, BIOMES.GREEN_PLAINS,
+  0.76, BIOMES.MOUNTAINS,
+  1, BIOMES.MOUNTAINS_SNOW,
 ];
 const color_table_earthlike_desert = [
-  0.4, 24,
-  0.5, 25,
-  0.65, 30,
-  0.75, 27,
-  1, 28,
+  0.4, BIOMES.WATER_DEEP,
+  0.5, BIOMES.WATER_SHALLOW,
+  0.65, BIOMES.DESERT,
+  0.75, BIOMES.MOUNTAINS,
+  1, BIOMES.MOUNTAINS_SNOW,
 ];
 
 const biome_entry_earthlike: BiomeTableEntry = {
@@ -127,10 +131,10 @@ const biome_table_earthlike: BiomeTable = [
 const biome_entry_earthlike_islands: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.6, 24,
-    0.7, 25,
-    0.8, 29,
-    1, 26,
+    0.6, BIOMES.WATER_DEEP,
+    0.7, BIOMES.WATER_SHALLOW,
+    0.8, BIOMES.GREEN_FOREST,
+    1, BIOMES.GREEN_PLAINS,
   ]
 };
 const biome_table_earthlike_islands = [biome_entry_earthlike_islands];
@@ -138,11 +142,11 @@ const biome_table_earthlike_islands = [biome_entry_earthlike_islands];
 const biome_entry_earthlike_pangea: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.25, 24,
-    0.3, 25,
-    0.68, 29,
-    0.75, 26,
-    1, 27,
+    0.25, BIOMES.WATER_DEEP,
+    0.3, BIOMES.WATER_SHALLOW,
+    0.68, BIOMES.GREEN_FOREST,
+    0.75, BIOMES.GREEN_PLAINS,
+    1, BIOMES.MOUNTAINS,
   ]
 };
 const biome_table_earthlike_pangea = [
@@ -430,8 +434,13 @@ export type PlanetOverrideParams = {
   seed?: number;
 };
 
+type RawData = {
+  raw_data: Uint8Array;
+  details?: Uint8Array;
+};
+
 type TexPair = {
-  tex: Texture & { planet_tex_id?: number; raw_data: Uint8Array };
+  tex: Texture & RawData & { planet_tex_id?: number };
   tex_id: number;
   tex_idx: number; // for planet textures
 };
@@ -465,7 +474,15 @@ export class Planet {
     sublayer: number,
     sub_x: number,
     sub_y: number,
-  ) => (Texture & { raw_data: Uint8Array }) | null;
+    want_details: boolean,
+  ) => (Texture & RawData) | null;
+  declare getDetails: (
+    tex: Texture & RawData,
+    nmap: Uint8Array[],
+    texture_size: number,
+    sub_x: number,
+    sub_y: number,
+  ) => void;
 }
 
 let noise: SimplexNoise[];
@@ -590,19 +607,115 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     return table[table.length - 1];
   }
 
+  Planet.prototype.getDetails = function (
+    tex: Texture & RawData,
+    nmap: Uint8Array[],
+    texture_size: number,
+    sub_x: number,
+    sub_y: number,
+  ): void {
+    assert(!tex.details);
+    let ret = new Uint8Array(texture_size * texture_size);
+    let ndata = [
+      0,0,0,
+      0,0,0,
+      0,0,0,
+    ];
+    function nget(xx: number, yy: number): number {
+      let nidx = 4;
+      if (yy < 0) {
+        nidx -= 3;
+        yy += texture_size;
+      } else if (yy >= texture_size) {
+        nidx += 3;
+        yy -= texture_size;
+      }
+      if (xx < 0) {
+        nidx--;
+        xx += texture_size;
+      } else if (xx >= texture_size) {
+        nidx++;
+        xx -= texture_size;
+      }
+      return nmap[nidx][yy * texture_size + xx];
+    }
+    for (let yy = 0, idx=0; yy < texture_size; ++yy) {
+      for (let jj = 0; jj < 3; ++jj) {
+        for (let ii = 0; ii < 2; ++ii) {
+          ndata[jj * 3 + ii + 1] = nget(ii - 1, yy - 1 + jj);
+        }
+      }
+      for (let xx = 0; xx < texture_size; ++xx, ++idx) {
+        for (let jj = 0; jj < 3; ++jj) {
+          // shift known data
+          ndata[jj*3] = ndata[jj*3+1];
+          ndata[jj*3+1] = ndata[jj*3+2];
+          // get new data
+          ndata[jj*3+2] = nget(xx + 1, yy - 1 + jj);
+        }
+        let my_v = ndata[4];
+        let all_same = true;
+        let all_same_loose = true;
+        for (let ii = 0; ii < 9; ++ii) {
+          if (ndata[ii] !== my_v) {
+            all_same = false;
+            if (!BIOMES_SAME_LOOSE[my_v][ndata[ii]]) {
+              all_same_loose = false;
+              break;
+            }
+          }
+        }
+        let ret_bits = 0;
+        if (all_same) {
+          ret_bits |= BIT_SAME9;
+        }
+        if (all_same_loose) {
+          ret_bits |= BIT_SAME_LOOSE;
+        }
+        ret[idx] = ret_bits;
+      }
+    }
+    tex.details = ret;
+  };
+
   Planet.prototype.getTexture = function (
     layer: number,
     texture_size: number,
     sublayer: number,
     sub_x: number,
     sub_y: number,
-  ): (Texture & { raw_data: Uint8Array }) | null {
+    want_details: boolean,
+  ): (Texture & RawData) | null {
     if (layer !== 2) {
       assert(!sublayer && !sub_x && !sub_y);
     }
     let tp_idx = layer + ((sublayer * 65536 + sub_y) * 65536) + sub_x;
     let tp = this.texpairs[tp_idx];
     if (tp && tp.tex.planet_tex_id === tp.tex_id) {
+      // tex is valid, what about details?
+      if (want_details && !tp.tex.details && getFrameIndex() !== this.work_frame) {
+        let nmap = [];
+        let nready = true;
+        let hhh = pow(2, sublayer);
+        let www = hhh * 2;
+        outer: // eslint-disable-line no-labels
+        for (let dy = -1; dy <= 1; ++dy) {
+          for (let dx = -1; dx <= 1; ++dx) {
+            let elem = this.getTexture(layer, texture_size, sublayer,
+              (sub_x + dx + www) % www,
+              (sub_y + dy + hhh) % hhh, false);
+            if (!elem) {
+              nready = false;
+              break outer; // eslint-disable-line no-labels
+            }
+            nmap[(dy+1)*3+dx+1] = elem.raw_data;
+          }
+        }
+        if (nready && getFrameIndex() !== this.work_frame) {
+          this.getDetails(tp.tex, nmap, texture_size, sub_x, sub_y);
+          this.work_frame = getFrameIndex();
+        }
+      }
       return tp.tex;
     }
 
