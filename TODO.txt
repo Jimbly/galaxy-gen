@@ -8,7 +8,8 @@ Next:
     0 = full
     max = pixel art
 
-    fancier blending of biomes?
+    X fancier blending of biomes?
+    forest/mountain special tiles
     add local variety (to all layers?) by tile type/color
     add local variety by details to pixel art layer
 
