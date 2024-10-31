@@ -92,6 +92,10 @@ import {
   vec4,
 } from 'glov/common/vmath';
 import {
+  BIOMES,
+  Biome,
+} from './biomes';
+import {
   Galaxy,
   GalaxyCellAlloced,
   GenGalaxyParams,
@@ -653,6 +657,71 @@ export function main(): void {
   const MAP_SUB_SIZE = MAP_FULL_SIZE / pow(2, MAP_SUBDIVIDE);
   const EMPTY_RAW_DATA = new Uint8Array(MAP_SUB_SIZE);
 
+  type SubBiome = {
+    sprite: 'grass' | 'lava' | 'ocean' | 'sand' | 'ice';
+    frame: number;
+    anim?: boolean;
+    ord: number;
+  };
+  const BASE = {
+    WATER_DEEP: {
+      sprite: 'ocean',
+      frame: 1*8,
+      anim: true,
+    } as SubBiome,
+    WATER_SHALLOW: {
+      sprite: 'ocean',
+      frame: 6*8,
+      anim: true,
+    } as SubBiome,
+    GRASS: {
+      sprite: 'grass',
+      frame: 1,
+    } as SubBiome,
+    GRASS2: {
+      sprite: 'grass',
+      frame: 17,
+    } as SubBiome,
+    ICE: {
+      sprite: 'ice',
+      frame: 1,
+    } as SubBiome,
+    ICE2: {
+      sprite: 'ice',
+      frame: 17,
+    } as SubBiome,
+    SAND: {
+      sprite: 'sand',
+      frame: 1,
+    } as SubBiome,
+    SAND2: {
+      sprite: 'sand',
+      frame: 17,
+    } as SubBiome,
+    DARK_DIRT: {
+      sprite: 'lava',
+      frame: 1,
+    } as SubBiome,
+  };
+  type BaseType = keyof typeof BASE;
+  let ord = 0;
+  for (let key in BASE) {
+    BASE[key as BaseType].ord = ++ord;
+  }
+
+  type DetailDef = ['treesmountains', number];
+  const BIOME_TO_BASE: Record<Biome, [SubBiome, SubBiome, DetailDef?]> = {
+    [BIOMES.WATER_DEEP]: [BASE.WATER_DEEP, BASE.WATER_DEEP],
+    [BIOMES.WATER_SHALLOW]: [BASE.WATER_SHALLOW, BASE.WATER_SHALLOW],
+    [BIOMES.GREEN_FOREST]: [BASE.GRASS, BASE.GRASS2, ['treesmountains', 1]],
+    [BIOMES.MOUNTAINS]: [BASE.GRASS, BASE.GRASS2, ['treesmountains', 22*52+1]],
+    [BIOMES.GREEN_PLAINS]: [BASE.GRASS, BASE.GRASS2],
+    [BIOMES.MOUNTAINS_SNOW]: [BASE.DARK_DIRT, BASE.DARK_DIRT, ['treesmountains', 22*52+40]],
+    [BIOMES.FROZEN_PLAINS]: [BASE.ICE, BASE.ICE2],
+    [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICE, BASE.ICE2, ['treesmountains', 22*52+40]],
+    [BIOMES.DESERT]: [BASE.SAND, BASE.SAND2],
+  };
+
   function planetMapMode(
     planet: Planet,
     x: number, // origin of the world in screen coords
@@ -758,12 +827,6 @@ export function main(): void {
       let tile_x1 = floor((camera2d.x1Real() - x) / tile_h);
       let tile_y0 = floor((camera2d.y0Real() - y) / tile_h);
       let tile_y1 = floor((camera2d.y1Real() - y) / tile_h);
-      let sprite_grass = sprites[`grass${lod}`];
-      let sprite_trees = sprites[`treesmountains${lod}`];
-      let sprite_lava = sprites[`lava${lod}`];
-      let sprite_ice = sprites[`ice${lod}`];
-      let sprite_ocean = sprites[`ocean${lod}`];
-      let sprite_sand = sprites[`sand${lod}`];
       for (let yy = tile_y0; yy <= tile_y1; ++yy) {
         let eff_yy = mod(yy, map_num_vert);
         let sub_y = floor(eff_yy / MAP_SUB_SIZE);
@@ -791,52 +854,21 @@ export function main(): void {
             shader: shader_pixelart,
             nozoom: true,
           };
-          if (v === 29 || v === 26 || v === 27) {
-            // plains
-            draw_param.frame = (detailv & BIT_SAME_LOOSE) ? 17 : 1;
-            sprite_grass.draw(draw_param);
+          let pair = BIOME_TO_BASE[v];
+          if (!pair) {
+            continue;
+          }
+          let base = pair[(detailv & BIT_SAME_LOOSE) ? 1 : 0];
+          let extra = pair[2];
+
+          // TODO: get BASE of neighbors and draw overlays
+
+          draw_param.frame = base.frame + (base.anim ? anim_frame : 0);
+          sprites[`${base.sprite}${lod}`].draw(draw_param);
+          if (extra) {
             draw_param.z++;
-            if (v === 29) {
-              // forest
-              draw_param.frame = 1;
-              sprite_trees.draw(draw_param);
-            } else if (v === 27) {
-              // mountains
-              draw_param.frame = 22*52 + 1;
-              sprite_trees.draw(draw_param);
-            }
-          } else if (v === 28) {
-            // dirt
-            draw_param.frame = 1;
-            sprite_lava.draw(draw_param);
-            draw_param.z++;
-            if (v === 28) {
-              // highmountains
-              draw_param.frame = 22*52 + 40;
-              sprite_trees.draw(draw_param);
-            }
-          } else if (v === 10 || v === 9) {
-            // ice
-            draw_param.frame = 17;
-            sprite_ice.draw(draw_param);
-            draw_param.z++;
-            if (v === 9) {
-              // highice
-              draw_param.frame = 22*52 + 40;
-              sprite_trees.draw(draw_param);
-            }
-          } else if (v === 25) {
-            // shallow water
-            draw_param.frame = 1*8 + anim_frame;
-            sprite_ocean.draw(draw_param);
-          } else if (v === 24) {
-            // deep water
-            draw_param.frame = 6*8 + anim_frame;
-            sprite_ocean.draw(draw_param);
-          } else if (v === 30) {
-            // desert
-            draw_param.frame = 17;
-            sprite_sand.draw(draw_param);
+            draw_param.frame = extra[1];
+            sprites[`${extra[0]}${lod}`].draw(draw_param);
           }
         }
       }

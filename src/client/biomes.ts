@@ -10,7 +10,7 @@ export const BIOMES = {
   FROZEN_MOUNTAINS: 9,
 };
 type BiomeName = keyof typeof BIOMES;
-type Biome = typeof BIOMES[BiomeName];
+export type Biome = typeof BIOMES[BiomeName];
 
 export const BIOMES_SAME_LOOSE = (function () {
   let ret: Record<Biome, Partial<Record<Biome, true>>> = {};
