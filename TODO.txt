@@ -9,7 +9,8 @@ Next:
     max = pixel art
 
     X fancier blending of biomes?
-    forest/mountain special tiles
+    X forest/mountain special tiles
+    send gif around
     add local variety (to all layers?) by tile type/color
     add local variety by details to pixel art layer
 

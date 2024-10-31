@@ -664,8 +664,9 @@ export function main(): void {
       let offs = list[key];
       let qs = [];
       let v = 0;
-      for (let ii = 0; ii < key.length; ++ii) {
-        let bit = 1 << (8 - ii);
+      let len = key.length;
+      for (let ii = 0; ii < len; ++ii) {
+        let bit = 1 << (len - 1 - ii);
         if (key[ii] === '?') {
           qs.push(bit);
         } else if (key[ii] === '1') {
@@ -722,6 +723,24 @@ export function main(): void {
     '100000000': 16*8,
     '?00100?1?': 2*8,
     '00?001?1?': 9*8,
+  });
+
+  let frame_offs_tree = frameListToBitmask({
+    '0001': 1,
+    '0010': 3,
+    '0011': 2,
+    '0100': 1 + 52*2,
+    '0101': 1 + 52,
+    '0110': 4 + 52*2,
+    '0111': 4,
+    '1000': 3 + 52*2,
+    '1001': 5 + 52*2,
+    '1010': 3 + 52,
+    '1011': 5,
+    '1100': 2 + 52*2,
+    '1101': 4 + 52,
+    '1110': 5 + 52,
+    '1111': 2 + 52,
   });
 
   type SpriteName = 'grass' | 'lava' | 'ocean' | 'sand' | 'ice' | 'treesmountains';
@@ -792,23 +811,40 @@ export function main(): void {
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
     } as SubBiome,
+
+    // overlay details
+    DETAIL_TREES1: {
+      sprite: 'treesmountains',
+      frame: 1,
+      frame_offs: frame_offs_tree,
+    } as SubBiome,
+    DETAIL_MOUNTAINS1: {
+      sprite: 'treesmountains',
+      frame: 22*52+1,
+      frame_offs: frame_offs_tree,
+    } as SubBiome,
+    DETAIL_MOUNTAINS_SNOW: {
+      sprite: 'treesmountains',
+      frame: 22*52+40,
+      frame_offs: frame_offs_tree,
+    } as SubBiome,
   };
   type BaseType = keyof typeof BASE;
   let ord = 0;
   for (let key in BASE) {
-    BASE[key as BaseType].ord = ++ord;
+    BASE[key as BaseType].ord = ord++;
   }
 
   type DetailDef = [SpriteName, number];
-  const BIOME_TO_BASE: Record<Biome, [SubBiome, SubBiome, DetailDef?]> = {
+  const BIOME_TO_BASE: Record<Biome, [SubBiome, SubBiome, SubBiome?]> = {
     [BIOMES.WATER_DEEP]: [BASE.WATER_DEEP, BASE.WATER_DEEP],
     [BIOMES.WATER_SHALLOW]: [BASE.WATER_SHALLOW, BASE.WATER_SHALLOW],
-    [BIOMES.GREEN_FOREST]: [BASE.GRASS, BASE.GRASS2, ['treesmountains', 1]],
-    [BIOMES.MOUNTAINS]: [BASE.GRASS, BASE.GRASS2, ['treesmountains', 22*52+1]],
+    [BIOMES.GREEN_FOREST]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_TREES1],
+    [BIOMES.MOUNTAINS]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_MOUNTAINS1],
     [BIOMES.GREEN_PLAINS]: [BASE.GRASS, BASE.GRASS2],
-    [BIOMES.MOUNTAINS_SNOW]: [BASE.DARK_DIRT, BASE.DARK_DIRT, ['treesmountains', 22*52+40]],
+    [BIOMES.MOUNTAINS_SNOW]: [BASE.DARK_DIRT, BASE.DARK_DIRT, BASE.DETAIL_MOUNTAINS_SNOW],
     [BIOMES.FROZEN_PLAINS]: [BASE.ICE, BASE.ICE2],
-    [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICE, BASE.ICE2, ['treesmountains', 22*52+40]],
+    [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICE, BASE.ICE2, BASE.DETAIL_MOUNTAINS_SNOW],
     [BIOMES.DESERT]: [BASE.SAND, BASE.SAND2],
   };
 
@@ -822,6 +858,27 @@ export function main(): void {
       return null;
     }
     return [base.sprite, base.ovr_idx! + offs + (base.anim ? anim_frame : 0)];
+  }
+  function detailFor(detail: SubBiome, mask: number): number {
+    let add = (detail.anim ? anim_frame : 0);
+    if (!detail.frame_offs) {
+      return detail.frame + add;
+    }
+    let ul = (mask & 0b110110000) === 0b110110000 ? 0b1000 : 0;
+    let ur = (mask & 0b011011000) === 0b011011000 ? 0b0100 : 0;
+    let ll = (mask & 0b000110110) === 0b000110110 ? 0b0010 : 0;
+    let lr = (mask & 0b000011011) === 0b000011011 ? 0b0001 : 0;
+    // alternative formulation:
+    // ul = mask & 0b110110000;
+    // ul &= ul >> 3;
+    // ul &= ul >> 1;
+    // ul >>= 1;
+    mask = ul | ur | ll | lr;
+    let offs = detail.frame_offs[mask];
+    if (offs === undefined) {
+      return detail.frame + add;
+    }
+    return detail.frame + offs + add;
   }
 
   function planetMapMode(
@@ -939,7 +996,11 @@ export function main(): void {
         shader: shader_pixelart,
         nozoom: true,
       };
-      function bget(xx: number, yy: number): SubBiome {
+      type TileInfo = {
+        base: SubBiome;
+        detail?: SubBiome;
+      };
+      function bget(out: TileInfo, xx: number, yy: number): void {
         let eff_yy = mod(yy, map_num_vert);
         let sub_y = floor(eff_yy / MAP_SUB_SIZE);
         let row = raw_datas[sub_y];
@@ -952,23 +1013,24 @@ export function main(): void {
         let details = rowpair[1];
         let detailv = details && details[tile_y_offs + tile_x_offs] || 0;
         let pair = BIOME_TO_BASE[v];
-        if (!pair) {
-          return BASE.NULL;
+        if (pair) {
+          out.base = pair[(detailv & BIT_SAME_LOOSE) ? 1 : 0];
+          out.detail = pair[2];
+        } else {
+          out.base = BASE.NULL;
+          out.detail = undefined;
         }
-        let base = pair[(detailv & BIT_SAME_LOOSE) ? 1 : 0];
-        return base;
       }
-      let ndata: SubBiome[] = [];
+      let ndata: TileInfo[] = [];
+      for (let ii = 0; ii < 9; ++ii) {
+        ndata.push({ base: BASE.NULL, detail: undefined });
+      }
       for (let yy = tile_y0; yy <= tile_y1; ++yy) {
         for (let jj = 0; jj < 3; ++jj) {
           for (let ii = 0; ii < 2; ++ii) {
-            ndata[jj * 3 + ii + 1] = bget(tile_x0 + ii, yy - 1 + jj);
+            bget(ndata[jj * 3 + ii + 1], tile_x0 + ii, yy - 1 + jj);
           }
         }
-        let eff_yy = mod(yy, map_num_vert);
-        let sub_y = floor(eff_yy / MAP_SUB_SIZE);
-        let row = raw_datas[sub_y];
-        let tile_y_offs = (eff_yy % MAP_SUB_SIZE) * MAP_SUB_SIZE;
         let pixy = round(y + yy * tile_h);
         let next_pixy = round(y + (yy +1) * tile_h);
         draw_param.y = pixy;
@@ -976,47 +1038,47 @@ export function main(): void {
         for (let xx = tile_x0; xx <= tile_x1; ++xx) {
           for (let jj = 0; jj < 3; ++jj) {
             // shift known data
+            let t = ndata[jj*3];
             ndata[jj*3] = ndata[jj*3+1];
             ndata[jj*3+1] = ndata[jj*3+2];
             // get new data
-            ndata[jj*3+2] = bget(xx + 1, yy - 1 + jj);
+            bget(t, xx + 1, yy - 1 + jj);
+            ndata[jj*3+2] = t;
           }
-          let base = ndata[4];
-
-          let eff_xx = mod(xx, map_num_horiz);
-          let sub_x = floor(eff_xx / MAP_SUB_SIZE);
-          let tile_x_offs = eff_xx % MAP_SUB_SIZE;
-          let rowpair = row && row[sub_x] || NULL_ROWPAIR;
-          let v = rowpair[0][tile_y_offs + tile_x_offs] || 0;
-          // let details = rowpair[1];
-          // let detailv = details && details[tile_y_offs + tile_x_offs] || 0;
-          let pixx = round(x + xx * tile_h);
-          let next_pixx = round(x + (xx +1) * tile_h);
-          let pair = BIOME_TO_BASE[v];
-          if (!pair) {
+          let my_info = ndata[4];
+          if (!my_info.base.ord) {
             continue;
           }
-          let extra = pair[2];
+
+          let pixx = round(x + xx * tile_h);
+          let next_pixx = round(x + (xx +1) * tile_h);
+          let extra = my_info.detail;
           draw_param.x = pixx;
           draw_param.w = next_pixx - pixx;
 
+          let base = my_info.base;
           draw_param.z = z0 + 1;
           draw_param.frame = base.frame + (base.anim ? anim_frame : 0);
           sprites[`${base.sprite}${lod}`].draw(draw_param);
 
-          // Get BASE of neighbors and draw overlays
+          // Get BASE (and details) of neighbors and draw overlays
           let masks: Record<number, number> = {};
+          let dmask = 0;
           let overlays = [];
           for (let jj = 0, idx = 8; jj < 3; ++jj) {
             for (let ii = 0; ii < 3; ++ii, --idx) {
               let n = ndata[jj * 3 + ii];
-              if (n.ord > base.ord) {
-                if (!masks[n.ord]) {
-                  overlays.push(n);
-                  masks[n.ord] = (1 << idx);
+              let nb = n.base;
+              if (nb.ord > base.ord) {
+                if (!masks[nb.ord]) {
+                  overlays.push(nb);
+                  masks[nb.ord] = (1 << idx);
                 } else {
-                  masks[n.ord] |= (1 << idx);
+                  masks[nb.ord] |= (1 << idx);
                 }
+              }
+              if (n.detail === my_info.detail) {
+                dmask |= (1 << idx);
               }
             }
           }
@@ -1033,8 +1095,9 @@ export function main(): void {
 
           if (extra) {
             draw_param.z++;
-            draw_param.frame = extra[1];
-            sprites[`${extra[0]}${lod}`].draw(draw_param);
+            let ovr = detailFor(extra, dmask);
+            draw_param.frame = ovr;
+            sprites[`${extra.sprite}${lod}`].draw(draw_param);
           }
         }
       }
