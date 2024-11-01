@@ -26,7 +26,11 @@ import {
   vec4,
 } from 'glov/common/vmath';
 import SimplexNoise from 'simplex-noise';
-import { BIOMES, BIOMES_SAME_LOOSE } from './biomes';
+import {
+  BIOMES,
+  BIOMES_SAME_LOOSE,
+  Biome,
+} from './biomes';
 import { Star } from './galaxy';
 import {
   StarType,
@@ -66,6 +70,44 @@ type BiomeTableEntry = {
   color_table: ColorTable;
 };
 type BiomeTable = BiomeTableEntry[];
+
+type VariationEntry = {
+  weight: number;
+  min_layer?: number;
+  offs?: number;
+  freqx?: number;
+  freqy?: number;
+  biome: Biome;
+};
+const BOTTOM_LAYER = 5; // PLANET_PIXELART_LEVEL + MAP_SUBDIVIDE
+const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
+  [BIOMES.GREEN_PLAINS]: [{
+    weight: 0.1,
+    biome: BIOMES.GREEN_FOREST,
+  }, {
+    min_layer: BOTTOM_LAYER - 1,
+    offs: 1,
+    weight: 0.05,
+    freqx: 111,
+    freqy: 111,
+    biome: BIOMES.WATER_SHALLOW,
+  }],
+  [BIOMES.DESERT]: [{
+    weight: 0.01,
+    biome: BIOMES.WATER_SHALLOW,
+  }],
+  [BIOMES.GREEN_FOREST]: [{
+    weight: 0.01,
+    biome: BIOMES.WATER_SHALLOW,
+  }, {
+    min_layer: BOTTOM_LAYER - 1,
+    offs: 1,
+    weight: 0.05,
+    freqx: 111,
+    freqy: 111,
+    biome: BIOMES.GREEN_PLAINS,
+  }],
+};
 
 const color_table_frozen = [
   0.23, 11,
@@ -494,7 +536,7 @@ let noise_field: Record<NoiseOptsRangeField, SimplexNoise>;
 let subopts: NoiseOpts;
 function initNoise(seed: number, subopts_in: NoiseOpts): void {
   subopts = subopts_in;
-  noise = new Array(subopts.octaves);
+  noise = new Array(subopts.octaves + 2);
   for (let ii = 0; ii < noise.length; ++ii) {
     noise[ii] = new SimplexNoise(`${seed}n${ii}`);
   }
@@ -793,6 +835,21 @@ sampleBiomeMap = function sampleBiomeMap(): number {
           }
         }
         let b = colorIndex(biome_table[winner].color_table, v);
+        let varilist = BIOME_VARIATION[b];
+        if (varilist) {
+          for (let kk = 0; kk < varilist.length; ++kk) {
+            let vari = varilist[kk];
+            if (sublayer >= (
+              vari.min_layer || BOTTOM_LAYER
+            )) {
+              if (noise[noise.length-2].noise2D((unif_x + (vari.offs || 0))*2 * (vari.freqx || 7777),
+                unif_y * (vari.freqy || 7777)) * 0.5 + 0.5 < vari.weight
+              ) {
+                b = vari.biome;
+              }
+            }
+          }
+        }
         tex_data[idx] = b;
       }
     }
