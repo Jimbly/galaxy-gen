@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730422838650"
+window.glov_build_version="1730469837535"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -901,8 +901,9 @@ else if("1"===key[ii])v|=bit}var maxval=1<<qs.length
 for(var _ii=0;_ii<maxval;++_ii){for(var jj=0;jj<qs.length;++jj)if(_ii&1<<jj)v|=qs[jj]
 else v&=~qs[jj]
 var v0=ret[v]
-if(void 0===v0)ret[v]=[offs]
-else v0.push(offs)}}return ret}var frame_offs_regular=frameListToBitmask({"000000001":2,"???000?1?":3,"000000100":4,"?1?100?00":5,"?1?00100?":7,"001000100":16,100000001:17,"?0??01?0?":18,"?0?10??0?":20,"001000000":34,"?1?000???":35,1e8:36,"?00100?1?":37,"00?001?1?":39})
+if(void 0===v0)v0=ret[v]=[]
+if(Array.isArray(offs))for(var kk=0;kk<offs.length;++kk)v0.push(offs[kk])
+else v0.push(offs)}}return ret}var frame_offs_regular=frameListToBitmask({"????00?01":2,"???000?1?":3,"???00?10?":4,"?1?100?0?":5,"?1?001?0?":7,"?0??01?0?":18,"?0?10??0?":20,"?01?00???":34,"?1?000???":35,"10?00????":36,"?0?100?1?":37,"?0?001?1?":39,"?1?101?0?":[5,18],"?1?10??1?":[37,35],"?1??01?1?":[7,3],"?0?101?1?":[39,20]})
 var frame_offs_water=frameListToBitmask({"000000001":88,"000000?1?":40,"000000100":120,"?1?100?00":0,"?1?00100?":56,"001000100":80,100000001:48,"00?00100?":64,"?00100?00":8,"001000000":96,"?1?000000":24,1e8:128,"?00100?1?":16,"00?001?1?":72})
 var frame_offs_tree=frameListToBitmask({"0001":1,"0010":3,"0011":2,"0100":105,"0101":53,"0110":108,"0111":4,1e3:107,1001:109,1010:55,1011:5,1100:106,1101:56,1110:57,1111:54})
 var BASE={NULL:{sprite:"grass",frame:1},WATER_DEEP:{sprite:"ocean",frame:48,anim:true},WATER_SHALLOW:{sprite:"ocean",frame:8,anim:true,ovr_idx:16,frame_offs:frame_offs_water},SAND:{sprite:"sand",frame:1,ovr_idx:280,frame_offs:frame_offs_regular},SAND2:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular},GRASS:{sprite:"grass",frame:1,ovr_idx:272,frame_offs:frame_offs_regular},GRASS2:{sprite:"grass",frame:17,ovr_idx:232,frame_offs:frame_offs_regular},ICE:{sprite:"ice",frame:1,ovr_idx:280,frame_offs:frame_offs_regular},ICE2:{sprite:"ice",frame:17,ovr_idx:232,frame_offs:frame_offs_regular},DARK_DIRT:{sprite:"lava",frame:1,ovr_idx:280,frame_offs:frame_offs_regular},DETAIL_TREES1:{sprite:"treesmountains",frame:1,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS1:{sprite:"treesmountains",frame:1145,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS_SNOW:{sprite:"treesmountains",frame:1184,frame_offs:frame_offs_tree}}
@@ -3899,7 +3900,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730422838650")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730469837535")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6443,7 +6444,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730422838650")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730469837535")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12151,7 +12152,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730422838650"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730469837535"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12159,10 +12160,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730422838650")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730422838650"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730469837535")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730469837535"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730422838650"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730469837535"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14244,4 +14245,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":79,"./packet":90,"./perfcounters":91,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730422838650
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730469837535
