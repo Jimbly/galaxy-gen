@@ -10,7 +10,7 @@ Next:
 
     X fancier blending of biomes?
     X forest/mountain special tiles
-    send gif around
+    X send gif around
     add local variety (to all layers?) by tile type/color
     add local variety by details to pixel art layer
 

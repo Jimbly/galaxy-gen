@@ -22,6 +22,7 @@ import {
 import {
   ROVec4,
   vec2,
+  vec3,
   vec4,
 } from 'glov/common/vmath';
 import SimplexNoise from 'simplex-noise';
@@ -45,7 +46,7 @@ let rand = [
 let planet_gen_layer: number;
 
 // returns roughly 0.4...0.7 with default settings
-let sampleBiomeMap: (x: number, y: number) => number;
+let sampleBiomeMap: () => number;
 
 type WeightFunc = (x: number, y: number, h: number) => number;
 function weightDefault(): number {
@@ -54,7 +55,7 @@ function weightDefault(): number {
 
 function weightBiomeRange(mn: number, mx: number, weight: number): WeightFunc {
   return function (x: number, y: number, h: number): number {
-    let v = sampleBiomeMap(x, y);
+    let v = sampleBiomeMap();
     return v > mn && v < mx ? weight : 0;
   };
 }
@@ -83,9 +84,9 @@ const color_table_earthlike_forest = [
   0.4, BIOMES.WATER_DEEP,
   0.5, BIOMES.WATER_SHALLOW,
   0.52, BIOMES.GREEN_PLAINS,
-  0.65, BIOMES.GREEN_FOREST,
-  0.69, BIOMES.GREEN_PLAINS,
-  0.76, BIOMES.MOUNTAINS,
+  0.64, BIOMES.GREEN_FOREST,
+  0.65, BIOMES.GREEN_PLAINS,
+  0.75, BIOMES.MOUNTAINS,
   1, BIOMES.MOUNTAINS_SNOW,
 ];
 const color_table_earthlike_desert = [
@@ -120,7 +121,7 @@ const biome_table_earthlike: BiomeTable = [
         // too noisy on this layer
         return 0;
       }
-      let v = sampleBiomeMap(x, y);
+      let v = sampleBiomeMap();
       let d = 1 - abs(y - 0.5) * 8;
       return d - h * 4 + 2.5 + v - 0.5;
     },
@@ -536,8 +537,7 @@ function initBiomeNoise(subopts_in: NoiseOpts): void {
   }
 }
 let sample_pos = vec2();
-// eslint-disable-next-line @typescript-eslint/no-shadow
-sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
+function sampleBiomeMapAtPos(x: number, y: number): number {
   sample_pos[0] = x * 2 + 77;
   sample_pos[1] = y + 77;
   let total = 0;
@@ -551,6 +551,21 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     freq *= lac;
   }
   return total/biome_total_amplitude;
+}
+let biome_map_pos = vec3(); // x, y, blend weight
+let biome_value: number | null = null;
+// eslint-disable-next-line @typescript-eslint/no-shadow
+sampleBiomeMap = function sampleBiomeMap(): number {
+  if (biome_value === null) {
+    let v = sampleBiomeMapAtPos(biome_map_pos[0], biome_map_pos[1]);
+    let w = biome_map_pos[2];
+    if (w < 1) {
+      let v2 = sampleBiomeMapAtPos(biome_map_pos[0] - 1, biome_map_pos[1]);
+      v = lerp(w, v, v2);
+    }
+    biome_value = v;
+  }
+  return biome_value;
 };
 
 
@@ -747,19 +762,25 @@ sampleBiomeMap = function sampleBiomeMap(x: number, y: number): number {
     planet_gen_layer = layer;
     for (let idx=0, jj = 0; jj < tex_h; ++jj) {
       let unif_y = (sub_y * tex_h + jj) / planet_h;
+      biome_map_pos[1] = unif_y;
       // 0.1...0.2
       let blend_offs = clamp((noise[noise.length-1].noise2D(unif_y*5, 0.5) + 1) * 0.05, 0, 0.1) + 0.1;
       for (let ii = 0; ii < tex_w; ++ii, ++idx) {
         let unif_x = (sub_x * tex_w + ii)/planet_w;
         let v = sample(unif_x, unif_y);
+        biome_map_pos[0] = unif_x;
+        biome_value = null;
         if (unif_x > 1 - blend_offs) {
           let w = min((unif_x - (1 - blend_offs)) / 0.1, 1);
           let v2 = sample(unif_x - 1, unif_y);
+          biome_map_pos[2] = w;
           v = lerp(w, v, v2);
           if (w > 0.5) {
             // use this pos for biome funcs
             unif_x--;
           }
+        } else {
+          biome_map_pos[2] = 1;
         }
         let winner = 0;
         let winner_weight = 0;
