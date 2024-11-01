@@ -1626,7 +1626,7 @@ export function main(): void {
         gal_zoomer.drag(drag_temp, w);
       }
     }
-    if (debugDefineIsSet('ATTRACT')) {
+    if (debugDefineIsSet('ATTRACT') || true) {
       gal_zoomer.zoom_offs[0] = clamp(gal_zoomer.zoom_offs[0], 0, 1 - 1/zoom);
       gal_zoomer.zoom_offs[1] = clamp(gal_zoomer.zoom_offs[1], 0, 1 - 1/zoom);
     } else {
