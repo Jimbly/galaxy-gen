@@ -658,8 +658,8 @@ export function main(): void {
   const EMPTY_RAW_DATA = new Uint8Array(MAP_SUB_SIZE * MAP_SUB_SIZE);
   const NULL_ROWPAIR = [EMPTY_RAW_DATA, EMPTY_RAW_DATA];
 
-  function frameListToBitmask(list: Record<string, number>): Record<number, number> {
-    let ret: Record<number, number> = {};
+  function frameListToBitmask(list: Record<string, number|number[]>): Record<number, number[]> {
+    let ret: Record<number, number[]> = {};
     for (let key in list) {
       let offs = list[key];
       let qs = [];
@@ -682,28 +682,41 @@ export function main(): void {
             v &=~qs[jj];
           }
         }
-        assert(ret[v] === undefined);
-        ret[v] = offs;
+        let v0 = ret[v];
+        if (v0 === undefined) {
+          v0 = ret[v] = [];
+        }
+        if (Array.isArray(offs)) {
+          for (let kk = 0; kk < offs.length; ++kk) {
+            v0.push(offs[kk]);
+          }
+        } else {
+          v0.push(offs);
+        }
       }
     }
     return ret;
   }
 
   let frame_offs_regular = frameListToBitmask({
-    '000000001': 2,
-    '000000?1?': 3,
-    '000000100': 4,
-    '?1?100?00': 5,
-    '?1?00100?': 7,
-    '001000100': 16,
-    '100000001': 17,
-    '00?00100?': 18,
-    '?00100?00': 20,
-    '001000000': 34,
-    '?1?000000': 35,
-    '100000000': 36,
-    '?00100?1?': 37,
-    '00?001?1?': 39,
+    '????00?01': 2,
+    '???000?1?': 3,
+    '???00?10?': 4,
+    '?1?100?0?': 5,
+    '?1?001?0?': 7,
+    //'001000100': 16,
+    //'100000001': 17,
+    '?0??01?0?': 18,
+    '?0?10??0?': 20,
+    '?01?00???': 34,
+    '?1?000???': 35,
+    '10?00????': 36,
+    '?0?100?1?': 37,
+    '?0?001?1?': 39,
+    '?1?101?0?': [5,18], // top U
+    '?1?10??1?': [37,35], // left U
+    '?1??01?1?': [7,3], // right U
+    '?0?101?1?': [39,20], // bottom U
   });
 
   let frame_offs_water = frameListToBitmask({
@@ -750,7 +763,7 @@ export function main(): void {
     anim?: boolean;
     ovr_idx?: number;
     ord: number;
-    frame_offs?: Record<number, number>;
+    frame_offs?: Record<number, number[]>;
   };
   const BASE = {
     NULL: { // lowest ord
@@ -784,7 +797,7 @@ export function main(): void {
     GRASS: {
       sprite: 'grass',
       frame: 1,
-      ovr_idx: (14+3) * 16 + 8,
+      ovr_idx: (14+3) * 16 + 8 - 8,
       frame_offs: frame_offs_regular,
     } as SubBiome,
     GRASS2: {
@@ -835,7 +848,7 @@ export function main(): void {
     BASE[key as BaseType].ord = ord++;
   }
 
-  type DetailDef = [SpriteName, number];
+  type DetailDef = [SpriteName, number[]];
   const BIOME_TO_BASE: Record<Biome, [SubBiome, SubBiome, SubBiome?]> = {
     [BIOMES.WATER_DEEP]: [BASE.WATER_DEEP, BASE.WATER_DEEP],
     [BIOMES.WATER_SHALLOW]: [BASE.WATER_SHALLOW, BASE.WATER_SHALLOW],
@@ -857,12 +870,16 @@ export function main(): void {
     if (offs === undefined) {
       return null;
     }
-    return [base.sprite, base.ovr_idx! + offs + (base.anim ? anim_frame : 0)];
+    let r = [];
+    for (let ii = 0; ii < offs.length; ++ii) {
+      r.push(base.ovr_idx! + offs[ii] + (base.anim ? anim_frame : 0));
+    }
+    return [base.sprite, r];
   }
-  function detailFor(detail: SubBiome, mask: number): number {
+  function detailFor(detail: SubBiome, mask: number): number[] {
     let add = (detail.anim ? anim_frame : 0);
     if (!detail.frame_offs) {
-      return detail.frame + add;
+      return [detail.frame + add];
     }
     let ul = (mask & 0b110110000) === 0b110110000 ? 0b1000 : 0;
     let ur = (mask & 0b011011000) === 0b011011000 ? 0b0100 : 0;
@@ -876,9 +893,13 @@ export function main(): void {
     mask = ul | ur | ll | lr;
     let offs = detail.frame_offs[mask];
     if (offs === undefined) {
-      return detail.frame + add;
+      return [detail.frame + add];
     }
-    return detail.frame + offs + add;
+    let r = [];
+    for (let ii = 0; ii < offs.length; ++ii) {
+      r.push(detail.frame + offs[ii] + add);
+    }
+    return r;
   }
 
   function planetMapMode(
@@ -1087,17 +1108,21 @@ export function main(): void {
             let n = overlays[ii];
             let ovr = overlayFor(n, masks[n.ord]);
             if (ovr) {
-              draw_param.z++;
-              draw_param.frame = ovr[1];
-              sprites[`${ovr[0]}${lod}`].draw(draw_param);
+              for (let jj = 0; jj < ovr[1].length; ++jj) {
+                draw_param.z++;
+                draw_param.frame = ovr[1][jj];
+                sprites[`${ovr[0]}${lod}`].draw(draw_param);
+              }
             }
           }
 
           if (extra) {
             draw_param.z++;
             let ovr = detailFor(extra, dmask);
-            draw_param.frame = ovr;
-            sprites[`${extra.sprite}${lod}`].draw(draw_param);
+            for (let jj = 0; jj < ovr.length; ++jj) {
+              draw_param.frame = ovr[jj];
+              sprites[`${extra.sprite}${lod}`].draw(draw_param);
+            }
           }
         }
       }
