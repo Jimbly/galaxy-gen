@@ -11,6 +11,7 @@ Next:
     X fancier blending of biomes?
     X forest/mountain special tiles
     send gif around
+    missing U-shaped blending (nothernish bay)
     add local variety (to all layers?) by tile type/color
     add local variety by details to pixel art layer
 

@@ -962,10 +962,11 @@ export function main(): void {
       let sub_dim = h / zoom; // in screen pixels
       let sub_num_horiz = zoom * 2;
       let sub_num_vert = zoom;
-      let sub_x0 = floor((camera2d.x0Real() - x) / sub_dim);
-      let sub_x1 = floor((camera2d.x1Real() - x) / sub_dim);
-      let sub_y0 = floor((camera2d.y0Real() - y) / sub_dim);
-      let sub_y1 = floor((camera2d.y1Real() - y) / sub_dim);
+      const tile_h = h / MAP_SUB_SIZE / zoom;
+      let sub_x0 = floor((camera2d.x0Real() - x - tile_h) / sub_dim);
+      let sub_x1 = floor((camera2d.x1Real() - x + tile_h) / sub_dim);
+      let sub_y0 = floor((camera2d.y0Real() - y - tile_h) / sub_dim);
+      let sub_y1 = floor((camera2d.y1Real() - y + tile_h) / sub_dim);
       let raw_datas: Partial<Record<number, Partial<Record<number, [Uint8Array, Uint8Array?]>>>> = {};
       for (let yy = sub_y0; yy <= sub_y1; ++yy) {
         let row = raw_datas[yy] = {} as Partial<Record<number, [Uint8Array, Uint8Array?]>>;
@@ -979,7 +980,6 @@ export function main(): void {
         }
       }
       anim_frame = floor(getFrameTimestamp() * 0.0086) % 8;
-      const tile_h = h / MAP_SUB_SIZE / zoom;
       let map_num_vert = MAP_SUB_SIZE * zoom;
       let map_num_horiz = map_num_vert * 2;
       let tile_x0 = floor((camera2d.x0Real() - x) / tile_h);
@@ -1028,7 +1028,7 @@ export function main(): void {
       for (let yy = tile_y0; yy <= tile_y1; ++yy) {
         for (let jj = 0; jj < 3; ++jj) {
           for (let ii = 0; ii < 2; ++ii) {
-            bget(ndata[jj * 3 + ii + 1], tile_x0 + ii, yy - 1 + jj);
+            bget(ndata[jj * 3 + ii + 1], tile_x0 - 1 + ii, yy - 1 + jj);
           }
         }
         let pixy = round(y + yy * tile_h);
