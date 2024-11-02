@@ -110,7 +110,7 @@ const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
 };
 
 const color_table_frozen = [
-  0.23, 11,
+  0.23, BIOMES.FROZEN_OCEAN,
   0.77, BIOMES.FROZEN_PLAINS,
   1, BIOMES.FROZEN_MOUNTAINS,
 ];
@@ -200,9 +200,9 @@ const biome_table_earthlike_pangea = [
 const biome_entry_water_world: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.5, 22,
-    0.8, 0,
-    1, 22,
+    0.5, BIOMES.WATER_DEEP,
+    0.8, BIOMES.WATER_SHALLOW,
+    1, BIOMES.WATER_DEEP,
   ]
 };
 const biome_table_water_world = [biome_entry_water_world];
@@ -210,9 +210,9 @@ const biome_table_water_world = [biome_entry_water_world];
 const biome_entry_low_life: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.3, 0,
-    0.7, 14,
-    1, 1,
+    0.3, BIOMES.WATER_SHALLOW,
+    0.7, BIOMES.DIRT,
+    1, BIOMES.DEAD_FOREST,
   ]
 };
 const biome_table_low_life = [biome_entry_low_life];
@@ -220,11 +220,11 @@ const biome_table_low_life = [biome_entry_low_life];
 const biome_entry_molten: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.25, 4,
-    0.46, 3,
-    0.54, 5,
-    0.75, 3,
-    1, 4,
+    0.25, BIOMES.MOLTEN_MOUNTAINS,
+    0.46, BIOMES.MOLTEN_PLAINS,
+    0.54, BIOMES.MOLTEN_LAVAFLOW,
+    0.75, BIOMES.MOLTEN_PLAINS,
+    1, BIOMES.MOLTEN_MOUNTAINS,
   ]
 };
 const biome_table_molten = [biome_entry_molten];
@@ -232,9 +232,9 @@ const biome_table_molten = [biome_entry_molten];
 const biome_entry_molten_small: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.4, 3,
-    0.6, 5,
-    1, 4,
+    0.4, BIOMES.MOLTEN_PLAINS,
+    0.6, BIOMES.MOLTEN_LAVAFLOW,
+    1, BIOMES.MOLTEN_MOUNTAINS,
   ]
 };
 const biome_table_molten_small = [biome_entry_molten_small];
@@ -242,10 +242,10 @@ const biome_table_molten_small = [biome_entry_molten_small];
 const biome_entry_gray: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.25, 6,
-    0.5, 7,
-    0.75, 8,
-    1, 9,
+    0.25, BIOMES.MOONROCK1,
+    0.5, BIOMES.MOONROCK2,
+    0.75, BIOMES.MOONROCK3,
+    1, BIOMES.MOONROCK4,
   ]
 };
 const biome_table_gray = [biome_entry_gray];
@@ -260,12 +260,12 @@ const biome_table_frozen = [biome_entry_frozen];
 const biome_entry_gasgiant1: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.2, 12,
-    0.35, 13,
-    0.5, 9,
-    0.65, 12,
-    0.8, 13,
-    1, 9,
+    0.2, BIOMES.GAS_ORANGE_LIGHT,
+    0.35, BIOMES.GAS_ORANGE_DARK,
+    0.5, BIOMES.GAS_GRAY,
+    0.65, BIOMES.GAS_ORANGE_LIGHT,
+    0.8, BIOMES.GAS_ORANGE_DARK,
+    1, BIOMES.GAS_GRAY,
   ]
 };
 const biome_table_gasgiant1 = [biome_entry_gasgiant1];
@@ -273,8 +273,8 @@ const biome_table_gasgiant1 = [biome_entry_gasgiant1];
 const biome_entry_dirt: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.5, 14,
-    1, 15,
+    0.5, BIOMES.DIRT,
+    1, BIOMES.DIRT_DARK,
   ]
 };
 const biome_table_dirt = [biome_entry_dirt];
@@ -283,11 +283,11 @@ const biome_table_dirt = [biome_entry_dirt];
 const biome_entry_gasgiant2: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.2, 16,
-    0.4, 17,
-    0.6, 16,
-    0.8, 17,
-    1, 16,
+    0.2, BIOMES.GAS_PURPLE_LIGHT,
+    0.4, BIOMES.GAS_PURPLE_DARK,
+    0.6, BIOMES.GAS_PURPLE_LIGHT,
+    0.8, BIOMES.GAS_PURPLE_DARK,
+    1, BIOMES.GAS_PURPLE_LIGHT,
   ]
 };
 const biome_table_gasgiant2 = [biome_entry_gasgiant2];
@@ -296,11 +296,11 @@ const biome_table_gasgiant2 = [biome_entry_gasgiant2];
 const biome_entry_gasgiant3: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.2, 18,
-    0.4, 5,
-    0.6, 18,
-    0.8, 5,
-    1, 18,
+    0.2, BIOMES.GAS_RED,
+    0.4, BIOMES.GAS_YELLOW_RED,
+    0.6, BIOMES.GAS_RED,
+    0.8, BIOMES.GAS_YELLOW_RED,
+    1, BIOMES.GAS_RED,
   ]
 };
 const biome_table_gasgiant3 = [biome_entry_gasgiant3];
@@ -309,12 +309,12 @@ const biome_table_gasgiant3 = [biome_entry_gasgiant3];
 const biome_entry_gasgiant4: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.2, 19,
-    0.35, 20,
-    0.5, 21,
-    0.65, 19,
-    0.8, 20,
-    1, 21,
+    0.2, BIOMES.GAS_BLUE_MED,
+    0.35, BIOMES.GAS_BLUE_LIGHT,
+    0.5, BIOMES.GAS_BLUE_DARK,
+    0.65, BIOMES.GAS_BLUE_MED,
+    0.8, BIOMES.GAS_BLUE_LIGHT,
+    1, BIOMES.GAS_BLUE_DARK,
   ]
 };
 const biome_table_gasgiant4 = [biome_entry_gasgiant4];
@@ -323,12 +323,12 @@ const biome_table_gasgiant4 = [biome_entry_gasgiant4];
 const biome_entry_gasgiant5: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
-    0.2, 23,
-    0.35, 5,
-    0.5, 12,
-    0.65, 23,
-    0.8, 5,
-    1, 12,
+    0.2, BIOMES.GAS_YELLOW,
+    0.35, BIOMES.GAS_YELLOW_RED,
+    0.5, BIOMES.GAS_ORANGE_LIGHT,
+    0.65, BIOMES.GAS_YELLOW,
+    0.8, BIOMES.GAS_YELLOW_RED,
+    1, BIOMES.GAS_ORANGE_LIGHT,
   ]
 };
 const biome_table_gasgiant5 = [biome_entry_gasgiant5];
