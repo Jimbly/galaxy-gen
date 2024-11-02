@@ -81,6 +81,7 @@ import {
   JSVec2,
   ROVec4,
   Vec2,
+  rovec4,
   unit_vec,
   v2add,
   v2addScale,
@@ -321,7 +322,13 @@ export function main(): void {
     ocean0: autoAtlas('ocean-animated', 'def'), // 8x21
     ocean1: autoAtlas('ocean-animated-l1', 'def'), // 8x21
     ocean2: autoAtlas('ocean-animated-l2', 'def'), // 8x21
+    dirt0: autoAtlas('dirt', 'def'), // 16x20
+    dirt1: autoAtlas('dirt-l1', 'def'), // 16x20
+    dirt2: autoAtlas('dirt-l2', 'def'), // 16x20
   };
+  for (let key in sprites) {
+    sprites[key as keyof typeof sprites].texs.push(tex_palette_planets);
+  }
 
   const MAX_ZOOM = 16;
   const MAX_SOLAR_VIEW = 1;
@@ -721,6 +728,25 @@ export function main(): void {
     '?0?101?1?': [39,20], // bottom U
   });
 
+  let frame_offs_cliffs = frameListToBitmask({
+    '????00?01': 2,
+    '???000?1?': 3,
+    '???00?10?': 4,
+    '?1?100?0?': 22,
+    '?1?001?0?': 23,
+    '?0??01?0?': 18,
+    '?0?10??0?': 20,
+    '?01?00???': 34,
+    '?1?000???': 35,
+    '10?00????': 36,
+    '?0?100?1?': 38,
+    '?0?001?1?': 39,
+    '?1?101?0?': 21, //[22,18], // top U
+    '?1?10??1?': 6,// [38,35], // left U
+    '?1??01?1?': 7, // right U
+    '?0?101?1?': 21+16, // [39,20], // bottom U
+  });
+
   let frame_offs_water = frameListToBitmask({
     '000000001': 11*8,
     '000000?1?': 5*8,
@@ -758,13 +784,15 @@ export function main(): void {
     '1111': 2 + 52,
   });
 
-  type SpriteName = 'grass' | 'lava' | 'ocean' | 'sand' | 'ice' | 'treesmountains';
+  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'sand' | 'ice' | 'treesmountains';
   type SubBiome = {
     sprite: SpriteName;
     frame: number;
     anim?: boolean;
     ovr_idx?: number;
     ord: number;
+    color_biome?: Biome;
+    shader_param: ROVec4;
     frame_offs?: Record<number, number[]>;
   };
   const BASE = {
@@ -776,6 +804,7 @@ export function main(): void {
       sprite: 'ocean',
       frame: 6*8,
       anim: true,
+      color_biome: BIOMES.WATER_DEEP,
     } as SubBiome,
     WATER_SHALLOW: {
       sprite: 'ocean',
@@ -783,48 +812,84 @@ export function main(): void {
       anim: true,
       ovr_idx: 2*8,
       frame_offs: frame_offs_water,
+      color_biome: BIOMES.WATER_SHALLOW,
     } as SubBiome,
     SAND: {
       sprite: 'sand',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DESERT,
     } as SubBiome,
     SAND2: {
       sprite: 'sand',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DESERT,
     } as SubBiome,
     GRASS: {
       sprite: 'grass',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8 - 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.GREEN_PLAINS,
     } as SubBiome,
     GRASS2: {
       sprite: 'grass',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.GREEN_PLAINS,
+    } as SubBiome,
+    DIRT_DARK: {
+      sprite: 'dirt',
+      frame: 1,
+      ovr_idx: (14+3) * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DIRT_DARK,
+    } as SubBiome,
+    DIRT_DARK2: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 14 * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DIRT_DARK,
+    } as SubBiome,
+    DIRT: {
+      sprite: 'sand',
+      frame: 1,
+      ovr_idx: 2*16 + 7, // (14+3) * 16 + 8,
+      frame_offs: frame_offs_cliffs,
+      color_biome: BIOMES.DIRT,
+    } as SubBiome,
+    DIRT2: {
+      sprite: 'sand',
+      frame: 17,
+      ovr_idx: 14 * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DIRT,
     } as SubBiome,
     ICE: {
       sprite: 'ice',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.FROZEN_PLAINS,
     } as SubBiome,
     ICE2: {
       sprite: 'ice',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.FROZEN_PLAINS,
     } as SubBiome,
-    DARK_DIRT: {
+    MOUNTAIN_BASE: {
       sprite: 'lava',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DIRT_DARK,
     } as SubBiome,
 
     // overlay details
@@ -846,42 +911,51 @@ export function main(): void {
   };
   type BaseType = keyof typeof BASE;
   let ord = 0;
+  function colorFromBiome(color_biome: Biome): ROVec4 {
+    return rovec4(color_biome / 256 + 1/512, 0, 0, 1);
+  }
   for (let key in BASE) {
-    BASE[key as BaseType].ord = ord++;
+    let bb = BASE[key as BaseType];
+    bb.ord = ord++;
+    let color_biome = bb.color_biome || BIOMES.GREEN_PLAINS;
+    bb.shader_param = colorFromBiome(color_biome);
   }
 
-  type DetailDef = [SpriteName, number[]];
+  type DetailDef = [SpriteName, number[], ROVec4];
   const BIOME_TO_BASE: Record<Biome, [SubBiome, SubBiome, SubBiome?]> = {
     [BIOMES.WATER_DEEP]: [BASE.WATER_DEEP, BASE.WATER_DEEP],
     [BIOMES.WATER_SHALLOW]: [BASE.WATER_SHALLOW, BASE.WATER_SHALLOW],
     [BIOMES.GREEN_FOREST]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_TREES1],
     [BIOMES.MOUNTAINS]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_MOUNTAINS1],
     [BIOMES.GREEN_PLAINS]: [BASE.GRASS, BASE.GRASS2],
-    [BIOMES.MOUNTAINS_SNOW]: [BASE.DARK_DIRT, BASE.DARK_DIRT, BASE.DETAIL_MOUNTAINS_SNOW],
+    [BIOMES.MOUNTAINS_SNOW]: [BASE.MOUNTAIN_BASE, BASE.MOUNTAIN_BASE, BASE.DETAIL_MOUNTAINS_SNOW],
     [BIOMES.FROZEN_PLAINS]: [BASE.ICE, BASE.ICE2],
     [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICE, BASE.ICE2, BASE.DETAIL_MOUNTAINS_SNOW],
     [BIOMES.DESERT]: [BASE.SAND, BASE.SAND2],
+    [BIOMES.DIRT_DARK]: [BASE.DIRT_DARK, BASE.DIRT_DARK2],
+    [BIOMES.DIRT]: [BASE.DIRT, BASE.DIRT2],
   };
 
   type BiomeDetailsRarity = SubBiome[];
   type BiomeDetails = [BiomeDetailsRarity, BiomeDetailsRarity, BiomeDetailsRarity];
-  function detailRarityToSubBiome(sprite: SpriteName, frames: number[]): BiomeDetailsRarity {
+  function detailRarityToSubBiome(sprite: SpriteName, frames: number[], colorfrom: Biome): BiomeDetailsRarity {
     let ret: SubBiome[] = [];
     for (let ii = 0; ii < frames.length; ++ii) {
       ret.push({
         sprite,
         frame: frames[ii],
         ord: 999,
+        shader_param: colorFromBiome(colorfrom),
       });
     }
     return ret;
   }
   type BiomeDetailsFrames = [number[], number[], number[]];
-  function detailFramesToSubBiome(sprite: SpriteName, frameset: BiomeDetailsFrames): BiomeDetails {
+  function detailFramesToSubBiome(sprite: SpriteName, frameset: BiomeDetailsFrames, colorfrom: Biome): BiomeDetails {
     return [
-      detailRarityToSubBiome(sprite, frameset[0]),
-      detailRarityToSubBiome(sprite, frameset[1]),
-      detailRarityToSubBiome(sprite, frameset[2]),
+      detailRarityToSubBiome(sprite, frameset[0], colorfrom),
+      detailRarityToSubBiome(sprite, frameset[1], colorfrom),
+      detailRarityToSubBiome(sprite, frameset[2], colorfrom),
     ];
   }
   const BIOME_DETAILS_STANDARD: BiomeDetailsFrames = [
@@ -889,11 +963,23 @@ export function main(): void {
     [2,3,8,9,18,19,24,25,28],
     [10,11,12,13,26,27,29],
   ];
+  const BIOME_DETAILS_NO_LIFE_SAND: BiomeDetailsFrames = [
+    [4,5,6,7,20,21,22,23],
+    [2,3,8,9,18,19,24,25,28],
+    [12,13,29],
+  ];
+  const BIOME_DETAILS_NO_LIFE_DIRT: BiomeDetailsFrames = [
+    [4,5,6,7,20,21,22,23],
+    [6,7,8,9,24,25],
+    [13,28,29],
+  ];
   const BIOME_DETAILS: Record<Biome, BiomeDetails> = {
-    [BIOMES.GREEN_PLAINS]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD),
-    [BIOMES.GREEN_FOREST]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD),
-    [BIOMES.DESERT]: detailFramesToSubBiome('sand', BIOME_DETAILS_STANDARD),
-    [BIOMES.FROZEN_PLAINS]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD),
+    [BIOMES.GREEN_PLAINS]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD, BIOMES.GREEN_PLAINS),
+    [BIOMES.GREEN_FOREST]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD, BIOMES.GREEN_PLAINS),
+    [BIOMES.DESERT]: detailFramesToSubBiome('sand', BIOME_DETAILS_STANDARD, BIOMES.DESERT),
+    [BIOMES.FROZEN_PLAINS]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD, BIOMES.FROZEN_PLAINS),
+    [BIOMES.DIRT]: detailFramesToSubBiome('sand', BIOME_DETAILS_NO_LIFE_SAND, BIOMES.DIRT),
+    [BIOMES.DIRT_DARK]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.DIRT_DARK),
   };
 
   let anim_frame: number;
@@ -909,7 +995,7 @@ export function main(): void {
     for (let ii = 0; ii < offs.length; ++ii) {
       r.push(base.ovr_idx! + offs[ii] + (base.anim ? anim_frame : 0));
     }
-    return [base.sprite, r];
+    return [base.sprite, r, base.shader_param];
   }
   function detailFor(detail: SubBiome, mask: number): number[] {
     let add = (detail.anim ? anim_frame : 0);
@@ -1010,7 +1096,7 @@ export function main(): void {
       }
       --z_base;
     }
-    if (sublayer >= PLANET_PIXELART_LEVEL + 2) {
+    if (sublayer >= PLANET_PIXELART_LEVEL + 2 && view) {
       // also draw pixel art
       let lod = clamp(MAX_PLANET_ZOOM - sublayer, 0, 2) as 0|1|2;
       sublayer = PLANET_PIXELART_LEVEL;
@@ -1051,6 +1137,7 @@ export function main(): void {
         frame: 0,
         shader: shader_pixelart,
         nozoom: true,
+        color: unit_vec,
       };
       type TileInfo = {
         base: SubBiome;
@@ -1127,6 +1214,7 @@ export function main(): void {
           let base = my_info.base;
           draw_param.z = z0 + 1;
           draw_param.frame = base.frame + (base.anim ? anim_frame : 0);
+          draw_param.color = base.shader_param;
           sprites[`${base.sprite}${lod}`].draw(draw_param);
 
           // Get BASE (and details) of neighbors and draw overlays
@@ -1155,6 +1243,7 @@ export function main(): void {
             let n = overlays[ii];
             let ovr = overlayFor(n, masks[n.ord]);
             if (ovr) {
+              draw_param.color = ovr[2];
               for (let jj = 0; jj < ovr[1].length; ++jj) {
                 draw_param.z++;
                 draw_param.frame = ovr[1][jj];
@@ -1166,6 +1255,7 @@ export function main(): void {
           if (extra) {
             draw_param.z++;
             let ovr = detailFor(extra, dmask);
+            draw_param.color = extra.shader_param;
             for (let jj = 0; jj < ovr.length; ++jj) {
               draw_param.frame = ovr[jj];
               sprites[`${extra.sprite}${lod}`].draw(draw_param);
@@ -1349,7 +1439,7 @@ export function main(): void {
       allocSprite();
     }
 
-    if (keyDown(KEYS.CTRL) && keyDownEdge(KEYS.C)) {
+    if (keyDownEdge(KEYS.C) && keyDown(KEYS.CTRL)) {
       copyCanvasToClipboard();
     }
 

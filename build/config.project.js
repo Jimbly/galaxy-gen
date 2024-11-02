@@ -1,3 +1,5 @@
+const fillmips = require('./fillmips');
+const palettable = require('./palettable');
 const spritesheetpad = require('./spritesheetpad');
 
 module.exports = function (config, gb) {
@@ -7,15 +9,27 @@ module.exports = function (config, gb) {
   );
 
   gb.task({
-    name: 'client_spritesheetpad',
+    name: 'fillmips',
     input: ['spritesheets/*.png'],
+    ...fillmips(),
+  });
+
+  gb.task({
+    name: 'palettable',
+    input: ['fillmips:**.png'],
+    ...palettable(),
+  });
+
+  gb.task({
+    name: 'spritesheetpad',
+    input: ['palettable:**.png'],
     deps: ['client_json'],
     ...spritesheetpad('client_json:spritesheets/atlas_params.json'),
   });
 
   gb.task({
     name: 'client_spritesheetout',
-    input: ['client_spritesheetpad:**.png'],
+    input: ['spritesheetpad:**.png'],
     type: gb.SINGLE,
     func: function (job, done) {
       let file = job.getFile();
@@ -26,6 +40,6 @@ module.exports = function (config, gb) {
       done();
     }
   });
-  config.client_png.push('client_spritesheetpad:**.png');
-  config.client_fsdata.push('client_spritesheetpad:**.auat');
+  config.client_png.push('spritesheetpad:**.png');
+  config.client_fsdata.push('spritesheetpad:**.auat');
 };

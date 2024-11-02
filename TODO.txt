@@ -11,7 +11,7 @@ Next:
     spritesheets for all biomes
       earthlike mountains color does not match, ice mountains not great either
 
-  use parent layer for 25% of our procgen?
+  Clicking slider does bad things sometimes
 
 Want:
   pixel art map we can explore

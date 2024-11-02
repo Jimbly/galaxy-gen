@@ -15,7 +15,7 @@ export const BIOMES = {
   MOONROCK3: 8,
   MOONROCK4: 9,
   DEAD_FOREST: 1,
-  DIRT: 32,
+  DIRT: 32, // low_life should use a red dirt (base palette from dirt set?)
   DIRT_DARK: 42,
   GAS_ORANGE_LIGHT: 33,
   GAS_ORANGE_DARK: 34,

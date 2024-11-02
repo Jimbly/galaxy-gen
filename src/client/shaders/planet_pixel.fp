@@ -24,7 +24,7 @@ void main(void) {
   }
   // float vv = long_dist > 0.45 ? long_dist > 0.65 ? 0.625 : 0.375 : 0.125;
   float vv = 0.25 + 0.25 * (long_dist - 0.45) * (1.0 / 0.2);
-  plantex = texture2D(tex2, vec2(plantex.r, vv));
+  plantex = texture2D(tex2, vec2(plantex.r, vv * 0.5));
   if (pmtex.b >= 0.5) {
     plantex.rgb = vec3(0.0);
   }
