@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730552974427"
+window.glov_build_version="1730585568402"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -13,7 +13,7 @@ window.onload=onLoad
 },{"../glov/client/bootstrap.js":12,"./main.js":7}],2:[function(require,module,exports){
 "use strict"
 exports.BIOMES_SAME_LOOSE=exports.BIOMES=void 0
-var BIOMES={WATER_DEEP:24,WATER_SHALLOW:25,DESERT:30,GREEN_PLAINS:26,GREEN_FOREST:29,MOUNTAINS:27,MOUNTAINS_SNOW:28,FROZEN_PLAINS:10,FROZEN_MOUNTAINS:31,FROZEN_OCEAN:11,MOONROCK1:6,MOONROCK2:7,MOONROCK3:8,MOONROCK4:9,DEAD_FOREST:1,DIRT:32,DIRT_DARK:42,GAS_ORANGE_LIGHT:33,GAS_ORANGE_DARK:34,GAS_GRAY:35,MOLTEN_MOUNTAINS:36,MOLTEN_PLAINS:37,MOLTEN_LAVAFLOW:38,GAS_BLUE_DARK:39,GAS_BLUE_MED:40,GAS_BLUE_LIGHT:41,GAS_YELLOW:43,GAS_YELLOW_RED:44,GAS_RED:45,GAS_PURPLE_LIGHT:16,GAS_PURPLE_DARK:17}
+var BIOMES={WATER_DEEP:24,WATER_SHALLOW:25,DESERT:30,GREEN_PLAINS:26,GREEN_FOREST:29,MOUNTAINS:27,MOUNTAINS_SNOW:28,FROZEN_PLAINS:10,FROZEN_OCEAN:11,FROZEN_MOUNTAINS:31,DIRT:32,DIRT_DARK:42,MOLTEN_MOUNTAINS:36,MOLTEN_PLAINS:37,MOLTEN_LAVAFLOW:38,DIRT_RED:46,DEAD_FOREST:1,MOONROCK1:6,MOONROCK2:7,MOONROCK3:8,MOONROCK4:9,GAS_ORANGE_LIGHT:33,GAS_ORANGE_DARK:34,GAS_GRAY:35,GAS_BLUE_DARK:39,GAS_BLUE_MED:40,GAS_BLUE_LIGHT:41,GAS_YELLOW:43,GAS_YELLOW_RED:44,GAS_RED:45,GAS_PURPLE_LIGHT:16,GAS_PURPLE_DARK:17}
 exports.BIOMES=BIOMES
 var BIOMES_SAME_LOOSE=function(){var ret={}
 for(var key in BIOMES){var _ret$v
@@ -647,6 +647,7 @@ var lerp=_glovCommonUtil.lerp
 var merge=_glovCommonUtil.merge
 var mod=_glovCommonUtil.mod
 var _glovCommonVmath=require("../glov/common/vmath")
+var rovec4=_glovCommonVmath.rovec4
 var unit_vec=_glovCommonVmath.unit_vec
 var v2add=_glovCommonVmath.v2add
 var v2addScale=_glovCommonVmath.v2addScale
@@ -755,7 +756,8 @@ var shader_planet_pixel=shaderCreate("shaders/planet_pixel.fp")
 var shader_planet_pixel_flat=shaderCreate("shaders/planet_pixel_flat.fp")
 var shader_pixelart=shaderCreate("shaders/pixelart.fp")
 var white_tex=textureWhite()
-var sprites={grass0:autoAtlas("grass","def"),grass1:autoAtlas("grass-l1","def"),grass2:autoAtlas("grass-l2","def"),lava0:autoAtlas("lava","def"),lava1:autoAtlas("lava-l1","def"),lava2:autoAtlas("lava-l2","def"),ice0:autoAtlas("ice","def"),ice1:autoAtlas("ice-l1","def"),ice2:autoAtlas("ice-l2","def"),sand0:autoAtlas("sand","def"),sand1:autoAtlas("sand-l1","def"),sand2:autoAtlas("sand-l2","def"),treesmountains0:autoAtlas("trees-mountains","def"),treesmountains1:autoAtlas("trees-mountains-l1","def"),treesmountains2:autoAtlas("trees-mountains-l2","def"),ocean0:autoAtlas("ocean-animated","def"),ocean1:autoAtlas("ocean-animated-l1","def"),ocean2:autoAtlas("ocean-animated-l2","def")}
+var sprites={grass0:autoAtlas("grass","def"),grass1:autoAtlas("grass-l1","def"),grass2:autoAtlas("grass-l2","def"),lava0:autoAtlas("lava","def"),lava1:autoAtlas("lava-l1","def"),lava2:autoAtlas("lava-l2","def"),ice0:autoAtlas("ice","def"),ice1:autoAtlas("ice-l1","def"),ice2:autoAtlas("ice-l2","def"),sand0:autoAtlas("sand","def"),sand1:autoAtlas("sand-l1","def"),sand2:autoAtlas("sand-l2","def"),parched0:autoAtlas("parched","def"),parched1:autoAtlas("parched-l1","def"),parched2:autoAtlas("parched-l2","def"),treesmountains0:autoAtlas("trees-mountains","def"),treesmountains1:autoAtlas("trees-mountains-l1","def"),treesmountains2:autoAtlas("trees-mountains-l2","def"),mountains0:autoAtlas("mountains","def"),mountains1:autoAtlas("mountains-l1","def"),mountains2:autoAtlas("mountains-l2","def"),ocean0:autoAtlas("ocean-animated","def"),ocean1:autoAtlas("ocean-animated-l1","def"),ocean2:autoAtlas("ocean-animated-l2","def"),dirt0:autoAtlas("dirt","def"),dirt1:autoAtlas("dirt-l1","def"),dirt2:autoAtlas("dirt-l2","def")}
+for(var key in sprites)sprites[key].texs.push(tex_palette_planets)
 var MAX_ZOOM=16
 var MAX_SOLAR_VIEW=1
 var MAX_PLANET_VIEW=2
@@ -893,36 +895,44 @@ var MAP_SUB_SIZE=MAP_FULL_SIZE/pow(2,MAP_SUBDIVIDE)
 var EMPTY_RAW_DATA=new Uint8Array(MAP_SUB_SIZE*MAP_SUB_SIZE)
 var NULL_ROWPAIR=[EMPTY_RAW_DATA,EMPTY_RAW_DATA]
 function frameListToBitmask(list){var ret={}
-for(var key in list){var offs=list[key]
+for(var _key in list){var offs=list[_key]
 var qs=[]
 var v=0
-var len=key.length
+var len=_key.length
 for(var ii=0;ii<len;++ii){var bit=1<<len-1-ii
-if("?"===key[ii])qs.push(bit)
-else if("1"===key[ii])v|=bit}var maxval=1<<qs.length
+if("?"===_key[ii])qs.push(bit)
+else if("1"===_key[ii])v|=bit}var maxval=1<<qs.length
 for(var _ii=0;_ii<maxval;++_ii){for(var jj=0;jj<qs.length;++jj)if(_ii&1<<jj)v|=qs[jj]
 else v&=~qs[jj]
 var v0=ret[v]
 if(void 0===v0)v0=ret[v]=[]
 if(Array.isArray(offs))for(var kk=0;kk<offs.length;++kk)v0.push(offs[kk])
 else v0.push(offs)}}return ret}var frame_offs_regular=frameListToBitmask({"????00?01":2,"???000?1?":3,"???00?10?":4,"?1?100?0?":5,"?1?001?0?":7,"?0??01?0?":18,"?0?10??0?":20,"?01?00???":34,"?1?000???":35,"10?00????":36,"?0?100?1?":37,"?0?001?1?":39,"?1?101?0?":[5,18],"?1?10??1?":[37,35],"?1??01?1?":[7,3],"?0?101?1?":[39,20]})
+var frame_offs_cliffs=frameListToBitmask({"????00?01":2,"???000?1?":3,"???00?10?":4,"?1?100?0?":22,"?1?001?0?":23,"?0??01?0?":18,"?0?10??0?":20,"?01?00???":34,"?1?000???":35,"10?00????":36,"?0?100?1?":38,"?0?001?1?":39,"?1?101?0?":21,"?1?10??1?":6,"?1??01?1?":7,"?0?101?1?":37})
 var frame_offs_water=frameListToBitmask({"000000001":88,"000000?1?":40,"000000100":120,"?1?100?00":0,"?1?00100?":56,"001000100":80,100000001:48,"00?00100?":64,"?00100?00":8,"001000000":96,"?1?000000":24,1e8:128,"?00100?1?":16,"00?001?1?":72})
 var frame_offs_tree=frameListToBitmask({"0001":1,"0010":3,"0011":2,"0100":105,"0101":53,"0110":108,"0111":4,1e3:107,1001:109,1010:55,1011:5,1100:106,1101:56,1110:57,1111:54})
-var BASE={NULL:{sprite:"grass",frame:1},WATER_DEEP:{sprite:"ocean",frame:48,anim:true},WATER_SHALLOW:{sprite:"ocean",frame:8,anim:true,ovr_idx:16,frame_offs:frame_offs_water},SAND:{sprite:"sand",frame:1,ovr_idx:280,frame_offs:frame_offs_regular},SAND2:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular},GRASS:{sprite:"grass",frame:1,ovr_idx:272,frame_offs:frame_offs_regular},GRASS2:{sprite:"grass",frame:17,ovr_idx:232,frame_offs:frame_offs_regular},ICE:{sprite:"ice",frame:1,ovr_idx:280,frame_offs:frame_offs_regular},ICE2:{sprite:"ice",frame:17,ovr_idx:232,frame_offs:frame_offs_regular},DARK_DIRT:{sprite:"lava",frame:1,ovr_idx:280,frame_offs:frame_offs_regular},DETAIL_TREES1:{sprite:"treesmountains",frame:1,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS1:{sprite:"treesmountains",frame:1145,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS_SNOW:{sprite:"treesmountains",frame:1184,frame_offs:frame_offs_tree}}
+var frame_offs_mountain_tint=frameListToBitmask({"0001":1,"0010":3,"0011":2,"0100":53,"0101":27,"0110":56,"0111":4,1e3:55,1001:57,1010:29,1011:5,1100:54,1101:30,1110:31,1111:28})
+var BASE={NULL:{sprite:"grass",frame:1},WATER_DEEP:{sprite:"ocean",frame:48,anim:true,color_biome:BIOMES.WATER_DEEP},WATER_SHALLOW:{sprite:"ocean",frame:8,anim:true,ovr_idx:16,frame_offs:frame_offs_water,color_biome:BIOMES.WATER_SHALLOW},LAVAFLOW:{sprite:"ocean",frame:8,anim:true,color_biome:BIOMES.MOLTEN_LAVAFLOW},SANDa:{sprite:"sand",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DESERT},SANDb:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DESERT},GRASSa:{sprite:"grass",frame:1,ovr_idx:272,frame_offs:frame_offs_regular,color_biome:BIOMES.GREEN_PLAINS},GRASSb:{sprite:"grass",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.GREEN_PLAINS},MOONROCK1:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.MOONROCK1},MOONROCK2:{sprite:"dirt",frame:17,ovr_idx:103,frame_offs:frame_offs_cliffs,color_biome:BIOMES.MOONROCK2},MOONROCK3:{sprite:"dirt",frame:17,ovr_idx:103,frame_offs:frame_offs_cliffs,color_biome:BIOMES.MOONROCK3},DIRT_DARKa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_DARK},DIRT_DARKb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_DARK},DIRTa:{sprite:"sand",frame:1,ovr_idx:39,frame_offs:frame_offs_cliffs,color_biome:BIOMES.DIRT},DIRTb:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT},DIRT_REDa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_RED},DIRT_REDb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_RED},DIRT_REDc:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DEAD_FOREST},ICE_DARKa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_OCEAN},ICE_DARKb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_OCEAN},ICEa:{sprite:"ice",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_PLAINS},ICEb:{sprite:"ice",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_PLAINS},MOLTEN:{sprite:"lava",frame:17,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.MOLTEN_PLAINS},DETAIL_TREES1:{sprite:"treesmountains",frame:1,frame_offs:frame_offs_tree},DETAIL_TREES_DEAD:{sprite:"treesmountains",frame:950,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS1:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOUNTAINS},DETAIL_MOUNTAINS_MOONROCK4:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOONROCK4},DETAIL_MOUNTAINS_SNOW:{sprite:"mountains",frame:14,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOUNTAINS},DETAIL_MOLTEN_MOUNTAINS:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOLTEN_MOUNTAINS}}
 var ord=0
-for(var key in BASE)BASE[key].ord=ord++
-var BIOME_TO_BASE=((_BIOME_TO_BASE={})[BIOMES.WATER_DEEP]=[BASE.WATER_DEEP,BASE.WATER_DEEP],_BIOME_TO_BASE[BIOMES.WATER_SHALLOW]=[BASE.WATER_SHALLOW,BASE.WATER_SHALLOW],_BIOME_TO_BASE[BIOMES.GREEN_FOREST]=[BASE.GRASS,BASE.GRASS2,BASE.DETAIL_TREES1],_BIOME_TO_BASE[BIOMES.MOUNTAINS]=[BASE.GRASS,BASE.GRASS2,BASE.DETAIL_MOUNTAINS1],_BIOME_TO_BASE[BIOMES.GREEN_PLAINS]=[BASE.GRASS,BASE.GRASS2],_BIOME_TO_BASE[BIOMES.MOUNTAINS_SNOW]=[BASE.DARK_DIRT,BASE.DARK_DIRT,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.FROZEN_PLAINS]=[BASE.ICE,BASE.ICE2],_BIOME_TO_BASE[BIOMES.FROZEN_MOUNTAINS]=[BASE.ICE,BASE.ICE2,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.DESERT]=[BASE.SAND,BASE.SAND2],_BIOME_TO_BASE)
-function detailRarityToSubBiome(sprite,frames){var ret=[]
-for(var ii=0;ii<frames.length;++ii)ret.push({sprite:sprite,frame:frames[ii],ord:999})
-return ret}function detailFramesToSubBiome(sprite,frameset){return[detailRarityToSubBiome(sprite,frameset[0]),detailRarityToSubBiome(sprite,frameset[1]),detailRarityToSubBiome(sprite,frameset[2])]}var BIOME_DETAILS_STANDARD=[[4,5,6,7,20,21,22,23],[2,3,8,9,18,19,24,25,28],[10,11,12,13,26,27,29]]
-var BIOME_DETAILS=((_BIOME_DETAILS={})[BIOMES.GREEN_PLAINS]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD),_BIOME_DETAILS[BIOMES.GREEN_FOREST]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD),_BIOME_DETAILS[BIOMES.DESERT]=detailFramesToSubBiome("sand",BIOME_DETAILS_STANDARD),_BIOME_DETAILS[BIOMES.FROZEN_PLAINS]=detailFramesToSubBiome("ice",BIOME_DETAILS_STANDARD),_BIOME_DETAILS)
+function colorFromBiome(color_biome){return rovec4(color_biome/256+1/512,0,0,1)}for(var _key2 in BASE){var bb=BASE[_key2]
+bb.ord=ord++
+var color_biome=bb.color_biome||BIOMES.GREEN_PLAINS
+bb.shader_param=colorFromBiome(color_biome)}var BIOME_TO_BASE=((_BIOME_TO_BASE={})[BIOMES.WATER_DEEP]=[BASE.WATER_DEEP,BASE.WATER_DEEP],_BIOME_TO_BASE[BIOMES.WATER_SHALLOW]=[BASE.WATER_SHALLOW,BASE.WATER_SHALLOW],_BIOME_TO_BASE[BIOMES.MOLTEN_LAVAFLOW]=[BASE.LAVAFLOW,BASE.LAVAFLOW],_BIOME_TO_BASE[BIOMES.MOLTEN_PLAINS]=[BASE.MOLTEN,BASE.MOLTEN],_BIOME_TO_BASE[BIOMES.GREEN_FOREST]=[BASE.GRASSa,BASE.GRASSb,BASE.DETAIL_TREES1],_BIOME_TO_BASE[BIOMES.MOUNTAINS]=[BASE.GRASSa,BASE.GRASSb,BASE.DETAIL_MOUNTAINS1],_BIOME_TO_BASE[BIOMES.GREEN_PLAINS]=[BASE.GRASSa,BASE.GRASSb],_BIOME_TO_BASE[BIOMES.MOUNTAINS_SNOW]=[BASE.ICEb,BASE.ICEb,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.FROZEN_PLAINS]=[BASE.ICEa,BASE.ICEb],_BIOME_TO_BASE[BIOMES.FROZEN_OCEAN]=[BASE.ICE_DARKa,BASE.ICE_DARKb],_BIOME_TO_BASE[BIOMES.FROZEN_MOUNTAINS]=[BASE.ICEa,BASE.ICEa,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.MOLTEN_MOUNTAINS]=[BASE.MOLTEN,BASE.MOLTEN,BASE.DETAIL_MOLTEN_MOUNTAINS],_BIOME_TO_BASE[BIOMES.DESERT]=[BASE.SANDa,BASE.SANDb],_BIOME_TO_BASE[BIOMES.DIRT_DARK]=[BASE.DIRT_DARKa,BASE.DIRT_DARKb],_BIOME_TO_BASE[BIOMES.DIRT]=[BASE.DIRTa,BASE.DIRTb],_BIOME_TO_BASE[BIOMES.DIRT_RED]=[BASE.DIRT_REDa,BASE.DIRT_REDb],_BIOME_TO_BASE[BIOMES.DEAD_FOREST]=[BASE.DIRT_REDc,BASE.DIRT_REDc,BASE.DETAIL_TREES_DEAD],_BIOME_TO_BASE[BIOMES.MOONROCK1]=[BASE.MOONROCK1,BASE.MOONROCK1],_BIOME_TO_BASE[BIOMES.MOONROCK2]=[BASE.MOONROCK2,BASE.MOONROCK2],_BIOME_TO_BASE[BIOMES.MOONROCK3]=[BASE.MOONROCK3,BASE.MOONROCK3],_BIOME_TO_BASE[BIOMES.MOONROCK4]=[BASE.MOONROCK3,BASE.MOONROCK3,BASE.DETAIL_MOUNTAINS_MOONROCK4],_BIOME_TO_BASE)
+function detailRarityToSubBiome(sprite,frames,colorfrom){var ret=[]
+for(var ii=0;ii<frames.length;++ii)ret.push({sprite:sprite,frame:frames[ii],ord:999,shader_param:colorFromBiome(colorfrom)})
+return ret}function detailFramesToSubBiome(sprite,frameset,colorfrom){return[detailRarityToSubBiome(sprite,frameset[0],colorfrom),detailRarityToSubBiome(sprite,frameset[1],colorfrom),detailRarityToSubBiome(sprite,frameset[2],colorfrom)]}var BIOME_DETAILS_STANDARD=[[4,5,6,7,20,21,22,23],[2,3,8,9,18,19,24,25,28],[10,11,12,13,26,27,29]]
+var BIOME_DETAILS_NO_LIFE_SAND=[[4,5,6,7,20,21,22,23],[2,3,8,9,18,19,24,25,28],[12,13,29]]
+var BIOME_DETAILS_DEAD_DIRT=[[4,5,6,7,20,21,22,23],[6,7,8,9,24,25],[13,28,29]]
+var BIOME_DETAILS_NO_LIFE_DIRT=[[4,5,6,7,20,21,22,22,23],[6,7,22,23],[13,29]]
+var BIOME_DETAILS_MOLTEN=[[6,7,13,13,13,22,23],[4,5,10,11,20,21,26,27,28,29],[2,3,8,9,12,18,19,24,25]]
+var BIOME_DETAILS=((_BIOME_DETAILS={})[BIOMES.GREEN_PLAINS]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD,BIOMES.GREEN_PLAINS),_BIOME_DETAILS[BIOMES.GREEN_FOREST]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD,BIOMES.GREEN_PLAINS),_BIOME_DETAILS[BIOMES.DESERT]=detailFramesToSubBiome("sand",BIOME_DETAILS_STANDARD,BIOMES.DESERT),_BIOME_DETAILS[BIOMES.FROZEN_PLAINS]=detailFramesToSubBiome("ice",BIOME_DETAILS_STANDARD,BIOMES.FROZEN_PLAINS),_BIOME_DETAILS[BIOMES.FROZEN_OCEAN]=detailFramesToSubBiome("ice",BIOME_DETAILS_STANDARD,BIOMES.FROZEN_OCEAN),_BIOME_DETAILS[BIOMES.DIRT]=detailFramesToSubBiome("sand",BIOME_DETAILS_NO_LIFE_SAND,BIOMES.DIRT),_BIOME_DETAILS[BIOMES.DIRT_DARK]=detailFramesToSubBiome("dirt",BIOME_DETAILS_DEAD_DIRT,BIOMES.DIRT_DARK),_BIOME_DETAILS[BIOMES.MOLTEN_PLAINS]=detailFramesToSubBiome("lava",BIOME_DETAILS_MOLTEN,BIOMES.MOLTEN_PLAINS),_BIOME_DETAILS[BIOMES.DIRT_RED]=detailFramesToSubBiome("dirt",BIOME_DETAILS_STANDARD,BIOMES.DIRT_RED),_BIOME_DETAILS[BIOMES.DEAD_FOREST]=detailFramesToSubBiome("dirt",BIOME_DETAILS_STANDARD,BIOMES.DEAD_FOREST),_BIOME_DETAILS[BIOMES.MOONROCK1]=detailFramesToSubBiome("dirt",BIOME_DETAILS_NO_LIFE_DIRT,BIOMES.MOONROCK1),_BIOME_DETAILS[BIOMES.MOONROCK2]=detailFramesToSubBiome("dirt",BIOME_DETAILS_NO_LIFE_DIRT,BIOMES.MOONROCK2),_BIOME_DETAILS[BIOMES.MOONROCK3]=detailFramesToSubBiome("dirt",BIOME_DETAILS_NO_LIFE_DIRT,BIOMES.MOONROCK3),_BIOME_DETAILS)
 var anim_frame
 function overlayFor(base,mask){if(!base.frame_offs)return null
 var offs=base.frame_offs[mask]
 if(void 0===offs)return null
 var r=[]
 for(var ii=0;ii<offs.length;++ii)r.push(base.ovr_idx+offs[ii]+(base.anim?anim_frame:0))
-return[base.sprite,r]}function detailFor(detail,mask){var add=detail.anim?anim_frame:0
+return[base.sprite,r,base.shader_param]}function detailFor(detail,mask){var add=detail.anim?anim_frame:0
 if(!detail.frame_offs)return[detail.frame+add]
 var ul=432===(432&mask)?8:0
 var ur=216===(216&mask)?4:0
@@ -955,7 +965,7 @@ sub_y0=floor((camera2d.y0Real()-pad-y)/sub_dim)
 sub_y1=floor((camera2d.y1Real()+pad-y)/sub_dim)
 for(var _yy=sub_y0;_yy<=sub_y1;++_yy)for(var _xx=sub_x0;_xx<=sub_x1;++_xx)planet.getTexture(2,MAP_SUB_SIZE,sublayer+MAP_SUBDIVIDE,mod(_xx,sub_num_horiz),mod(_yy,sub_num_vert),false)}return all_good}var sublayer=round(zoom_level)
 var filled=false
-for(var ii=min(PLANET_PIXELART_LEVEL,sublayer);ii>=0;--ii){if(drawSubLayer(ii,z_base,filled))filled=true;--z_base}if(sublayer>=PLANET_PIXELART_LEVEL+2){var bget=function bget(out,xx,yy){var eff_yy=mod(yy,map_num_vert)
+for(var ii=min(PLANET_PIXELART_LEVEL,sublayer);ii>=0;--ii){if(drawSubLayer(ii,z_base,filled))filled=true;--z_base}if(sublayer>=PLANET_PIXELART_LEVEL+2&&view){var bget=function bget(out,xx,yy){var eff_yy=mod(yy,map_num_vert)
 var sub_y=floor(eff_yy/MAP_SUB_SIZE)
 var row=raw_datas[sub_y]
 var tile_y_offs=eff_yy%MAP_SUB_SIZE*MAP_SUB_SIZE
@@ -990,14 +1000,14 @@ var raw_datas={}
 for(var yy=sub_y0;yy<=sub_y1;++yy){var row=raw_datas[yy]={}
 for(var xx=sub_x0;xx<=sub_x1;++xx){var eff_xx=mod(xx,sub_num_horiz)
 var layer=planet.getTexture(2,MAP_SUB_SIZE,sublayer+MAP_SUBDIVIDE,eff_xx,mod(yy,sub_num_vert),true)
-if(layer)row[eff_xx]=[layer.raw_data,layer.details]}}anim_frame=floor(.0086*getFrameTimestamp())%8
+if(layer)row[eff_xx]=[layer.raw_data,layer.details&&layer.details.valid?layer.details:void 0]}}anim_frame=floor(.0086*getFrameTimestamp())%8
 var map_num_vert=MAP_SUB_SIZE*zoom
 var map_num_horiz=2*map_num_vert
 var tile_x0=floor((camera2d.x0Real()-x)/tile_h)
 var tile_x1=floor((camera2d.x1Real()-x)/tile_h)
 var tile_y0=floor((camera2d.y0Real()-y)/tile_h)
 var tile_y1=floor((camera2d.y1Real()-y)/tile_h)
-var draw_param={x:0,y:0,w:0,h:0,z:0,frame:0,shader:shader_pixelart,nozoom:true}
+var draw_param={x:0,y:0,w:0,h:0,z:0,frame:0,shader:shader_pixelart,nozoom:true,color:unit_vec}
 var ndata=[]
 for(var _ii2=0;_ii2<9;++_ii2)ndata.push({base:BASE.NULL,detail:void 0})
 for(var _yy2=tile_y0;_yy2<=tile_y1;++_yy2){for(var jj=0;jj<3;++jj)for(var _ii3=0;_ii3<2;++_ii3)bget(ndata[3*jj+_ii3+1],tile_x0-1+_ii3,_yy2-1+jj)
@@ -1019,6 +1029,7 @@ draw_param.w=next_pixx-pixx
 var base=my_info.base
 draw_param.z=z0+1
 draw_param.frame=base.frame+(base.anim?anim_frame:0)
+draw_param.color=base.shader_param
 sprites[""+base.sprite+lod].draw(draw_param)
 var masks={}
 var dmask=0
@@ -1030,10 +1041,12 @@ masks[nb.ord]=1<<idx}else masks[nb.ord]|=1<<idx
 if(n.detail===my_info.detail)dmask|=1<<idx}overlays.sort(function(a,b){return a.ord-b.ord})
 for(var _ii5=0;_ii5<overlays.length;++_ii5){var _n=overlays[_ii5]
 var ovr=overlayFor(_n,masks[_n.ord])
-if(ovr)for(var _jj3=0;_jj3<ovr[1].length;++_jj3){draw_param.z++
+if(ovr){draw_param.color=ovr[2]
+for(var _jj3=0;_jj3<ovr[1].length;++_jj3){draw_param.z++
 draw_param.frame=ovr[1][_jj3]
-sprites[""+ovr[0]+lod].draw(draw_param)}}if(extra){draw_param.z++
+sprites[""+ovr[0]+lod].draw(draw_param)}}}if(extra){draw_param.z++
 var _ovr=detailFor(extra,dmask)
+draw_param.color=extra.shader_param
 for(var _jj4=0;_jj4<_ovr.length;++_jj4){draw_param.frame=_ovr[_jj4]
 sprites[""+extra.sprite+lod].draw(draw_param)}}}}}}var solar_mouse_pos=vec2()
 function drawSolarSystem(solar_system,x0,y0,z,w,h,star_xp,star_yp,fade){mousePos(solar_mouse_pos)
@@ -1106,7 +1119,7 @@ if(!deepEqual(params,gen_params)){gen_params=clone(params)
 var first=true
 if(galaxy){first=false
 galaxy.dispose()}(galaxy=createGalaxy(params)).loading=first||debugDefineIsSet("ATTRACT")
-allocSprite()}if(keyDown(KEYS.CTRL)&&keyDownEdge(KEYS.C))copyCanvasToClipboard()
+allocSprite()}if(keyDownEdge(KEYS.C)&&keyDown(KEYS.CTRL))copyCanvasToClipboard()
 var hide_solar=eff_planet_view>=2
 if(eff_planet_view<1&&planet_zoomer.target_zoom_level)planet_zoomer.resetZoom(0,0,0)
 if(show_panel){if(buttonText({x:x,y:y,text:"View: "+(view?"Pixely":"Raw"),w:.75*button_width})||keyDownEdge(KEYS.V)){localStorageSetJSON("view",view=(view+1)%2)
@@ -1392,7 +1405,7 @@ var planet_gen_layer
 var sampleBiomeMap
 function weightDefault(){return.5}function weightBiomeRange(mn,mx,weight){return function(x,y,h){var v=sampleBiomeMap()
 return v>mn&&v<mx?weight:0}}var BOTTOM_LAYER=5
-var BIOME_VARIATION=((_BIOME_VARIATION={})[BIOMES.GREEN_PLAINS]=[{weight:.01,biome:BIOMES.GREEN_FOREST},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.DESERT]=[{weight:18e-5,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.GREEN_FOREST]=[{weight:18e-5,biome:BIOMES.WATER_SHALLOW},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.GREEN_PLAINS}],_BIOME_VARIATION)
+var BIOME_VARIATION=((_BIOME_VARIATION={})[BIOMES.GREEN_PLAINS]=[{weight:.01,biome:BIOMES.GREEN_FOREST},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.DESERT]=[{weight:18e-5,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.GREEN_FOREST]=[{weight:18e-5,biome:BIOMES.WATER_SHALLOW},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.GREEN_PLAINS}],_BIOME_VARIATION[BIOMES.DIRT_RED]=[{weight:.002,biome:BIOMES.DEAD_FOREST}],_BIOME_VARIATION[BIOMES.FROZEN_PLAINS]=[{min_layer:BOTTOM_LAYER-1,offs:1,weight:.08,freqx:111,freqy:111,biome:BIOMES.FROZEN_OCEAN}],_BIOME_VARIATION[BIOMES.MOLTEN_PLAINS]=[{min_layer:BOTTOM_LAYER-1,offs:1,weight:.06,freqx:133,freqy:171,biome:BIOMES.MOLTEN_LAVAFLOW}],_BIOME_VARIATION[BIOMES.MOLTEN_MOUNTAINS]=[{weight:18e-5,biome:BIOMES.MOLTEN_LAVAFLOW}],_BIOME_VARIATION[BIOMES.DIRT_DARK]=[{weight:18e-5,biome:BIOMES.DIRT}],_BIOME_VARIATION[BIOMES.DIRT]=[{min_layer:BOTTOM_LAYER-1,offs:1,weight:.06,freqx:133,freqy:171,biome:BIOMES.DIRT_DARK}],_BIOME_VARIATION)
 function procBiomeDetails(details){var ret={}
 var def
 for(var key in details){var entry=details[key]
@@ -1417,7 +1430,7 @@ var biome_entry_earthlike_pangea={weight_func:weightDefault,color_table:[.25,BIO
 var biome_table_earthlike_pangea=[biome_entry_earthlike_pangea,biome_entry_icecaps]
 var biome_entry_water_world={weight_func:weightDefault,color_table:[.5,BIOMES.WATER_DEEP,.8,BIOMES.WATER_SHALLOW,1,BIOMES.WATER_DEEP]}
 var biome_table_water_world=[biome_entry_water_world]
-var biome_entry_low_life={weight_func:weightDefault,color_table:[.3,BIOMES.WATER_SHALLOW,.7,BIOMES.DIRT,1,BIOMES.DEAD_FOREST]}
+var biome_entry_low_life={weight_func:weightDefault,color_table:[.3,BIOMES.WATER_SHALLOW,.7,BIOMES.DIRT_RED,1,BIOMES.DEAD_FOREST]}
 var biome_table_low_life=[biome_entry_low_life]
 var biome_entry_molten={weight_func:weightDefault,color_table:[.25,BIOMES.MOLTEN_MOUNTAINS,.46,BIOMES.MOLTEN_PLAINS,.54,BIOMES.MOLTEN_LAVAFLOW,.75,BIOMES.MOLTEN_PLAINS,1,BIOMES.MOLTEN_MOUNTAINS]}
 var biome_table_molten=[biome_entry_molten]
@@ -1537,8 +1550,8 @@ var planet_tex_id=0
 var PLANET_MIN_RES=8
 var PLANET_MAX_RES=256
 var tex_data_temp=new Uint8Array(PLANET_MAX_RES*PLANET_MAX_RES*2)
-Planet.prototype.getDetails=function(tex,nmap,texture_size,sub_x,sub_y){assert(!tex.details)
-var ret=new Uint8Array(texture_size*texture_size)
+Planet.prototype.getDetails=function(tex,nmap,texture_size,sub_x,sub_y){var ret=tex.details
+if(!ret)ret=tex.details=new Uint8Array(texture_size*texture_size)
 var ndata=[0,0,0,0,0,0,0,0,0]
 function nget(xx,yy){var nidx=4
 if(yy<0){nidx-=3
@@ -1562,13 +1575,16 @@ ret_bits|=(r<bd.odds_common?1:r<bd.odds_uncommon?2:3)|v<<BIT_DETAIL_IDX_SHIFT}re
 Planet.prototype.getTexture=function(layer,texture_size,sublayer,sub_x,sub_y,want_details){if(2!==layer)assert(!sublayer&&!sub_x&&!sub_y)
 var tp_idx=layer+65536*(65536*sublayer+sub_y)+sub_x
 var tp=this.texpairs[tp_idx]
-if(tp&&tp.tex.planet_tex_id===tp.tex_id){if(want_details&&!tp.tex.details&&getFrameIndex()!==this.work_frame){var _nmap=[]
+if(tp&&tp.tex.planet_tex_id===tp.tex_id){if(want_details)if((!tp.tex.details||tp.tex.details.planet_tex_id!==tp.tex_id)&&getFrameIndex()!==this.work_frame){if(tp.tex.details)tp.tex.details.valid=false
+var _nmap=[]
 var nready=true
 var hhh=pow(2,sublayer)
 var www=2*hhh
 outer:for(var dy=-1;dy<=1;++dy)for(var dx=-1;dx<=1;++dx){var elem=this.getTexture(layer,texture_size,sublayer,(sub_x+dx+www)%www,(sub_y+dy+hhh)%hhh,false)
 if(!elem){nready=false
 break outer}_nmap[3*(dy+1)+dx+1]=elem.raw_data}if(nready&&getFrameIndex()!==this.work_frame){this.getDetails(tp.tex,_nmap,texture_size,sub_x,sub_y)
+tp.tex.details.planet_tex_id=tp.tex_id
+tp.tex.details.valid=true
 this.work_frame=getFrameIndex()}}return tp.tex}if(getFrameIndex()===this.work_frame)return null
 this.work_frame=getFrameIndex()
 var tex_data=tp?tp.tex.raw_data:tex_data_temp
@@ -1617,6 +1633,7 @@ else tex=tex_pool.texs[tex_idx]=textureLoad({name:"planet_"+planet_tex_id,format
 var raw_data=tex_data===tex_data_temp?tex_data.slice(0,tex_w*tex_h):tex_data
 var ret=tex
 ret.raw_data=raw_data;(tp={tex:ret,tex_id:++planet_tex_id,tex_idx:tex_idx}).tex.planet_tex_id=tp.tex_id
+if(tp.tex.details)tp.tex.details.valid=false
 this.texpairs[tp_idx]=tp
 return ret}
 var PMRES_LOW=128
@@ -3943,7 +3960,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730552974427")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730585568402")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6487,7 +6504,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730552974427")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730585568402")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12195,7 +12212,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730552974427"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730585568402"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12203,10 +12220,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730552974427")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730552974427"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730585568402")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730585568402"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730552974427"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730585568402"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14288,4 +14305,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":79,"./packet":90,"./perfcounters":91,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730552974427
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730585568402
