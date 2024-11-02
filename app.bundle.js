@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730509975354"
+window.glov_build_version="1730552974427"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -663,6 +663,8 @@ var LAYER_STEP=_galaxy.LAYER_STEP
 var createGalaxy=_galaxy.createGalaxy
 var distSq=_galaxy.distSq
 var _solar_system2=require("./solar_system")
+var BIT_DETAIL_IDX_SHIFT=_solar_system2.BIT_DETAIL_IDX_SHIFT
+var BIT_RARITY_MASK=_solar_system2.BIT_RARITY_MASK
 var BIT_SAME_LOOSE=_solar_system2.BIT_SAME_LOOSE
 var PLANET_TYPE_NAMES=_solar_system2.PLANET_TYPE_NAMES
 var planetCreate=_solar_system2.planetCreate
@@ -728,7 +730,7 @@ this.zoom_offs[1]-=delta[1]/w/zoom
 localStorageSetJSON(this.zoom_offs_key+"x",this.zoom_offs[0])
 localStorageSetJSON(this.zoom_offs_key+"y",this.zoom_offs[1])}
 return Zoomer}()
-function main(){var _BIOME_TO_BASE
+function main(){var _BIOME_TO_BASE,_BIOME_DETAILS
 if(engine.DEBUG)netInit({engine:engine})
 var view=localStorageGetJSON("view",1)
 var show_panel=Boolean(localStorageGetJSON("panel",false))
@@ -910,6 +912,10 @@ var BASE={NULL:{sprite:"grass",frame:1},WATER_DEEP:{sprite:"ocean",frame:48,anim
 var ord=0
 for(var key in BASE)BASE[key].ord=ord++
 var BIOME_TO_BASE=((_BIOME_TO_BASE={})[BIOMES.WATER_DEEP]=[BASE.WATER_DEEP,BASE.WATER_DEEP],_BIOME_TO_BASE[BIOMES.WATER_SHALLOW]=[BASE.WATER_SHALLOW,BASE.WATER_SHALLOW],_BIOME_TO_BASE[BIOMES.GREEN_FOREST]=[BASE.GRASS,BASE.GRASS2,BASE.DETAIL_TREES1],_BIOME_TO_BASE[BIOMES.MOUNTAINS]=[BASE.GRASS,BASE.GRASS2,BASE.DETAIL_MOUNTAINS1],_BIOME_TO_BASE[BIOMES.GREEN_PLAINS]=[BASE.GRASS,BASE.GRASS2],_BIOME_TO_BASE[BIOMES.MOUNTAINS_SNOW]=[BASE.DARK_DIRT,BASE.DARK_DIRT,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.FROZEN_PLAINS]=[BASE.ICE,BASE.ICE2],_BIOME_TO_BASE[BIOMES.FROZEN_MOUNTAINS]=[BASE.ICE,BASE.ICE2,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.DESERT]=[BASE.SAND,BASE.SAND2],_BIOME_TO_BASE)
+function detailRarityToSubBiome(sprite,frames){var ret=[]
+for(var ii=0;ii<frames.length;++ii)ret.push({sprite:sprite,frame:frames[ii],ord:999})
+return ret}function detailFramesToSubBiome(sprite,frameset){return[detailRarityToSubBiome(sprite,frameset[0]),detailRarityToSubBiome(sprite,frameset[1]),detailRarityToSubBiome(sprite,frameset[2])]}var BIOME_DETAILS_STANDARD=[[4,5,6,7,20,21,22,23],[2,3,8,9,18,19,24,25,28],[10,11,12,13,26,27,29]]
+var BIOME_DETAILS=((_BIOME_DETAILS={})[BIOMES.GREEN_PLAINS]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD),_BIOME_DETAILS[BIOMES.GREEN_FOREST]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD),_BIOME_DETAILS[BIOMES.DESERT]=detailFramesToSubBiome("sand",BIOME_DETAILS_STANDARD),_BIOME_DETAILS[BIOMES.FROZEN_PLAINS]=detailFramesToSubBiome("ice",BIOME_DETAILS_STANDARD),_BIOME_DETAILS)
 var anim_frame
 function overlayFor(base,mask){if(!base.frame_offs)return null
 var offs=base.frame_offs[mask]
@@ -961,8 +967,14 @@ var v=rowpair[0][tile_y_offs+tile_x_offs]||0
 var details=rowpair[1]
 var detailv=details&&details[tile_y_offs+tile_x_offs]||0
 var pair=BIOME_TO_BASE[v]
-if(pair){out.base=pair[detailv&BIT_SAME_LOOSE?1:0]
-out.detail=pair[2]}else{out.base=BASE.NULL
+if(pair){var same=detailv&BIT_SAME_LOOSE
+out.base=pair[same?1:0]
+out.detail=pair[2]
+var detail_rarity=detailv&BIT_RARITY_MASK
+if(detail_rarity&&same){var detailrarityset=BIOME_DETAILS[v]
+if(detailrarityset){var detailset=detailrarityset[detail_rarity-1]
+var detail_idx=detailv>>BIT_DETAIL_IDX_SHIFT
+out.detail=detailset[detail_idx%detailset.length]}}}else{out.base=BASE.NULL
 out.detail=void 0}}
 var lod=clamp(MAX_PLANET_ZOOM-sublayer,0,2)
 var zoom=pow(2,(sublayer=PLANET_PIXELART_LEVEL)+MAP_SUBDIVIDE)
@@ -1335,19 +1347,23 @@ test(dt)}engine.setState(testInit)}
 
 },{"../glov/client/autoatlas":11,"../glov/client/camera2d":15,"../glov/client/engine":21,"../glov/client/framebuffer":29,"../glov/client/input":37,"../glov/client/local_storage":40,"../glov/client/local_storage.js":40,"../glov/client/net":48,"../glov/client/perf":51,"../glov/client/shaders":61,"../glov/client/slider":63,"../glov/client/spot":66,"../glov/client/sprite_sets.js":67,"../glov/client/sprites":68,"../glov/client/textures":70,"../glov/client/ui":72,"../glov/client/walltime":75,"../glov/common/util":96,"../glov/common/vmath":98,"./biomes":2,"./galaxy":3,"./img/font/04b03_8x1.json":4,"./img/font/04b03_8x2.json":5,"./img/font/palanquin32.json":6,"./solar_system":8,"assert":undefined}],8:[function(require,module,exports){
 "use strict"
-exports.SolarSystem=exports.Planet=exports.PLANET_TYPE_NAMES=exports.BIT_SAME_LOOSE=exports.BIT_SAME9=void 0
+exports.SolarSystem=exports.Planet=exports.PLANET_TYPE_NAMES=exports.BIT_SAME_LOOSE=exports.BIT_RARITY_MASK=exports.BIT_DETAIL_IDX_SHIFT=void 0
 exports.planetCreate=planetCreate
 exports.planetMapFlatTexture=planetMapFlatTexture
 exports.planetMapTexture=planetMapTexture
 exports.solarSystemCreate=solarSystemCreate
-var _BIOME_VARIATION
-var BIT_SAME9=1
-exports.BIT_SAME9=BIT_SAME9
-var BIT_SAME_LOOSE=2
+var _BIOME_VARIATION,_procBiomeDetails
+var BIT_RARITY_MASK=3
+exports.BIT_RARITY_MASK=BIT_RARITY_MASK
+var BIT_SAME_LOOSE=4
 exports.BIT_SAME_LOOSE=BIT_SAME_LOOSE
+var BIT_DETAIL_IDX_SHIFT=3
+exports.BIT_DETAIL_IDX_SHIFT=BIT_DETAIL_IDX_SHIFT
 var assert=require("assert")
 var _glovClientEngine=require("../glov/client/engine")
 var getFrameIndex=_glovClientEngine.getFrameIndex
+var _glovClientRand_fast=require("../glov/client/rand_fast")
+var randSimpleSpatial=_glovClientRand_fast.randSimpleSpatial
 var _glovClientTextures=require("../glov/client/textures")
 var TEXTURE_FORMAT=_glovClientTextures.TEXTURE_FORMAT
 var textureLoad=_glovClientTextures.textureLoad
@@ -1370,13 +1386,22 @@ var BIOMES_SAME_LOOSE=_biomes.BIOMES_SAME_LOOSE
 var _star_types=require("./star_types")
 var starTypeData=_star_types.starTypeData
 var starTypeFromID=_star_types.starTypeFromID
-var abs=Math.abs,atan2=Math.atan2,max=Math.max,min=Math.min,round=Math.round,sqrt=Math.sqrt,PI=Math.PI,pow=Math.pow
+var abs=Math.abs,atan2=Math.atan2,floor=Math.floor,max=Math.max,min=Math.min,round=Math.round,sqrt=Math.sqrt,PI=Math.PI,pow=Math.pow
 var rand=[randCreate(0),randCreate(0),randCreate(0),randCreate(0)]
 var planet_gen_layer
 var sampleBiomeMap
 function weightDefault(){return.5}function weightBiomeRange(mn,mx,weight){return function(x,y,h){var v=sampleBiomeMap()
 return v>mn&&v<mx?weight:0}}var BOTTOM_LAYER=5
-var BIOME_VARIATION=((_BIOME_VARIATION={})[BIOMES.GREEN_PLAINS]=[{weight:.1,biome:BIOMES.GREEN_FOREST},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.DESERT]=[{weight:.01,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.GREEN_FOREST]=[{weight:.01,biome:BIOMES.WATER_SHALLOW},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.GREEN_PLAINS}],_BIOME_VARIATION)
+var BIOME_VARIATION=((_BIOME_VARIATION={})[BIOMES.GREEN_PLAINS]=[{weight:.01,biome:BIOMES.GREEN_FOREST},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.DESERT]=[{weight:18e-5,biome:BIOMES.WATER_SHALLOW}],_BIOME_VARIATION[BIOMES.GREEN_FOREST]=[{weight:18e-5,biome:BIOMES.WATER_SHALLOW},{min_layer:BOTTOM_LAYER-1,offs:1,weight:.05,freqx:111,freqy:111,biome:BIOMES.GREEN_PLAINS}],_BIOME_VARIATION)
+function procBiomeDetails(details){var ret={}
+var def
+for(var key in details){var entry=details[key]
+var odds_total=entry.odds_none+entry.odds_common+entry.odds_uncommon+entry.odds_rare
+var newentry={odds_none:entry.odds_none/odds_total,odds_common:(entry.odds_none+entry.odds_common)/odds_total,odds_uncommon:(entry.odds_none+entry.odds_common+entry.odds_uncommon)/odds_total}
+if("default"===key)def=newentry
+else ret[key]=newentry}assert(def)
+for(var _key in BIOMES){var b=BIOMES[_key]
+if(!ret[b])ret[b]=def}return ret}var BIOME_DETAILS=procBiomeDetails(((_procBiomeDetails={default:{odds_none:2e3,odds_common:27,odds_uncommon:9,odds_rare:1}})[BIOMES.GREEN_FOREST]={odds_none:4e3,odds_common:8,odds_uncommon:4,odds_rare:2},_procBiomeDetails))
 var color_table_frozen=[.23,BIOMES.FROZEN_OCEAN,.77,BIOMES.FROZEN_PLAINS,1,BIOMES.FROZEN_MOUNTAINS]
 var color_table_earthlike=[.4,BIOMES.WATER_DEEP,.5,BIOMES.WATER_SHALLOW,.65,BIOMES.GREEN_PLAINS,.75,BIOMES.MOUNTAINS,1,BIOMES.MOUNTAINS_SNOW]
 var color_table_earthlike_forest=[.4,BIOMES.WATER_DEEP,.5,BIOMES.WATER_SHALLOW,.52,BIOMES.GREEN_PLAINS,.64,BIOMES.GREEN_FOREST,.65,BIOMES.GREEN_PLAINS,.75,BIOMES.MOUNTAINS,1,BIOMES.MOUNTAINS_SNOW]
@@ -1520,18 +1545,20 @@ if(yy<0){nidx-=3
 yy+=texture_size}else if(yy>=texture_size){nidx+=3
 yy-=texture_size}if(xx<0){nidx--
 xx+=texture_size}else if(xx>=texture_size){nidx++
-xx-=texture_size}return nmap[nidx][yy*texture_size+xx]}for(var yy=0,idx=0;yy<texture_size;++yy){for(var jj=0;jj<3;++jj)for(var ii=0;ii<2;++ii)ndata[3*jj+ii+1]=nget(ii-1,yy-1+jj)
+xx-=texture_size}return nmap[nidx][yy*texture_size+xx]}var x0=sub_x*texture_size
+var y0=sub_y*texture_size
+for(var yy=0,idx=0;yy<texture_size;++yy){for(var jj=0;jj<3;++jj)for(var ii=0;ii<2;++ii)ndata[3*jj+ii+1]=nget(ii-1,yy-1+jj)
 for(var xx=0;xx<texture_size;++xx,++idx){for(var _jj=0;_jj<3;++_jj){ndata[3*_jj]=ndata[3*_jj+1]
 ndata[3*_jj+1]=ndata[3*_jj+2]
 ndata[3*_jj+2]=nget(xx+1,yy-1+_jj)}var my_v=ndata[4]
-var all_same=true
 var all_same_loose=true
-for(var _ii3=0;_ii3<9;++_ii3)if(ndata[_ii3]!==my_v){all_same=false
-if(!BIOMES_SAME_LOOSE[my_v][ndata[_ii3]]){all_same_loose=false
-break}}var ret_bits=0
-if(all_same)ret_bits|=BIT_SAME9
+for(var _ii3=0;_ii3<9;++_ii3)if(ndata[_ii3]!==my_v)if(!BIOMES_SAME_LOOSE[my_v][ndata[_ii3]]){all_same_loose=false
+break}var ret_bits=0
 if(all_same_loose)ret_bits|=BIT_SAME_LOOSE
-ret[idx]=ret_bits}}tex.details=ret}
+var bd=BIOME_DETAILS[my_v]
+var r=randSimpleSpatial(this.seed,x0+xx,y0+yy,0)
+if(r<bd.odds_none);else{var v=floor(32*randSimpleSpatial(this.seed,x0+xx,y0+yy,1))
+ret_bits|=(r<bd.odds_common?1:r<bd.odds_uncommon?2:3)|v<<BIT_DETAIL_IDX_SHIFT}ret[idx]=ret_bits}}tex.details=ret}
 Planet.prototype.getTexture=function(layer,texture_size,sublayer,sub_x,sub_y,want_details){if(2!==layer)assert(!sublayer&&!sub_x&&!sub_y)
 var tp_idx=layer+65536*(65536*sublayer+sub_y)+sub_x
 var tp=this.texpairs[tp_idx]
@@ -1576,7 +1603,7 @@ if(_w>winner_weight){winner_weight=_w
 winner=kk}}var b=colorIndex(biome_table[winner].color_table,v)
 var varilist=BIOME_VARIATION[b]
 if(varilist)for(var _kk=0;_kk<varilist.length;++_kk){var vari=varilist[_kk]
-if(sublayer>=(vari.min_layer||BOTTOM_LAYER))if(.5*noise[noise.length-2].noise2D(2*(unif_x+(vari.offs||0))*(vari.freqx||7777),unif_y*(vari.freqy||7777))+.5<vari.weight)b=vari.biome}tex_data[idx]=b}}var tex_key=0===sublayer?tex_w+"x"+tex_h:"planet"
+if(sublayer>=(vari.min_layer||BOTTOM_LAYER))if(!vari.freqx){if(randSimpleSpatial(this.seed,sub_x*tex_w+ii,sub_y*tex_h+jj,2)<vari.weight)b=vari.biome}else if(.5*noise[noise.length-2].noise2D(2*(unif_x+(vari.offs||0))*(vari.freqx||7777),unif_y*(vari.freqy||7777))+.5<vari.weight)b=vari.biome}tex_data[idx]=b}}var tex_key=0===sublayer?tex_w+"x"+tex_h:"planet"
 var tex_pool=tex_pools[tex_key]
 if(!tex_pool)tex_pool=tex_pools[tex_key]={texs:[],tex_idx:0}
 var tex
@@ -1664,7 +1691,7 @@ exports.SolarSystem=SolarSystem
 function solarSystemCreate(global_seed,star){return new SolarSystem(global_seed,star)}function planetCreate(global_seed,star_id,params){for(var ii=0;ii<rand.length;++ii)rand[ii].reseed(mashString(star_id+"_"+global_seed+"_"+ii))
 return new Planet(params)}
 
-},{"../glov/client/engine":21,"../glov/client/textures":70,"../glov/common/rand_alea":93,"../glov/common/util":96,"../glov/common/vmath":98,"./biomes":2,"./star_types":9,"assert":undefined,"simplex-noise":undefined}],9:[function(require,module,exports){
+},{"../glov/client/engine":21,"../glov/client/rand_fast":57,"../glov/client/textures":70,"../glov/common/rand_alea":93,"../glov/common/util":96,"../glov/common/vmath":98,"./biomes":2,"./star_types":9,"assert":undefined,"simplex-noise":undefined}],9:[function(require,module,exports){
 "use strict"
 exports.hueFromID=hueFromID
 exports.hueFromType=hueFromType
@@ -3916,7 +3943,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730509975354")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730552974427")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6460,7 +6487,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730509975354")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730552974427")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12168,7 +12195,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730509975354"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730552974427"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12176,10 +12203,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730509975354")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730509975354"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730552974427")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730552974427"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730509975354"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730552974427"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14261,4 +14288,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":79,"./packet":90,"./perfcounters":91,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730509975354
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730552974427
