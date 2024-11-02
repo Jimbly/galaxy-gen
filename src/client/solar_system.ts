@@ -109,6 +109,10 @@ const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
     freqy: 111,
     biome: BIOMES.GREEN_PLAINS,
   }],
+  [BIOMES.DIRT_RED]: [{
+    weight: 0.002,
+    biome: BIOMES.DEAD_FOREST,
+  }],
 };
 
 type BiomeDetails = {
@@ -263,7 +267,7 @@ const biome_entry_low_life: BiomeTableEntry = {
   weight_func: weightDefault,
   color_table: [
     0.3, BIOMES.WATER_SHALLOW,
-    0.7, BIOMES.DIRT,
+    0.7, BIOMES.DIRT_RED,
     1, BIOMES.DEAD_FOREST,
   ]
 };
@@ -531,7 +535,7 @@ export type PlanetOverrideParams = {
 
 type RawData = {
   raw_data: Uint8Array;
-  details?: Uint8Array;
+  details?: Uint8Array & { planet_tex_id?: number; valid?: boolean };
 };
 
 type TexPair = {
@@ -723,8 +727,10 @@ sampleBiomeMap = function sampleBiomeMap(): number {
     sub_x: number,
     sub_y: number,
   ): void {
-    assert(!tex.details);
-    let ret = new Uint8Array(texture_size * texture_size);
+    let ret = tex.details;
+    if (!ret) {
+      ret = tex.details = new Uint8Array(texture_size * texture_size);
+    }
     let ndata = [
       0,0,0,
       0,0,0,
@@ -809,27 +815,34 @@ sampleBiomeMap = function sampleBiomeMap(): number {
     let tp = this.texpairs[tp_idx];
     if (tp && tp.tex.planet_tex_id === tp.tex_id) {
       // tex is valid, what about details?
-      if (want_details && !tp.tex.details && getFrameIndex() !== this.work_frame) {
-        let nmap = [];
-        let nready = true;
-        let hhh = pow(2, sublayer);
-        let www = hhh * 2;
-        outer: // eslint-disable-line no-labels
-        for (let dy = -1; dy <= 1; ++dy) {
-          for (let dx = -1; dx <= 1; ++dx) {
-            let elem = this.getTexture(layer, texture_size, sublayer,
-              (sub_x + dx + www) % www,
-              (sub_y + dy + hhh) % hhh, false);
-            if (!elem) {
-              nready = false;
-              break outer; // eslint-disable-line no-labels
-            }
-            nmap[(dy+1)*3+dx+1] = elem.raw_data;
+      if (want_details) {
+        if ((!tp.tex.details || tp.tex.details.planet_tex_id !== tp.tex_id) && getFrameIndex() !== this.work_frame) {
+          if (tp.tex.details) {
+            tp.tex.details.valid = false;
           }
-        }
-        if (nready && getFrameIndex() !== this.work_frame) {
-          this.getDetails(tp.tex, nmap, texture_size, sub_x, sub_y);
-          this.work_frame = getFrameIndex();
+          let nmap = [];
+          let nready = true;
+          let hhh = pow(2, sublayer);
+          let www = hhh * 2;
+          outer: // eslint-disable-line no-labels
+          for (let dy = -1; dy <= 1; ++dy) {
+            for (let dx = -1; dx <= 1; ++dx) {
+              let elem = this.getTexture(layer, texture_size, sublayer,
+                (sub_x + dx + www) % www,
+                (sub_y + dy + hhh) % hhh, false);
+              if (!elem) {
+                nready = false;
+                break outer; // eslint-disable-line no-labels
+              }
+              nmap[(dy+1)*3+dx+1] = elem.raw_data;
+            }
+          }
+          if (nready && getFrameIndex() !== this.work_frame) {
+            this.getDetails(tp.tex, nmap, texture_size, sub_x, sub_y);
+            tp.tex.details!.planet_tex_id = tp.tex_id;
+            tp.tex.details!.valid = true;
+            this.work_frame = getFrameIndex();
+          }
         }
       }
       return tp.tex;
@@ -966,6 +979,9 @@ sampleBiomeMap = function sampleBiomeMap(): number {
       tex_idx,
     };
     tp.tex.planet_tex_id = tp.tex_id;
+    if (tp.tex.details) {
+      tp.tex.details.valid = false;
+    }
     this.texpairs[tp_idx] = tp;
     return ret;
   };

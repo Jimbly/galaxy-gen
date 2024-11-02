@@ -9,7 +9,11 @@ Next:
     max = pixel art
 
     spritesheets for all biomes
-      earthlike mountains color does not match, ice mountains not great either
+      earthlike mountains color does not match, ice mountains not great either, molten too
+      molten forests as details
+    BIOME_VARIATION needs to be considered for:
+      molten plains and mountains
+      dirt/dark dirt?
 
   Clicking slider does bad things sometimes
 

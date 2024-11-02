@@ -6,23 +6,24 @@ export const BIOMES = {
   GREEN_FOREST: 29,
   MOUNTAINS: 27,
   MOUNTAINS_SNOW: 28,
-  FROZEN_PLAINS: 10,
+  FROZEN_PLAINS: 10, // AAP64'd
+  FROZEN_OCEAN: 11, // AAP64'd
   FROZEN_MOUNTAINS: 31,
+  DIRT: 32,
+  DIRT_DARK: 42,
+  MOLTEN_MOUNTAINS: 36,
+  MOLTEN_PLAINS: 37,
+  MOLTEN_LAVAFLOW: 38,
+  DIRT_RED: 46,
+  DEAD_FOREST: 1, // AAP64'd
   // needs pixel art below here
-  FROZEN_OCEAN: 11, // like ice, but dark
   MOONROCK1: 6,
   MOONROCK2: 7,
   MOONROCK3: 8,
   MOONROCK4: 9,
-  DEAD_FOREST: 1,
-  DIRT: 32, // low_life should use a red dirt (base palette from dirt set?)
-  DIRT_DARK: 42,
   GAS_ORANGE_LIGHT: 33,
   GAS_ORANGE_DARK: 34,
   GAS_GRAY: 35,
-  MOLTEN_MOUNTAINS: 36,
-  MOLTEN_PLAINS: 37,
-  MOLTEN_LAVAFLOW: 38,
   GAS_BLUE_DARK: 39,
   GAS_BLUE_MED: 40,
   GAS_BLUE_LIGHT: 41,
@@ -49,5 +50,6 @@ export const BIOMES_SAME_LOOSE = (function () {
   associate(BIOMES.GREEN_PLAINS, BIOMES.GREEN_FOREST);
   associate(BIOMES.GREEN_PLAINS, BIOMES.MOUNTAINS);
   associate(BIOMES.GREEN_FOREST, BIOMES.MOUNTAINS);
+  // associate(BIOMES.DIRT_RED, BIOMES.DEAD_FOREST);
   return ret;
 }());

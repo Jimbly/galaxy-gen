@@ -316,6 +316,9 @@ export function main(): void {
     sand0: autoAtlas('sand', 'def'), // 16x20
     sand1: autoAtlas('sand-l1', 'def'), // 16x20
     sand2: autoAtlas('sand-l2', 'def'), // 16x20
+    parched0: autoAtlas('parched', 'def'), // 16x20
+    parched1: autoAtlas('parched-l1', 'def'), // 16x20
+    parched2: autoAtlas('parched-l2', 'def'), // 16x20
     treesmountains0: autoAtlas('trees-mountains', 'def'), // 52x31
     treesmountains1: autoAtlas('trees-mountains-l1', 'def'), // 52x31
     treesmountains2: autoAtlas('trees-mountains-l2', 'def'), // 52x31
@@ -784,7 +787,7 @@ export function main(): void {
     '1111': 2 + 52,
   });
 
-  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'sand' | 'ice' | 'treesmountains';
+  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'sand' | 'parched' | 'ice' | 'treesmountains';
   type SubBiome = {
     sprite: SpriteName;
     frame: number;
@@ -813,6 +816,14 @@ export function main(): void {
       ovr_idx: 2*8,
       frame_offs: frame_offs_water,
       color_biome: BIOMES.WATER_SHALLOW,
+    } as SubBiome,
+    LAVAFLOW: {
+      sprite: 'ocean',
+      frame: 1*8,
+      anim: true,
+      // ovr_idx: 2*8,
+      // frame_offs: frame_offs_water,
+      color_biome: BIOMES.MOLTEN_LAVAFLOW,
     } as SubBiome,
     SAND: {
       sprite: 'sand',
@@ -870,6 +881,41 @@ export function main(): void {
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT,
     } as SubBiome,
+    DIRT_RED: {
+      sprite: 'dirt',
+      frame: 1,
+      ovr_idx: (14+3) * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DIRT_RED,
+    } as SubBiome,
+    DIRT_RED2: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 14 * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DIRT_RED,
+    } as SubBiome,
+    DIRT_RED3: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 14 * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.DEAD_FOREST,
+    } as SubBiome,
+    ICE_DARK: {
+      sprite: 'dirt',
+      frame: 1,
+      ovr_idx: (14+3) * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.FROZEN_OCEAN,
+    } as SubBiome,
+    ICE_DARK2: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 14 * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.FROZEN_OCEAN,
+    } as SubBiome,
     ICE: {
       sprite: 'ice',
       frame: 1,
@@ -891,11 +937,23 @@ export function main(): void {
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT_DARK,
     } as SubBiome,
+    MOLTEN: {
+      sprite: 'lava',
+      frame: 17,
+      ovr_idx: (14+3) * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.MOLTEN_PLAINS,
+    } as SubBiome,
 
     // overlay details
     DETAIL_TREES1: {
       sprite: 'treesmountains',
       frame: 1,
+      frame_offs: frame_offs_tree,
+    } as SubBiome,
+    DETAIL_TREES_DEAD: {
+      sprite: 'treesmountains',
+      frame: 18*52 + 14,
       frame_offs: frame_offs_tree,
     } as SubBiome,
     DETAIL_MOUNTAINS1: {
@@ -906,6 +964,11 @@ export function main(): void {
     DETAIL_MOUNTAINS_SNOW: {
       sprite: 'treesmountains',
       frame: 22*52+40,
+      frame_offs: frame_offs_tree,
+    } as SubBiome,
+    DETAIL_MOLTEN_MOUNTAINS: {
+      sprite: 'treesmountains',
+      frame: 22*52+27,
       frame_offs: frame_offs_tree,
     } as SubBiome,
   };
@@ -925,15 +988,21 @@ export function main(): void {
   const BIOME_TO_BASE: Record<Biome, [SubBiome, SubBiome, SubBiome?]> = {
     [BIOMES.WATER_DEEP]: [BASE.WATER_DEEP, BASE.WATER_DEEP],
     [BIOMES.WATER_SHALLOW]: [BASE.WATER_SHALLOW, BASE.WATER_SHALLOW],
+    [BIOMES.MOLTEN_LAVAFLOW]: [BASE.LAVAFLOW, BASE.LAVAFLOW],
+    [BIOMES.MOLTEN_PLAINS]: [BASE.MOLTEN, BASE.MOLTEN],
     [BIOMES.GREEN_FOREST]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_TREES1],
     [BIOMES.MOUNTAINS]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_MOUNTAINS1],
     [BIOMES.GREEN_PLAINS]: [BASE.GRASS, BASE.GRASS2],
     [BIOMES.MOUNTAINS_SNOW]: [BASE.MOUNTAIN_BASE, BASE.MOUNTAIN_BASE, BASE.DETAIL_MOUNTAINS_SNOW],
     [BIOMES.FROZEN_PLAINS]: [BASE.ICE, BASE.ICE2],
+    [BIOMES.FROZEN_OCEAN]: [BASE.ICE_DARK, BASE.ICE_DARK2],
     [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICE, BASE.ICE2, BASE.DETAIL_MOUNTAINS_SNOW],
+    [BIOMES.MOLTEN_MOUNTAINS]: [BASE.MOLTEN, BASE.MOLTEN, BASE.DETAIL_MOLTEN_MOUNTAINS],
     [BIOMES.DESERT]: [BASE.SAND, BASE.SAND2],
     [BIOMES.DIRT_DARK]: [BASE.DIRT_DARK, BASE.DIRT_DARK2],
     [BIOMES.DIRT]: [BASE.DIRT, BASE.DIRT2],
+    [BIOMES.DIRT_RED]: [BASE.DIRT_RED, BASE.DIRT_RED2],
+    [BIOMES.DEAD_FOREST]: [BASE.DIRT_RED3, BASE.DIRT_RED3, BASE.DETAIL_TREES_DEAD],
   };
 
   type BiomeDetailsRarity = SubBiome[];
@@ -973,13 +1042,22 @@ export function main(): void {
     [6,7,8,9,24,25],
     [13,28,29],
   ];
+  const BIOME_DETAILS_MOLTEN: BiomeDetailsFrames = [
+    [6,7,13,13,13,22,23],
+    [4,5,10,11,20,21,26,27],
+    [2,3,8,9,12,18,19,24,25,28],
+  ];
   const BIOME_DETAILS: Record<Biome, BiomeDetails> = {
     [BIOMES.GREEN_PLAINS]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD, BIOMES.GREEN_PLAINS),
     [BIOMES.GREEN_FOREST]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD, BIOMES.GREEN_PLAINS),
     [BIOMES.DESERT]: detailFramesToSubBiome('sand', BIOME_DETAILS_STANDARD, BIOMES.DESERT),
     [BIOMES.FROZEN_PLAINS]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD, BIOMES.FROZEN_PLAINS),
+    [BIOMES.FROZEN_OCEAN]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD, BIOMES.FROZEN_OCEAN),
     [BIOMES.DIRT]: detailFramesToSubBiome('sand', BIOME_DETAILS_NO_LIFE_SAND, BIOMES.DIRT),
     [BIOMES.DIRT_DARK]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.DIRT_DARK),
+    [BIOMES.MOLTEN_PLAINS]: detailFramesToSubBiome('lava', BIOME_DETAILS_MOLTEN, BIOMES.MOLTEN_PLAINS),
+    [BIOMES.DIRT_RED]: detailFramesToSubBiome('dirt', BIOME_DETAILS_STANDARD, BIOMES.DIRT_RED),
+    [BIOMES.DEAD_FOREST]: detailFramesToSubBiome('dirt', BIOME_DETAILS_STANDARD, BIOMES.DEAD_FOREST),
   };
 
   let anim_frame: number;
@@ -1117,7 +1195,7 @@ export function main(): void {
           let layer = planet.getTexture(2, MAP_SUB_SIZE, sublayer + MAP_SUBDIVIDE,
             eff_xx, mod(yy, sub_num_vert), true);
           if (layer) {
-            row[eff_xx] = [layer.raw_data, layer.details];
+            row[eff_xx] = [layer.raw_data, layer.details && layer.details.valid ? layer.details : undefined];
           }
         }
       }
