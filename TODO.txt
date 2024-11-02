@@ -8,11 +8,8 @@ Next:
     0 = full
     max = pixel art
 
-    X fancier blending of biomes?
-    X forest/mountain special tiles
-    X send gif around
-    add local variety (to all layers?) by tile type/color
-    add local variety by details to pixel art layer
+    spritesheets for all biomes
+      earthlike mountains color does not match, ice mountains not great either
 
   use parent layer for 25% of our procgen?
 

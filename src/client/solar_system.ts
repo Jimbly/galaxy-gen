@@ -1,8 +1,10 @@
-export const BIT_SAME9 = 1<<0;
-export const BIT_SAME_LOOSE = 1<<1;
+export const BIT_RARITY_MASK = (1<<0) | (1<<1);
+export const BIT_SAME_LOOSE = 1<<2;
+export const BIT_DETAIL_IDX_SHIFT = 3; // 5 bits
 
 import assert from 'assert';
 import { getFrameIndex } from 'glov/client/engine';
+import { randSimpleSpatial } from 'glov/client/rand_fast';
 import { Texture } from 'glov/client/sprites';
 import {
   TEXTURE_FORMAT,
@@ -38,7 +40,7 @@ import {
   starTypeFromID,
 } from './star_types';
 
-const { abs, atan2, max, min, round, sqrt, PI, pow } = Math;
+const { abs, atan2, floor, max, min, round, sqrt, PI, pow } = Math;
 
 let rand = [
   randCreate(0),
@@ -82,7 +84,7 @@ type VariationEntry = {
 const BOTTOM_LAYER = 5; // PLANET_PIXELART_LEVEL + MAP_SUBDIVIDE
 const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
   [BIOMES.GREEN_PLAINS]: [{
-    weight: 0.1,
+    weight: 0.01,
     biome: BIOMES.GREEN_FOREST,
   }, {
     min_layer: BOTTOM_LAYER - 1,
@@ -93,11 +95,11 @@ const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
     biome: BIOMES.WATER_SHALLOW,
   }],
   [BIOMES.DESERT]: [{
-    weight: 0.01,
+    weight: 0.00018,
     biome: BIOMES.WATER_SHALLOW,
   }],
   [BIOMES.GREEN_FOREST]: [{
-    weight: 0.01,
+    weight: 0.00018,
     biome: BIOMES.WATER_SHALLOW,
   }, {
     min_layer: BOTTOM_LAYER - 1,
@@ -108,6 +110,56 @@ const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
     biome: BIOMES.GREEN_PLAINS,
   }],
 };
+
+type BiomeDetails = {
+  odds_none: number;
+  odds_common: number;
+  odds_uncommon: number;
+  // odds_rare: number;
+  // odds_total: number;
+};
+function procBiomeDetails(
+  details: Partial<Record<Biome | 'default', BiomeDetails & { odds_rare: number }>>
+): Record<Biome | 'default', BiomeDetails> {
+  let ret: Partial<Record<Biome, BiomeDetails>> = {};
+  let def: BiomeDetails;
+  for (let key in details) {
+    let entry = details[key]!;
+    let odds_total = entry.odds_none + entry.odds_common + entry.odds_uncommon + entry.odds_rare;
+    let newentry: BiomeDetails = {
+      odds_none: (entry.odds_none) / odds_total,
+      odds_common: (entry.odds_none + entry.odds_common) / odds_total,
+      odds_uncommon: (entry.odds_none + entry.odds_common + entry.odds_uncommon) / odds_total,
+    };
+    if (key === 'default') {
+      def = newentry;
+    } else {
+      ret[key] = newentry;
+    }
+  }
+  assert(def!);
+  for (let key in BIOMES) {
+    let b: Biome = BIOMES[key as keyof typeof BIOMES];
+    if (!ret[b]) {
+      ret[b] = def;
+    }
+  }
+  return ret as Record<Biome | 'default', BiomeDetails>;
+}
+const BIOME_DETAILS: Record<Biome, BiomeDetails> = procBiomeDetails({
+  default: {
+    odds_none: 2000,
+    odds_common: 27,
+    odds_uncommon: 9,
+    odds_rare: 1,
+  },
+  [BIOMES.GREEN_FOREST]: {
+    odds_none: 4000,
+    odds_common: 8,
+    odds_uncommon: 4,
+    odds_rare: 2,
+  },
+});
 
 const color_table_frozen = [
   0.23, BIOMES.FROZEN_OCEAN,
@@ -696,6 +748,8 @@ sampleBiomeMap = function sampleBiomeMap(): number {
       }
       return nmap[nidx][yy * texture_size + xx];
     }
+    let x0 = sub_x * texture_size;
+    let y0 = sub_y * texture_size;
     for (let yy = 0, idx=0; yy < texture_size; ++yy) {
       for (let jj = 0; jj < 3; ++jj) {
         for (let ii = 0; ii < 2; ++ii) {
@@ -711,11 +765,9 @@ sampleBiomeMap = function sampleBiomeMap(): number {
           ndata[jj*3+2] = nget(xx + 1, yy - 1 + jj);
         }
         let my_v = ndata[4];
-        let all_same = true;
         let all_same_loose = true;
         for (let ii = 0; ii < 9; ++ii) {
           if (ndata[ii] !== my_v) {
-            all_same = false;
             if (!BIOMES_SAME_LOOSE[my_v][ndata[ii]]) {
               all_same_loose = false;
               break;
@@ -723,12 +775,19 @@ sampleBiomeMap = function sampleBiomeMap(): number {
           }
         }
         let ret_bits = 0;
-        if (all_same) {
-          ret_bits |= BIT_SAME9;
-        }
         if (all_same_loose) {
           ret_bits |= BIT_SAME_LOOSE;
         }
+        let bd = BIOME_DETAILS[my_v];
+        let r = randSimpleSpatial(this.seed, x0 + xx, y0 + yy, 0);
+        if (r < bd.odds_none) {
+          // nothing
+        } else {
+          let v = floor(randSimpleSpatial(this.seed, x0 + xx, y0 + yy, 1) * 32);
+          let rarity = r < bd.odds_common ? 1 : r < bd.odds_uncommon ? 2 : 3;
+          ret_bits |= rarity | (v << BIT_DETAIL_IDX_SHIFT);
+        }
+
         ret[idx] = ret_bits;
       }
     }
@@ -842,10 +901,16 @@ sampleBiomeMap = function sampleBiomeMap(): number {
             if (sublayer >= (
               vari.min_layer || BOTTOM_LAYER
             )) {
-              if (noise[noise.length-2].noise2D((unif_x + (vari.offs || 0))*2 * (vari.freqx || 7777),
-                unif_y * (vari.freqy || 7777)) * 0.5 + 0.5 < vari.weight
-              ) {
-                b = vari.biome;
+              if (!vari.freqx) {
+                if (randSimpleSpatial(this.seed, sub_x * tex_w + ii, sub_y * tex_h + jj, 2) < vari.weight) {
+                  b = vari.biome;
+                }
+              } else {
+                if (noise[noise.length-2].noise2D((unif_x + (vari.offs || 0))*2 * (vari.freqx || 7777),
+                  unif_y * (vari.freqy || 7777)) * 0.5 + 0.5 < vari.weight
+                ) {
+                  b = vari.biome;
+                }
               }
             }
           }

@@ -104,6 +104,8 @@ import {
   distSq,
 } from './galaxy';
 import {
+  BIT_DETAIL_IDX_SHIFT,
+  BIT_RARITY_MASK,
   BIT_SAME_LOOSE,
   PLANET_TYPE_NAMES,
   Planet,
@@ -861,6 +863,39 @@ export function main(): void {
     [BIOMES.DESERT]: [BASE.SAND, BASE.SAND2],
   };
 
+  type BiomeDetailsRarity = SubBiome[];
+  type BiomeDetails = [BiomeDetailsRarity, BiomeDetailsRarity, BiomeDetailsRarity];
+  function detailRarityToSubBiome(sprite: SpriteName, frames: number[]): BiomeDetailsRarity {
+    let ret: SubBiome[] = [];
+    for (let ii = 0; ii < frames.length; ++ii) {
+      ret.push({
+        sprite,
+        frame: frames[ii],
+        ord: 999,
+      });
+    }
+    return ret;
+  }
+  type BiomeDetailsFrames = [number[], number[], number[]];
+  function detailFramesToSubBiome(sprite: SpriteName, frameset: BiomeDetailsFrames): BiomeDetails {
+    return [
+      detailRarityToSubBiome(sprite, frameset[0]),
+      detailRarityToSubBiome(sprite, frameset[1]),
+      detailRarityToSubBiome(sprite, frameset[2]),
+    ];
+  }
+  const BIOME_DETAILS_STANDARD: BiomeDetailsFrames = [
+    [4,5,6,7,20,21,22,23],
+    [2,3,8,9,18,19,24,25,28],
+    [10,11,12,13,26,27,29],
+  ];
+  const BIOME_DETAILS: Record<Biome, BiomeDetails> = {
+    [BIOMES.GREEN_PLAINS]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD),
+    [BIOMES.GREEN_FOREST]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD),
+    [BIOMES.DESERT]: detailFramesToSubBiome('sand', BIOME_DETAILS_STANDARD),
+    [BIOMES.FROZEN_PLAINS]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD),
+  };
+
   let anim_frame: number;
   function overlayFor(base: SubBiome, mask: number): null | DetailDef {
     if (!base.frame_offs) {
@@ -1033,10 +1068,22 @@ export function main(): void {
         let v = rowpair[0][tile_y_offs + tile_x_offs] || 0;
         let details = rowpair[1];
         let detailv = details && details[tile_y_offs + tile_x_offs] || 0;
+
         let pair = BIOME_TO_BASE[v];
         if (pair) {
-          out.base = pair[(detailv & BIT_SAME_LOOSE) ? 1 : 0];
+          let same = detailv & BIT_SAME_LOOSE;
+          out.base = pair[same ? 1 : 0];
           out.detail = pair[2];
+          let detail_rarity = detailv & BIT_RARITY_MASK;
+          if (detail_rarity && same) {
+            let detailrarityset = BIOME_DETAILS[v];
+            if (detailrarityset) {
+              let detailset = detailrarityset[detail_rarity - 1];
+              let detail_idx = detailv >> BIT_DETAIL_IDX_SHIFT;
+              out.detail = detailset[detail_idx % detailset.length];
+            }
+          }
+
         } else {
           out.base = BASE.NULL;
           out.detail = undefined;
