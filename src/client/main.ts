@@ -322,6 +322,9 @@ export function main(): void {
     treesmountains0: autoAtlas('trees-mountains', 'def'), // 52x31
     treesmountains1: autoAtlas('trees-mountains-l1', 'def'), // 52x31
     treesmountains2: autoAtlas('trees-mountains-l2', 'def'), // 52x31
+    mountains0: autoAtlas('mountains', 'def'), // 26x5
+    mountains1: autoAtlas('mountains-l1', 'def'), // 26x5
+    mountains2: autoAtlas('mountains-l2', 'def'), // 26x5
     ocean0: autoAtlas('ocean-animated', 'def'), // 8x21
     ocean1: autoAtlas('ocean-animated-l1', 'def'), // 8x21
     ocean2: autoAtlas('ocean-animated-l2', 'def'), // 8x21
@@ -787,7 +790,25 @@ export function main(): void {
     '1111': 2 + 52,
   });
 
-  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'sand' | 'parched' | 'ice' | 'treesmountains';
+  let frame_offs_mountain_tint = frameListToBitmask({
+    '0001': 1,
+    '0010': 3,
+    '0011': 2,
+    '0100': 1 + 26*2,
+    '0101': 1 + 26,
+    '0110': 4 + 26*2,
+    '0111': 4,
+    '1000': 3 + 26*2,
+    '1001': 5 + 26*2,
+    '1010': 3 + 26,
+    '1011': 5,
+    '1100': 2 + 26*2,
+    '1101': 4 + 26,
+    '1110': 5 + 26,
+    '1111': 2 + 26,
+  });
+
+  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'sand' | 'parched' | 'ice' | 'mountains' | 'treesmountains';
   type SubBiome = {
     sprite: SpriteName;
     frame: number;
@@ -825,118 +846,139 @@ export function main(): void {
       // frame_offs: frame_offs_water,
       color_biome: BIOMES.MOLTEN_LAVAFLOW,
     } as SubBiome,
-    SAND: {
+    SANDa: {
       sprite: 'sand',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DESERT,
     } as SubBiome,
-    SAND2: {
+    SANDb: {
       sprite: 'sand',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DESERT,
     } as SubBiome,
-    GRASS: {
+    GRASSa: {
       sprite: 'grass',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8 - 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.GREEN_PLAINS,
     } as SubBiome,
-    GRASS2: {
+    GRASSb: {
       sprite: 'grass',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.GREEN_PLAINS,
     } as SubBiome,
-    DIRT_DARK: {
+    MOONROCK1: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 14 * 16 + 8,
+      frame_offs: frame_offs_regular,
+      color_biome: BIOMES.MOONROCK1,
+    } as SubBiome,
+    MOONROCK2: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 6*16 + 7, // (14+3) * 16 + 8,
+      frame_offs: frame_offs_cliffs,
+      color_biome: BIOMES.MOONROCK2,
+    } as SubBiome,
+    MOONROCK3: {
+      sprite: 'dirt',
+      frame: 17,
+      ovr_idx: 6*16 + 7, // (14+3) * 16 + 8,
+      frame_offs: frame_offs_cliffs,
+      color_biome: BIOMES.MOONROCK3,
+    } as SubBiome,
+    DIRT_DARKa: {
       sprite: 'dirt',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT_DARK,
     } as SubBiome,
-    DIRT_DARK2: {
+    DIRT_DARKb: {
       sprite: 'dirt',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT_DARK,
     } as SubBiome,
-    DIRT: {
+    DIRTa: {
       sprite: 'sand',
       frame: 1,
       ovr_idx: 2*16 + 7, // (14+3) * 16 + 8,
       frame_offs: frame_offs_cliffs,
       color_biome: BIOMES.DIRT,
     } as SubBiome,
-    DIRT2: {
+    DIRTb: {
       sprite: 'sand',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT,
     } as SubBiome,
-    DIRT_RED: {
+    DIRT_REDa: {
       sprite: 'dirt',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT_RED,
     } as SubBiome,
-    DIRT_RED2: {
+    DIRT_REDb: {
       sprite: 'dirt',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DIRT_RED,
     } as SubBiome,
-    DIRT_RED3: {
+    DIRT_REDc: {
       sprite: 'dirt',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.DEAD_FOREST,
     } as SubBiome,
-    ICE_DARK: {
+    ICE_DARKa: {
       sprite: 'dirt',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.FROZEN_OCEAN,
     } as SubBiome,
-    ICE_DARK2: {
+    ICE_DARKb: {
       sprite: 'dirt',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.FROZEN_OCEAN,
     } as SubBiome,
-    ICE: {
+    ICEa: {
       sprite: 'ice',
       frame: 1,
       ovr_idx: (14+3) * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.FROZEN_PLAINS,
     } as SubBiome,
-    ICE2: {
+    ICEb: {
       sprite: 'ice',
       frame: 17,
       ovr_idx: 14 * 16 + 8,
       frame_offs: frame_offs_regular,
       color_biome: BIOMES.FROZEN_PLAINS,
     } as SubBiome,
-    MOUNTAIN_BASE: {
-      sprite: 'lava',
-      frame: 1,
-      ovr_idx: (14+3) * 16 + 8,
-      frame_offs: frame_offs_regular,
-      color_biome: BIOMES.DIRT_DARK,
-    } as SubBiome,
+    // MOUNTAIN_BASE: {
+    //   sprite: 'lava',
+    //   frame: 1,
+    //   ovr_idx: (14+3) * 16 + 8,
+    //   frame_offs: frame_offs_regular,
+    //   color_biome: BIOMES.DIRT_DARK,
+    // } as SubBiome,
     MOLTEN: {
       sprite: 'lava',
       frame: 17,
@@ -957,19 +999,28 @@ export function main(): void {
       frame_offs: frame_offs_tree,
     } as SubBiome,
     DETAIL_MOUNTAINS1: {
-      sprite: 'treesmountains',
-      frame: 22*52+1,
-      frame_offs: frame_offs_tree,
+      sprite: 'mountains',
+      frame: 1,
+      frame_offs: frame_offs_mountain_tint,
+      color_biome: BIOMES.MOUNTAINS,
+    } as SubBiome,
+    DETAIL_MOUNTAINS_MOONROCK4: {
+      sprite: 'mountains',
+      frame: 1,
+      frame_offs: frame_offs_mountain_tint,
+      color_biome: BIOMES.MOONROCK4,
     } as SubBiome,
     DETAIL_MOUNTAINS_SNOW: {
-      sprite: 'treesmountains',
-      frame: 22*52+40,
-      frame_offs: frame_offs_tree,
+      sprite: 'mountains',
+      frame: 14,
+      frame_offs: frame_offs_mountain_tint,
+      color_biome: BIOMES.MOUNTAINS,
     } as SubBiome,
     DETAIL_MOLTEN_MOUNTAINS: {
-      sprite: 'treesmountains',
-      frame: 22*52+27,
-      frame_offs: frame_offs_tree,
+      sprite: 'mountains',
+      frame: 1,
+      frame_offs: frame_offs_mountain_tint,
+      color_biome: BIOMES.MOLTEN_MOUNTAINS,
     } as SubBiome,
   };
   type BaseType = keyof typeof BASE;
@@ -990,19 +1041,23 @@ export function main(): void {
     [BIOMES.WATER_SHALLOW]: [BASE.WATER_SHALLOW, BASE.WATER_SHALLOW],
     [BIOMES.MOLTEN_LAVAFLOW]: [BASE.LAVAFLOW, BASE.LAVAFLOW],
     [BIOMES.MOLTEN_PLAINS]: [BASE.MOLTEN, BASE.MOLTEN],
-    [BIOMES.GREEN_FOREST]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_TREES1],
-    [BIOMES.MOUNTAINS]: [BASE.GRASS, BASE.GRASS2, BASE.DETAIL_MOUNTAINS1],
-    [BIOMES.GREEN_PLAINS]: [BASE.GRASS, BASE.GRASS2],
-    [BIOMES.MOUNTAINS_SNOW]: [BASE.MOUNTAIN_BASE, BASE.MOUNTAIN_BASE, BASE.DETAIL_MOUNTAINS_SNOW],
-    [BIOMES.FROZEN_PLAINS]: [BASE.ICE, BASE.ICE2],
-    [BIOMES.FROZEN_OCEAN]: [BASE.ICE_DARK, BASE.ICE_DARK2],
-    [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICE, BASE.ICE2, BASE.DETAIL_MOUNTAINS_SNOW],
+    [BIOMES.GREEN_FOREST]: [BASE.GRASSa, BASE.GRASSb, BASE.DETAIL_TREES1],
+    [BIOMES.MOUNTAINS]: [BASE.GRASSa, BASE.GRASSb, BASE.DETAIL_MOUNTAINS1],
+    [BIOMES.GREEN_PLAINS]: [BASE.GRASSa, BASE.GRASSb],
+    [BIOMES.MOUNTAINS_SNOW]: [BASE.ICEb, BASE.ICEb, BASE.DETAIL_MOUNTAINS_SNOW],
+    [BIOMES.FROZEN_PLAINS]: [BASE.ICEa, BASE.ICEb],
+    [BIOMES.FROZEN_OCEAN]: [BASE.ICE_DARKa, BASE.ICE_DARKb],
+    [BIOMES.FROZEN_MOUNTAINS]: [BASE.ICEa, BASE.ICEa, BASE.DETAIL_MOUNTAINS_SNOW],
     [BIOMES.MOLTEN_MOUNTAINS]: [BASE.MOLTEN, BASE.MOLTEN, BASE.DETAIL_MOLTEN_MOUNTAINS],
-    [BIOMES.DESERT]: [BASE.SAND, BASE.SAND2],
-    [BIOMES.DIRT_DARK]: [BASE.DIRT_DARK, BASE.DIRT_DARK2],
-    [BIOMES.DIRT]: [BASE.DIRT, BASE.DIRT2],
-    [BIOMES.DIRT_RED]: [BASE.DIRT_RED, BASE.DIRT_RED2],
-    [BIOMES.DEAD_FOREST]: [BASE.DIRT_RED3, BASE.DIRT_RED3, BASE.DETAIL_TREES_DEAD],
+    [BIOMES.DESERT]: [BASE.SANDa, BASE.SANDb],
+    [BIOMES.DIRT_DARK]: [BASE.DIRT_DARKa, BASE.DIRT_DARKb],
+    [BIOMES.DIRT]: [BASE.DIRTa, BASE.DIRTb],
+    [BIOMES.DIRT_RED]: [BASE.DIRT_REDa, BASE.DIRT_REDb],
+    [BIOMES.DEAD_FOREST]: [BASE.DIRT_REDc, BASE.DIRT_REDc, BASE.DETAIL_TREES_DEAD],
+    [BIOMES.MOONROCK1]: [BASE.MOONROCK1, BASE.MOONROCK1],
+    [BIOMES.MOONROCK2]: [BASE.MOONROCK2, BASE.MOONROCK2],
+    [BIOMES.MOONROCK3]: [BASE.MOONROCK3, BASE.MOONROCK3],
+    [BIOMES.MOONROCK4]: [BASE.MOONROCK3, BASE.MOONROCK3, BASE.DETAIL_MOUNTAINS_MOONROCK4],
   };
 
   type BiomeDetailsRarity = SubBiome[];
@@ -1037,15 +1092,20 @@ export function main(): void {
     [2,3,8,9,18,19,24,25,28],
     [12,13,29],
   ];
-  const BIOME_DETAILS_NO_LIFE_DIRT: BiomeDetailsFrames = [
+  const BIOME_DETAILS_DEAD_DIRT: BiomeDetailsFrames = [
     [4,5,6,7,20,21,22,23],
     [6,7,8,9,24,25],
     [13,28,29],
   ];
+  const BIOME_DETAILS_NO_LIFE_DIRT: BiomeDetailsFrames = [
+    [4,5,6,7,20,21,22,22,23],
+    [6,7,22,23],
+    [13,29],
+  ];
   const BIOME_DETAILS_MOLTEN: BiomeDetailsFrames = [
     [6,7,13,13,13,22,23],
-    [4,5,10,11,20,21,26,27],
-    [2,3,8,9,12,18,19,24,25,28],
+    [4,5,10,11,20,21,26,27,28,29],
+    [2,3,8,9,12,18,19,24,25],
   ];
   const BIOME_DETAILS: Record<Biome, BiomeDetails> = {
     [BIOMES.GREEN_PLAINS]: detailFramesToSubBiome('grass', BIOME_DETAILS_STANDARD, BIOMES.GREEN_PLAINS),
@@ -1054,10 +1114,13 @@ export function main(): void {
     [BIOMES.FROZEN_PLAINS]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD, BIOMES.FROZEN_PLAINS),
     [BIOMES.FROZEN_OCEAN]: detailFramesToSubBiome('ice', BIOME_DETAILS_STANDARD, BIOMES.FROZEN_OCEAN),
     [BIOMES.DIRT]: detailFramesToSubBiome('sand', BIOME_DETAILS_NO_LIFE_SAND, BIOMES.DIRT),
-    [BIOMES.DIRT_DARK]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.DIRT_DARK),
+    [BIOMES.DIRT_DARK]: detailFramesToSubBiome('dirt', BIOME_DETAILS_DEAD_DIRT, BIOMES.DIRT_DARK),
     [BIOMES.MOLTEN_PLAINS]: detailFramesToSubBiome('lava', BIOME_DETAILS_MOLTEN, BIOMES.MOLTEN_PLAINS),
     [BIOMES.DIRT_RED]: detailFramesToSubBiome('dirt', BIOME_DETAILS_STANDARD, BIOMES.DIRT_RED),
     [BIOMES.DEAD_FOREST]: detailFramesToSubBiome('dirt', BIOME_DETAILS_STANDARD, BIOMES.DEAD_FOREST),
+    [BIOMES.MOONROCK1]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.MOONROCK1),
+    [BIOMES.MOONROCK2]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.MOONROCK2),
+    [BIOMES.MOONROCK3]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.MOONROCK3),
   };
 
   let anim_frame: number;

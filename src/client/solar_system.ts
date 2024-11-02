@@ -113,6 +113,39 @@ const BIOME_VARIATION: Partial<Record<Biome, VariationEntry[]>> = {
     weight: 0.002,
     biome: BIOMES.DEAD_FOREST,
   }],
+  [BIOMES.FROZEN_PLAINS]: [{
+    min_layer: BOTTOM_LAYER - 1,
+    offs: 1,
+    weight: 0.08,
+    freqx: 111,
+    freqy: 111,
+    biome: BIOMES.FROZEN_OCEAN,
+  }],
+  [BIOMES.MOLTEN_PLAINS]: [{
+    //weight: 0.00018,
+    min_layer: BOTTOM_LAYER - 1,
+    offs: 1,
+    weight: 0.06,
+    freqx: 133,
+    freqy: 171,
+    biome: BIOMES.MOLTEN_LAVAFLOW,
+  }],
+  [BIOMES.MOLTEN_MOUNTAINS]: [{
+    weight: 0.00018,
+    biome: BIOMES.MOLTEN_LAVAFLOW,
+  }],
+  [BIOMES.DIRT_DARK]: [{
+    weight: 0.00018,
+    biome: BIOMES.DIRT,
+  }],
+  [BIOMES.DIRT]: [{
+    min_layer: BOTTOM_LAYER - 1,
+    offs: 1,
+    weight: 0.06,
+    freqx: 133,
+    freqy: 171,
+    biome: BIOMES.DIRT_DARK,
+  }],
 };
 
 type BiomeDetails = {

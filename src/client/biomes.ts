@@ -16,11 +16,11 @@ export const BIOMES = {
   MOLTEN_LAVAFLOW: 38,
   DIRT_RED: 46,
   DEAD_FOREST: 1, // AAP64'd
+  MOONROCK1: 6, // AAP64'd
+  MOONROCK2: 7, // AAP64'd
+  MOONROCK3: 8, // AAP64'd
+  MOONROCK4: 9, // AAP64'd
   // needs pixel art below here
-  MOONROCK1: 6,
-  MOONROCK2: 7,
-  MOONROCK3: 8,
-  MOONROCK4: 9,
   GAS_ORANGE_LIGHT: 33,
   GAS_ORANGE_DARK: 34,
   GAS_GRAY: 35,
