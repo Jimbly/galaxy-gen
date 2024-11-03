@@ -473,7 +473,16 @@ const noise_gasgiant = noiseMod({
   warp_amp: 0.1,
 });
 
+const noise_gasgiant_swirly = noiseMod({
+  skew_x: 0.2,
+  domain_warp: 1,
+  warp_amp: 0.1,
+  lacunarity: { min: 1.6, max: 2.8, freq: 1.3 },
+});
+
 const noise_molten = noiseMod({
+  lacunarity: 3.0,
+  octaves: 7,
   domain_warp: 0,
   warp_amp: 0.1,
 });
@@ -481,6 +490,11 @@ const noise_molten = noiseMod({
 const noise_dirt = noiseMod({
   domain_warp: 1,
   warp_amp: 0.3,
+});
+
+const noise_low_life = noiseMod({
+  lacunarity: 4.5,
+  octaves: 5,
 });
 
 const noise_waterworld = noiseMod({
@@ -509,7 +523,7 @@ const planet_types: PlanetType[] = [
   // Class J (gas giant)
   { name: 'J', size: [12,20], color: vec4(0.9,0.6,0,1),
     biome_tables: [biome_table_gasgiant1, biome_table_gasgiant4],
-    noise: noise_gasgiant },
+    noise: noise_gasgiant_swirly },
   // Class K (habitable, as long as pressure domes are used)
   { name: 'K', size: [8,12], color: vec4(0.5,0.3,0.2,1), biome_tables: [biome_table_dirt], noise: noise_dirt },
   // Class L (marginally habitable, with vegetation but no animal life)
@@ -529,7 +543,7 @@ const planet_types: PlanetType[] = [
     biome_tables: [biome_table_frozen],
     noise: noise_base },
   // Class R (a rogue planet, not as habitable as a terrestrial planet)
-  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), biome_tables: [biome_table_low_life], noise: noise_base },
+  { name: 'R', size: [6,12], color: vec4(0.2,0.3,0.2,1), biome_tables: [biome_table_low_life], noise: noise_low_life },
   // Class T (gas giant)
   { name: 'T', size: [12,20], color: vec4(0.6,0.9,0,1),
     biome_tables: [biome_table_gasgiant2, biome_table_gasgiant3, biome_table_gasgiant5],

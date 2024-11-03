@@ -472,7 +472,7 @@ export function main(): void {
   let selected_star_id: number | null = localStorageGetJSON('selected_star', null);
   let planet_view = localStorageGetJSON('planet_view', 0);
   let planet_override = localStorageGetJSON('planet_override', false);
-  let planet_flatmap = localStorageGetJSON('planet_flatmap', false);
+  let planet_flatmap = localStorageGetJSON('planet_flatmap2', 0);
   let planet_view_page = localStorageGetJSON('planet_view_page', 0);
   let planet_override_planet: null | Planet = null;
   let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
@@ -516,6 +516,11 @@ export function main(): void {
     solar_view = clamp(solar_view + delta, 0, MAX_SOLAR_VIEW);
     localStorageSetJSON('solar_view', solar_view);
     localStorageSetJSON('selected_star', solar_view ? selected_star_id : null);
+    if (!solar_view) {
+      solar_override = false;
+      localStorageSetJSON('solar_override', solar_override);
+      solar_override_system = null;
+    }
   }
   function planetZoom(x: number, y: number, delta: number): void {
     if (planet_view === MAX_PLANET_VIEW && delta > 0) {
@@ -530,6 +535,12 @@ export function main(): void {
     localStorageSetJSON('selected_planet', planet_view ? selected_planet_index : null);
     if (planet_view === 2) {
       planet_zoomer.resetZoom(0, last_planet_rot * 2, 0);
+    }
+    if (planet_view === 1 && delta > 0) {
+      planet_flatmap = 0;
+      localStorageSetJSON('planet_flatmap2', planet_flatmap);
+      planet_override = false;
+      localStorageSetJSON('planet_override', planet_override);
     }
   }
   function doZoom(x: number, y: number, delta: number): void {
@@ -647,7 +658,7 @@ export function main(): void {
     h *= fade;
     let sprite_size = lerp(fade, planet.size, PLANET_FULL_RADIUS);
 
-    if (planet_flatmap) {
+    if (planet_flatmap === 1) {
       // note: w/h happen to be 256 here, which makes this pixel-perfect
       let pmtex = planetMapFlatTexture();
       let planet_shader_params = {
@@ -659,6 +670,8 @@ export function main(): void {
           x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
           [1,1,1,min(fade * 8, 1)], shader_planet_pixel, planet_shader_params);
       }
+    } else if (planet_flatmap === 2) {
+      // TODO
     } else {
       let pmtex = planetMapTexture(true);
       let xmid = x0 + w/2;
@@ -1570,8 +1583,26 @@ export function main(): void {
     for (let ii = 0; ii < planets.length; ++ii) {
       let r = r0 + rstep * ii;
       let planet = planets[ii];
+
+      let do_override = selected_planet_index === ii && planet_override &&
+        planet_override_planet && planet_flatmap === 2 && planet_view;
+      if (do_override) {
+        planet = planet_override_planet!;
+      }
+
       let theta = planet.orbit + planet.orbit_speed * walltime()*ORBIT_RATE;
       theta %= 2 * PI;
+      let rot = getFrameTimestamp() * ROTATION_RATE;
+
+      if (do_override) {
+        if (planet_view_params.orbit) {
+          theta = planet_view_params.orbit / 360 * 2 * PI;
+        }
+        if (planet_view_params.rot) {
+          rot = planet_view_params.rot / 360;
+        }
+      }
+
       let x = xmid + cos(theta) * r;
       let y = ymid + sin(theta) * r * VSCALE;
       // if (view === 1) {
@@ -1599,7 +1630,7 @@ export function main(): void {
 
       let sprite_size = planet.size;
       let planet_shader_params = {
-        params: [getFrameTimestamp() * ROTATION_RATE, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
+        params: [rot, pmtex.width / (sprite_size)*1.5 / 255, 2 - theta / PI, 0],
       };
       // with pixely view, looks a lot better with a /2 on the texture resolution
       let planet_tex = planet.getTexture(0, sprite_size*2/2, 0, 0, 0, false);
@@ -1746,9 +1777,11 @@ export function main(): void {
         }
         y += button_spacing;
         if (!hide_solar) {
-          if (buttonText({ x, y, z, text: planet_flatmap ? 'Flatmap' : 'Globe' })) {
-            planet_flatmap = !planet_flatmap;
-            localStorageSetJSON('planet_flatmap', planet_flatmap);
+          if (buttonText({ x, y, z, text: planet_flatmap === 1 ? 'Flatmap' :
+              planet_flatmap === 2 ? 'Orrery' : 'Globe' }
+          )) {
+            planet_flatmap = (planet_flatmap + 1) % 3;
+            localStorageSetJSON('planet_flatmap2', planet_flatmap);
           }
           y += button_spacing;
         }
@@ -1831,7 +1864,7 @@ export function main(): void {
               let new_name = PLANET_TYPE_NAMES[name_idx - 1];
               if (planet_params.name !== new_name) {
                 planet_params.name = new_name;
-                planet_params.noise = planetNoiseForType(new_name);
+                planet_params.noise = clone(planetNoiseForType(new_name));
               }
               y += button_spacing;
 

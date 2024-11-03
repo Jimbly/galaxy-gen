@@ -2,7 +2,7 @@
 
 Next:
   Add sliders for planet gen parameters and iterate
-    molten could use more lacunarity and octaves
+  Audio
   Check perf on phone/chimera
   Check on Sol
   POIs?
