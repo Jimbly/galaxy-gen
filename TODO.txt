@@ -1,7 +1,10 @@
 # Planet project
 
 Next:
-  ?
+  Add sliders for planet gen parameters and iterate
+  Check perf on phone/chimera
+  Check on Sol
+  POIs?
 
 Planet improvements:
   Variations with each tree type (different biomes on one planet?  different planets?)

@@ -86,6 +86,7 @@ import {
   v2add,
   v2addScale,
   v2copy,
+  v2dist,
   v2distSq,
   v2floor,
   v2set,
@@ -194,7 +195,8 @@ class Zoomer {
     const { queued_zooms } = this;
     for (let ii = 0; ii < queued_zooms.length; ++ii) {
       let zm = queued_zooms[ii];
-      let new_progress = min(1, zm.progress + dt/zoomTime(zm.delta));
+      let is_last = ii === queued_zooms.length - 1;
+      let new_progress = min(1, zm.progress + dt/zoomTime(is_last ? zm.delta : 1));
       let dp;
       if (debugDefineIsSet('ATTRACT')) {
         dp = new_progress - zm.progress;
@@ -603,6 +605,7 @@ export function main(): void {
     }
   }
 
+  const PLANET_FULL_RADIUS = 128;
   const ORBIT_RATE = 0.0002;
   const ROTATION_RATE = 0.0003*0.5;
   let temp_fade = vec4(1, 1, 1, 1);
@@ -636,8 +639,7 @@ export function main(): void {
     y0 = lerp(fade, selected_planet.y, y0);
     w *= fade;
     h *= fade;
-    const FULL_SIZE = 128;
-    let sprite_size = lerp(fade, planet.size, FULL_SIZE);
+    let sprite_size = lerp(fade, planet.size, PLANET_FULL_RADIUS);
 
     if (planet_flatmap) {
       // note: w/h happen to be 256 here, which makes this pixel-perfect
@@ -645,7 +647,7 @@ export function main(): void {
       let planet_shader_params = {
         params: [0, 0, mod(2 - theta / PI + rot*2, 2), 0],
       };
-      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0, false);
+      let planet_tex = planet.getTexture(1, PLANET_FULL_RADIUS, 0, 0, 0, false);
       if (planet_tex) {
         spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
           x0, y0 + h / 2 - w / 4, z, w, w /2, 0, 0, 1, 1,
@@ -661,7 +663,7 @@ export function main(): void {
       let x = xmid;
       let y = ymid;
       temp_fade[3] = min(fade * 8, 1);
-      let planet_tex = planet.getTexture(1, FULL_SIZE, 0, 0, 0, false);
+      let planet_tex = planet.getTexture(1, PLANET_FULL_RADIUS, 0, 0, 0, false);
       if (planet_tex) {
         spriteQueueRaw([pmtex, planet_tex, tex_palette_planets],
           x - sprite_size, y - sprite_size, z, sprite_size*2, sprite_size*2, 0, 0, 1, 1,
@@ -2195,6 +2197,8 @@ export function main(): void {
     }
     drawLevel(level0 + 1, extra, Boolean(extra));
 
+    let globe_view: undefined | { pos: Vec2; r: number };
+
     if (gal_zoomer.zoom_level >= 12) {
       let star;
       const SELECT_DIST = 40;
@@ -2289,6 +2293,10 @@ export function main(): void {
             if (do_planet_view && selected_planet_index !== null && (
               selected_planet || planet_override && planet_override_planet
             )) {
+              globe_view = {
+                pos: [map_x0 + w/2, map_y0 + w/2],
+                r: PLANET_FULL_RADIUS * do_planet_view * 0.87,
+              };
               drawPlanet(solar_system,
                 selected_planet || {
                   idx: 0,
@@ -2299,6 +2307,7 @@ export function main(): void {
                 Z.PLANET,
                 w, w,
                 do_planet_view);
+
             } else {
               if (!selected_planet) {
                 selected_planet_index = null;
@@ -2342,9 +2351,14 @@ export function main(): void {
     })) {
       use_mouse_pos = true;
       mousePos(mouse_pos);
+
+      let zoom_dir = solar_view && selected_planet_index === null ? -1 : 1;
+      if (globe_view) {
+        zoom_dir = v2dist(mouse_pos, globe_view.pos) < globe_view.r ? 1 : -1;
+      }
+
       doZoom((mouse_pos[0] - map_x0) / w, (mouse_pos[1] - map_y0) / w,
-        solar_view && (selected_planet_index === null || planet_view) ? -1 :
-        1);
+        zoom_dir);
     }
 
     drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
