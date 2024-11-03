@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730585568402"
+window.glov_build_version="1730596415060"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -756,7 +756,7 @@ var shader_planet_pixel=shaderCreate("shaders/planet_pixel.fp")
 var shader_planet_pixel_flat=shaderCreate("shaders/planet_pixel_flat.fp")
 var shader_pixelart=shaderCreate("shaders/pixelart.fp")
 var white_tex=textureWhite()
-var sprites={grass0:autoAtlas("grass","def"),grass1:autoAtlas("grass-l1","def"),grass2:autoAtlas("grass-l2","def"),lava0:autoAtlas("lava","def"),lava1:autoAtlas("lava-l1","def"),lava2:autoAtlas("lava-l2","def"),ice0:autoAtlas("ice","def"),ice1:autoAtlas("ice-l1","def"),ice2:autoAtlas("ice-l2","def"),sand0:autoAtlas("sand","def"),sand1:autoAtlas("sand-l1","def"),sand2:autoAtlas("sand-l2","def"),parched0:autoAtlas("parched","def"),parched1:autoAtlas("parched-l1","def"),parched2:autoAtlas("parched-l2","def"),treesmountains0:autoAtlas("trees-mountains","def"),treesmountains1:autoAtlas("trees-mountains-l1","def"),treesmountains2:autoAtlas("trees-mountains-l2","def"),mountains0:autoAtlas("mountains","def"),mountains1:autoAtlas("mountains-l1","def"),mountains2:autoAtlas("mountains-l2","def"),ocean0:autoAtlas("ocean-animated","def"),ocean1:autoAtlas("ocean-animated-l1","def"),ocean2:autoAtlas("ocean-animated-l2","def"),dirt0:autoAtlas("dirt","def"),dirt1:autoAtlas("dirt-l1","def"),dirt2:autoAtlas("dirt-l2","def")}
+var sprites={grass0:autoAtlas("grass","def"),grass1:autoAtlas("grass-l1","def"),grass2:autoAtlas("grass-l2","def"),lava0:autoAtlas("lava","def"),lava1:autoAtlas("lava-l1","def"),lava2:autoAtlas("lava-l2","def"),ice0:autoAtlas("ice","def"),ice1:autoAtlas("ice-l1","def"),ice2:autoAtlas("ice-l2","def"),sand0:autoAtlas("sand","def"),sand1:autoAtlas("sand-l1","def"),sand2:autoAtlas("sand-l2","def"),parched0:autoAtlas("parched","def"),parched1:autoAtlas("parched-l1","def"),parched2:autoAtlas("parched-l2","def"),treesmountains0:autoAtlas("trees-mountains","def"),treesmountains1:autoAtlas("trees-mountains-l1","def"),treesmountains2:autoAtlas("trees-mountains-l2","def"),mountains0:autoAtlas("mountains","def"),mountains1:autoAtlas("mountains-l1","def"),mountains2:autoAtlas("mountains-l2","def"),ocean0:autoAtlas("ocean-animated","def"),ocean1:autoAtlas("ocean-animated-l1","def"),ocean2:autoAtlas("ocean-animated-l2","def"),dirt0:autoAtlas("dirt","def"),dirt1:autoAtlas("dirt-l1","def"),dirt2:autoAtlas("dirt-l2","def"),gasgiant0:autoAtlas("gas-giant","def"),gasgiant1:autoAtlas("gas-giant","def"),gasgiant2:autoAtlas("gas-giant","def")}
 for(var key in sprites)sprites[key].texs.push(tex_palette_planets)
 var MAX_ZOOM=16
 var MAX_SOLAR_VIEW=1
@@ -910,29 +910,32 @@ if(Array.isArray(offs))for(var kk=0;kk<offs.length;++kk)v0.push(offs[kk])
 else v0.push(offs)}}return ret}var frame_offs_regular=frameListToBitmask({"????00?01":2,"???000?1?":3,"???00?10?":4,"?1?100?0?":5,"?1?001?0?":7,"?0??01?0?":18,"?0?10??0?":20,"?01?00???":34,"?1?000???":35,"10?00????":36,"?0?100?1?":37,"?0?001?1?":39,"?1?101?0?":[5,18],"?1?10??1?":[37,35],"?1??01?1?":[7,3],"?0?101?1?":[39,20]})
 var frame_offs_cliffs=frameListToBitmask({"????00?01":2,"???000?1?":3,"???00?10?":4,"?1?100?0?":22,"?1?001?0?":23,"?0??01?0?":18,"?0?10??0?":20,"?01?00???":34,"?1?000???":35,"10?00????":36,"?0?100?1?":38,"?0?001?1?":39,"?1?101?0?":21,"?1?10??1?":6,"?1??01?1?":7,"?0?101?1?":37})
 var frame_offs_water=frameListToBitmask({"000000001":88,"000000?1?":40,"000000100":120,"?1?100?00":0,"?1?00100?":56,"001000100":80,100000001:48,"00?00100?":64,"?00100?00":8,"001000000":96,"?1?000000":24,1e8:128,"?00100?1?":16,"00?001?1?":72})
+var frame_offs_gasgiant=frameListToBitmask({"?1?100?00":0,"?00100?00":16,"?00100?1?":32,"?1?000000":48,"000000?1?":64,100000001:80,"?1?00100?":96,"00?00100?":112,"00?001?1?":128,"001000100":144,"000000001":160,"001000000":176,"000000100":192,1e8:208})
 var frame_offs_tree=frameListToBitmask({"0001":1,"0010":3,"0011":2,"0100":105,"0101":53,"0110":108,"0111":4,1e3:107,1001:109,1010:55,1011:5,1100:106,1101:56,1110:57,1111:54})
 var frame_offs_mountain_tint=frameListToBitmask({"0001":1,"0010":3,"0011":2,"0100":53,"0101":27,"0110":56,"0111":4,1e3:55,1001:57,1010:29,1011:5,1100:54,1101:30,1110:31,1111:28})
-var BASE={NULL:{sprite:"grass",frame:1},WATER_DEEP:{sprite:"ocean",frame:48,anim:true,color_biome:BIOMES.WATER_DEEP},WATER_SHALLOW:{sprite:"ocean",frame:8,anim:true,ovr_idx:16,frame_offs:frame_offs_water,color_biome:BIOMES.WATER_SHALLOW},LAVAFLOW:{sprite:"ocean",frame:8,anim:true,color_biome:BIOMES.MOLTEN_LAVAFLOW},SANDa:{sprite:"sand",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DESERT},SANDb:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DESERT},GRASSa:{sprite:"grass",frame:1,ovr_idx:272,frame_offs:frame_offs_regular,color_biome:BIOMES.GREEN_PLAINS},GRASSb:{sprite:"grass",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.GREEN_PLAINS},MOONROCK1:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.MOONROCK1},MOONROCK2:{sprite:"dirt",frame:17,ovr_idx:103,frame_offs:frame_offs_cliffs,color_biome:BIOMES.MOONROCK2},MOONROCK3:{sprite:"dirt",frame:17,ovr_idx:103,frame_offs:frame_offs_cliffs,color_biome:BIOMES.MOONROCK3},DIRT_DARKa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_DARK},DIRT_DARKb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_DARK},DIRTa:{sprite:"sand",frame:1,ovr_idx:39,frame_offs:frame_offs_cliffs,color_biome:BIOMES.DIRT},DIRTb:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT},DIRT_REDa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_RED},DIRT_REDb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_RED},DIRT_REDc:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DEAD_FOREST},ICE_DARKa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_OCEAN},ICE_DARKb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_OCEAN},ICEa:{sprite:"ice",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_PLAINS},ICEb:{sprite:"ice",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_PLAINS},MOLTEN:{sprite:"lava",frame:17,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.MOLTEN_PLAINS},DETAIL_TREES1:{sprite:"treesmountains",frame:1,frame_offs:frame_offs_tree},DETAIL_TREES_DEAD:{sprite:"treesmountains",frame:950,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS1:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOUNTAINS},DETAIL_MOUNTAINS_MOONROCK4:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOONROCK4},DETAIL_MOUNTAINS_SNOW:{sprite:"mountains",frame:14,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOUNTAINS},DETAIL_MOLTEN_MOUNTAINS:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOLTEN_MOUNTAINS}}
+function gas1(biome){return{sprite:"gasgiant",frame:256,anim:2,ovr_idx:272,frame_offs:frame_offs_gasgiant,color_biome:biome,extra_overlay:{ovr_idx:32,anim:3}}}function gas2(biome){return{sprite:"gasgiant",frame:16,anim:3,ovr_idx:-240,frame_offs:frame_offs_gasgiant,color_biome:biome}}var BASE={NULL:{sprite:"grass",frame:1},WATER_DEEP:{sprite:"ocean",frame:48,anim:1,color_biome:BIOMES.WATER_DEEP},WATER_SHALLOW:{sprite:"ocean",frame:8,anim:1,ovr_idx:16,frame_offs:frame_offs_water,color_biome:BIOMES.WATER_SHALLOW},GAS_ORANGE_LIGHTa:gas1(BIOMES.GAS_ORANGE_LIGHT),GAS_ORANGE_LIGHTb:gas2(BIOMES.GAS_ORANGE_LIGHT),GAS_ORANGE_DARKa:gas1(BIOMES.GAS_ORANGE_DARK),GAS_ORANGE_DARKb:gas2(BIOMES.GAS_ORANGE_DARK),GAS_GRAYa:gas1(BIOMES.GAS_GRAY),GAS_GRAYb:gas2(BIOMES.GAS_GRAY),GAS_BLUE_DARKa:gas1(BIOMES.GAS_BLUE_DARK),GAS_BLUE_DARKb:gas2(BIOMES.GAS_BLUE_DARK),GAS_BLUE_MEDa:gas1(BIOMES.GAS_BLUE_MED),GAS_BLUE_MEDb:gas2(BIOMES.GAS_BLUE_MED),GAS_BLUE_LIGHTa:gas1(BIOMES.GAS_BLUE_LIGHT),GAS_BLUE_LIGHTb:gas2(BIOMES.GAS_BLUE_LIGHT),GAS_YELLOWa:gas1(BIOMES.GAS_YELLOW),GAS_YELLOWb:gas2(BIOMES.GAS_YELLOW),GAS_YELLOW_REDa:gas1(BIOMES.GAS_YELLOW_RED),GAS_YELLOW_REDb:gas2(BIOMES.GAS_YELLOW_RED),GAS_REDa:gas1(BIOMES.GAS_RED),GAS_REDb:gas2(BIOMES.GAS_RED),GAS_PURPLE_LIGHTa:gas1(BIOMES.GAS_PURPLE_LIGHT),GAS_PURPLE_LIGHTb:gas2(BIOMES.GAS_PURPLE_LIGHT),GAS_PURPLE_DARKa:gas1(BIOMES.GAS_PURPLE_DARK),GAS_PURPLE_DARKb:gas2(BIOMES.GAS_PURPLE_DARK),LAVAFLOW:{sprite:"ocean",frame:8,anim:1,color_biome:BIOMES.MOLTEN_LAVAFLOW},SANDa:{sprite:"sand",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DESERT},SANDb:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DESERT},GRASSa:{sprite:"grass",frame:1,ovr_idx:272,frame_offs:frame_offs_regular,color_biome:BIOMES.GREEN_PLAINS},GRASSb:{sprite:"grass",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.GREEN_PLAINS},MOONROCK1:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.MOONROCK1},MOONROCK2:{sprite:"dirt",frame:17,ovr_idx:103,frame_offs:frame_offs_cliffs,color_biome:BIOMES.MOONROCK2},MOONROCK3:{sprite:"dirt",frame:17,ovr_idx:103,frame_offs:frame_offs_cliffs,color_biome:BIOMES.MOONROCK3},DIRT_DARKa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_DARK},DIRT_DARKb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_DARK},DIRTa:{sprite:"sand",frame:1,ovr_idx:39,frame_offs:frame_offs_cliffs,color_biome:BIOMES.DIRT},DIRTb:{sprite:"sand",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT},DIRT_REDa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_RED},DIRT_REDb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DIRT_RED},DIRT_REDc:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.DEAD_FOREST},ICE_DARKa:{sprite:"dirt",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_OCEAN},ICE_DARKb:{sprite:"dirt",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_OCEAN},ICEa:{sprite:"ice",frame:1,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_PLAINS},ICEb:{sprite:"ice",frame:17,ovr_idx:232,frame_offs:frame_offs_regular,color_biome:BIOMES.FROZEN_PLAINS},MOLTEN:{sprite:"lava",frame:17,ovr_idx:280,frame_offs:frame_offs_regular,color_biome:BIOMES.MOLTEN_PLAINS},DETAIL_TREES1:{sprite:"treesmountains",frame:1,frame_offs:frame_offs_tree},DETAIL_TREES_DEAD:{sprite:"treesmountains",frame:950,frame_offs:frame_offs_tree},DETAIL_MOUNTAINS1:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOUNTAINS},DETAIL_MOUNTAINS_MOONROCK4:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOONROCK4},DETAIL_MOUNTAINS_SNOW:{sprite:"mountains",frame:14,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOUNTAINS},DETAIL_MOLTEN_MOUNTAINS:{sprite:"mountains",frame:1,frame_offs:frame_offs_mountain_tint,color_biome:BIOMES.MOLTEN_MOUNTAINS}}
 var ord=0
 function colorFromBiome(color_biome){return rovec4(color_biome/256+1/512,0,0,1)}for(var _key2 in BASE){var bb=BASE[_key2]
+bb.anim=bb.anim||0
 bb.ord=ord++
 var color_biome=bb.color_biome||BIOMES.GREEN_PLAINS
-bb.shader_param=colorFromBiome(color_biome)}var BIOME_TO_BASE=((_BIOME_TO_BASE={})[BIOMES.WATER_DEEP]=[BASE.WATER_DEEP,BASE.WATER_DEEP],_BIOME_TO_BASE[BIOMES.WATER_SHALLOW]=[BASE.WATER_SHALLOW,BASE.WATER_SHALLOW],_BIOME_TO_BASE[BIOMES.MOLTEN_LAVAFLOW]=[BASE.LAVAFLOW,BASE.LAVAFLOW],_BIOME_TO_BASE[BIOMES.MOLTEN_PLAINS]=[BASE.MOLTEN,BASE.MOLTEN],_BIOME_TO_BASE[BIOMES.GREEN_FOREST]=[BASE.GRASSa,BASE.GRASSb,BASE.DETAIL_TREES1],_BIOME_TO_BASE[BIOMES.MOUNTAINS]=[BASE.GRASSa,BASE.GRASSb,BASE.DETAIL_MOUNTAINS1],_BIOME_TO_BASE[BIOMES.GREEN_PLAINS]=[BASE.GRASSa,BASE.GRASSb],_BIOME_TO_BASE[BIOMES.MOUNTAINS_SNOW]=[BASE.ICEb,BASE.ICEb,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.FROZEN_PLAINS]=[BASE.ICEa,BASE.ICEb],_BIOME_TO_BASE[BIOMES.FROZEN_OCEAN]=[BASE.ICE_DARKa,BASE.ICE_DARKb],_BIOME_TO_BASE[BIOMES.FROZEN_MOUNTAINS]=[BASE.ICEa,BASE.ICEa,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.MOLTEN_MOUNTAINS]=[BASE.MOLTEN,BASE.MOLTEN,BASE.DETAIL_MOLTEN_MOUNTAINS],_BIOME_TO_BASE[BIOMES.DESERT]=[BASE.SANDa,BASE.SANDb],_BIOME_TO_BASE[BIOMES.DIRT_DARK]=[BASE.DIRT_DARKa,BASE.DIRT_DARKb],_BIOME_TO_BASE[BIOMES.DIRT]=[BASE.DIRTa,BASE.DIRTb],_BIOME_TO_BASE[BIOMES.DIRT_RED]=[BASE.DIRT_REDa,BASE.DIRT_REDb],_BIOME_TO_BASE[BIOMES.DEAD_FOREST]=[BASE.DIRT_REDc,BASE.DIRT_REDc,BASE.DETAIL_TREES_DEAD],_BIOME_TO_BASE[BIOMES.MOONROCK1]=[BASE.MOONROCK1,BASE.MOONROCK1],_BIOME_TO_BASE[BIOMES.MOONROCK2]=[BASE.MOONROCK2,BASE.MOONROCK2],_BIOME_TO_BASE[BIOMES.MOONROCK3]=[BASE.MOONROCK3,BASE.MOONROCK3],_BIOME_TO_BASE[BIOMES.MOONROCK4]=[BASE.MOONROCK3,BASE.MOONROCK3,BASE.DETAIL_MOUNTAINS_MOONROCK4],_BIOME_TO_BASE)
+bb.shader_param=colorFromBiome(color_biome)}var BIOME_TO_BASE=((_BIOME_TO_BASE={})[BIOMES.WATER_DEEP]=[BASE.WATER_DEEP,BASE.WATER_DEEP],_BIOME_TO_BASE[BIOMES.WATER_SHALLOW]=[BASE.WATER_SHALLOW,BASE.WATER_SHALLOW],_BIOME_TO_BASE[BIOMES.MOLTEN_LAVAFLOW]=[BASE.LAVAFLOW,BASE.LAVAFLOW],_BIOME_TO_BASE[BIOMES.MOLTEN_PLAINS]=[BASE.MOLTEN,BASE.MOLTEN],_BIOME_TO_BASE[BIOMES.GREEN_FOREST]=[BASE.GRASSa,BASE.GRASSb,BASE.DETAIL_TREES1],_BIOME_TO_BASE[BIOMES.MOUNTAINS]=[BASE.GRASSa,BASE.GRASSb,BASE.DETAIL_MOUNTAINS1],_BIOME_TO_BASE[BIOMES.GREEN_PLAINS]=[BASE.GRASSa,BASE.GRASSb],_BIOME_TO_BASE[BIOMES.MOUNTAINS_SNOW]=[BASE.ICEb,BASE.ICEb,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.FROZEN_PLAINS]=[BASE.ICEa,BASE.ICEb],_BIOME_TO_BASE[BIOMES.FROZEN_OCEAN]=[BASE.ICE_DARKa,BASE.ICE_DARKb],_BIOME_TO_BASE[BIOMES.FROZEN_MOUNTAINS]=[BASE.ICEa,BASE.ICEa,BASE.DETAIL_MOUNTAINS_SNOW],_BIOME_TO_BASE[BIOMES.MOLTEN_MOUNTAINS]=[BASE.MOLTEN,BASE.MOLTEN,BASE.DETAIL_MOLTEN_MOUNTAINS],_BIOME_TO_BASE[BIOMES.DESERT]=[BASE.SANDa,BASE.SANDb],_BIOME_TO_BASE[BIOMES.DIRT_DARK]=[BASE.DIRT_DARKa,BASE.DIRT_DARKb],_BIOME_TO_BASE[BIOMES.DIRT]=[BASE.DIRTa,BASE.DIRTb],_BIOME_TO_BASE[BIOMES.DIRT_RED]=[BASE.DIRT_REDa,BASE.DIRT_REDb],_BIOME_TO_BASE[BIOMES.DEAD_FOREST]=[BASE.DIRT_REDc,BASE.DIRT_REDc,BASE.DETAIL_TREES_DEAD],_BIOME_TO_BASE[BIOMES.MOONROCK1]=[BASE.MOONROCK1,BASE.MOONROCK1],_BIOME_TO_BASE[BIOMES.MOONROCK2]=[BASE.MOONROCK2,BASE.MOONROCK2],_BIOME_TO_BASE[BIOMES.MOONROCK3]=[BASE.MOONROCK3,BASE.MOONROCK3],_BIOME_TO_BASE[BIOMES.MOONROCK4]=[BASE.MOONROCK3,BASE.MOONROCK3,BASE.DETAIL_MOUNTAINS_MOONROCK4],_BIOME_TO_BASE[BIOMES.WATER_DEEP]=[BASE.WATER_DEEP,BASE.WATER_DEEP],_BIOME_TO_BASE[BIOMES.GAS_ORANGE_LIGHT]=[BASE.GAS_ORANGE_LIGHTa,BASE.GAS_ORANGE_LIGHTa],_BIOME_TO_BASE[BIOMES.GAS_ORANGE_DARK]=[BASE.GAS_ORANGE_DARKa,BASE.GAS_ORANGE_DARKa],_BIOME_TO_BASE[BIOMES.GAS_GRAY]=[BASE.GAS_GRAYa,BASE.GAS_GRAYa],_BIOME_TO_BASE[BIOMES.GAS_BLUE_DARK]=[BASE.GAS_BLUE_DARKa,BASE.GAS_BLUE_DARKa],_BIOME_TO_BASE[BIOMES.GAS_BLUE_MED]=[BASE.GAS_BLUE_MEDa,BASE.GAS_BLUE_MEDa],_BIOME_TO_BASE[BIOMES.GAS_BLUE_LIGHT]=[BASE.GAS_BLUE_LIGHTa,BASE.GAS_BLUE_LIGHTa],_BIOME_TO_BASE[BIOMES.GAS_YELLOW]=[BASE.GAS_YELLOWa,BASE.GAS_YELLOWa],_BIOME_TO_BASE[BIOMES.GAS_YELLOW_RED]=[BASE.GAS_YELLOW_REDa,BASE.GAS_YELLOW_REDa],_BIOME_TO_BASE[BIOMES.GAS_RED]=[BASE.GAS_REDa,BASE.GAS_REDa],_BIOME_TO_BASE[BIOMES.GAS_PURPLE_LIGHT]=[BASE.GAS_PURPLE_LIGHTa,BASE.GAS_PURPLE_LIGHTa],_BIOME_TO_BASE[BIOMES.GAS_PURPLE_DARK]=[BASE.GAS_PURPLE_DARKa,BASE.GAS_PURPLE_DARKa],_BIOME_TO_BASE)
 function detailRarityToSubBiome(sprite,frames,colorfrom){var ret=[]
-for(var ii=0;ii<frames.length;++ii)ret.push({sprite:sprite,frame:frames[ii],ord:999,shader_param:colorFromBiome(colorfrom)})
+for(var ii=0;ii<frames.length;++ii)ret.push({sprite:sprite,frame:frames[ii],anim:0,ord:999,shader_param:colorFromBiome(colorfrom)})
 return ret}function detailFramesToSubBiome(sprite,frameset,colorfrom){return[detailRarityToSubBiome(sprite,frameset[0],colorfrom),detailRarityToSubBiome(sprite,frameset[1],colorfrom),detailRarityToSubBiome(sprite,frameset[2],colorfrom)]}var BIOME_DETAILS_STANDARD=[[4,5,6,7,20,21,22,23],[2,3,8,9,18,19,24,25,28],[10,11,12,13,26,27,29]]
 var BIOME_DETAILS_NO_LIFE_SAND=[[4,5,6,7,20,21,22,23],[2,3,8,9,18,19,24,25,28],[12,13,29]]
 var BIOME_DETAILS_DEAD_DIRT=[[4,5,6,7,20,21,22,23],[6,7,8,9,24,25],[13,28,29]]
 var BIOME_DETAILS_NO_LIFE_DIRT=[[4,5,6,7,20,21,22,22,23],[6,7,22,23],[13,29]]
 var BIOME_DETAILS_MOLTEN=[[6,7,13,13,13,22,23],[4,5,10,11,20,21,26,27,28,29],[2,3,8,9,12,18,19,24,25]]
 var BIOME_DETAILS=((_BIOME_DETAILS={})[BIOMES.GREEN_PLAINS]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD,BIOMES.GREEN_PLAINS),_BIOME_DETAILS[BIOMES.GREEN_FOREST]=detailFramesToSubBiome("grass",BIOME_DETAILS_STANDARD,BIOMES.GREEN_PLAINS),_BIOME_DETAILS[BIOMES.DESERT]=detailFramesToSubBiome("sand",BIOME_DETAILS_STANDARD,BIOMES.DESERT),_BIOME_DETAILS[BIOMES.FROZEN_PLAINS]=detailFramesToSubBiome("ice",BIOME_DETAILS_STANDARD,BIOMES.FROZEN_PLAINS),_BIOME_DETAILS[BIOMES.FROZEN_OCEAN]=detailFramesToSubBiome("ice",BIOME_DETAILS_STANDARD,BIOMES.FROZEN_OCEAN),_BIOME_DETAILS[BIOMES.DIRT]=detailFramesToSubBiome("sand",BIOME_DETAILS_NO_LIFE_SAND,BIOMES.DIRT),_BIOME_DETAILS[BIOMES.DIRT_DARK]=detailFramesToSubBiome("dirt",BIOME_DETAILS_DEAD_DIRT,BIOMES.DIRT_DARK),_BIOME_DETAILS[BIOMES.MOLTEN_PLAINS]=detailFramesToSubBiome("lava",BIOME_DETAILS_MOLTEN,BIOMES.MOLTEN_PLAINS),_BIOME_DETAILS[BIOMES.DIRT_RED]=detailFramesToSubBiome("dirt",BIOME_DETAILS_STANDARD,BIOMES.DIRT_RED),_BIOME_DETAILS[BIOMES.DEAD_FOREST]=detailFramesToSubBiome("dirt",BIOME_DETAILS_STANDARD,BIOMES.DEAD_FOREST),_BIOME_DETAILS[BIOMES.MOONROCK1]=detailFramesToSubBiome("dirt",BIOME_DETAILS_NO_LIFE_DIRT,BIOMES.MOONROCK1),_BIOME_DETAILS[BIOMES.MOONROCK2]=detailFramesToSubBiome("dirt",BIOME_DETAILS_NO_LIFE_DIRT,BIOMES.MOONROCK2),_BIOME_DETAILS[BIOMES.MOONROCK3]=detailFramesToSubBiome("dirt",BIOME_DETAILS_NO_LIFE_DIRT,BIOMES.MOONROCK3),_BIOME_DETAILS)
-var anim_frame
+var anim_frame=[0,0,0,0]
 function overlayFor(base,mask){if(!base.frame_offs)return null
 var offs=base.frame_offs[mask]
 if(void 0===offs)return null
 var r=[]
-for(var ii=0;ii<offs.length;++ii)r.push(base.ovr_idx+offs[ii]+(base.anim?anim_frame:0))
-return[base.sprite,r,base.shader_param]}function detailFor(detail,mask){var add=detail.anim?anim_frame:0
+for(var ii=0;ii<offs.length;++ii)r.push(base.ovr_idx+offs[ii]+anim_frame[base.anim])
+if(base.extra_overlay)for(var _ii2=0;_ii2<offs.length;++_ii2)r.push(base.extra_overlay.ovr_idx+offs[_ii2]+anim_frame[base.extra_overlay.anim])
+return[base.sprite,r,base.shader_param]}function detailFor(detail,mask){var add=anim_frame[detail.anim]
 if(!detail.frame_offs)return[detail.frame+add]
 var ul=432===(432&mask)?8:0
 var ur=216===(216&mask)?4:0
@@ -1000,7 +1003,9 @@ var raw_datas={}
 for(var yy=sub_y0;yy<=sub_y1;++yy){var row=raw_datas[yy]={}
 for(var xx=sub_x0;xx<=sub_x1;++xx){var eff_xx=mod(xx,sub_num_horiz)
 var layer=planet.getTexture(2,MAP_SUB_SIZE,sublayer+MAP_SUBDIVIDE,eff_xx,mod(yy,sub_num_vert),true)
-if(layer)row[eff_xx]=[layer.raw_data,layer.details&&layer.details.valid?layer.details:void 0]}}anim_frame=floor(.0086*getFrameTimestamp())%8
+if(layer)row[eff_xx]=[layer.raw_data,layer.details&&layer.details.valid?layer.details:void 0]}}anim_frame[1]=floor(.0086*getFrameTimestamp())%8
+anim_frame[2]=floor(.0086*getFrameTimestamp()*.25)%16
+anim_frame[3]=floor(.0086*getFrameTimestamp()*.7)%16
 var map_num_vert=MAP_SUB_SIZE*zoom
 var map_num_horiz=2*map_num_vert
 var tile_x0=floor((camera2d.x0Real()-x)/tile_h)
@@ -1009,8 +1014,8 @@ var tile_y0=floor((camera2d.y0Real()-y)/tile_h)
 var tile_y1=floor((camera2d.y1Real()-y)/tile_h)
 var draw_param={x:0,y:0,w:0,h:0,z:0,frame:0,shader:shader_pixelart,nozoom:true,color:unit_vec}
 var ndata=[]
-for(var _ii2=0;_ii2<9;++_ii2)ndata.push({base:BASE.NULL,detail:void 0})
-for(var _yy2=tile_y0;_yy2<=tile_y1;++_yy2){for(var jj=0;jj<3;++jj)for(var _ii3=0;_ii3<2;++_ii3)bget(ndata[3*jj+_ii3+1],tile_x0-1+_ii3,_yy2-1+jj)
+for(var _ii3=0;_ii3<9;++_ii3)ndata.push({base:BASE.NULL,detail:void 0})
+for(var _yy2=tile_y0;_yy2<=tile_y1;++_yy2){for(var jj=0;jj<3;++jj)for(var _ii4=0;_ii4<2;++_ii4)bget(ndata[3*jj+_ii4+1],tile_x0-1+_ii4,_yy2-1+jj)
 var pixy=round(y+_yy2*tile_h)
 var next_pixy=round(y+(_yy2+1)*tile_h)
 draw_param.y=pixy
@@ -1028,26 +1033,33 @@ draw_param.x=pixx
 draw_param.w=next_pixx-pixx
 var base=my_info.base
 draw_param.z=z0+1
-draw_param.frame=base.frame+(base.anim?anim_frame:0)
+draw_param.frame=base.frame+anim_frame[base.anim]
 draw_param.color=base.shader_param
 sprites[""+base.sprite+lod].draw(draw_param)
-var masks={}
+if(base.extra_overlay){draw_param.z++
+draw_param.frame=base.frame+base.extra_overlay.ovr_idx-base.ovr_idx+anim_frame[base.extra_overlay.anim]
+sprites[""+base.sprite+lod].draw(draw_param)}var masks={}
 var dmask=0
 var overlays=[]
-for(var _jj2=0,idx=8;_jj2<3;++_jj2)for(var _ii4=0;_ii4<3;++_ii4,--idx){var n=ndata[3*_jj2+_ii4]
+for(var _jj2=0,idx=8;_jj2<3;++_jj2)for(var _ii5=0;_ii5<3;++_ii5,--idx){var n=ndata[3*_jj2+_ii5]
 var nb=n.base
 if(nb.ord>base.ord)if(!masks[nb.ord]){overlays.push(nb)
 masks[nb.ord]=1<<idx}else masks[nb.ord]|=1<<idx
 if(n.detail===my_info.detail)dmask|=1<<idx}overlays.sort(function(a,b){return a.ord-b.ord})
-for(var _ii5=0;_ii5<overlays.length;++_ii5){var _n=overlays[_ii5]
+var last_overlay=void 0
+for(var _ii6=0;_ii6<overlays.length;++_ii6){var _n=overlays[_ii6]
 var ovr=overlayFor(_n,masks[_n.ord])
-if(ovr){draw_param.color=ovr[2]
+if(ovr){last_overlay=ovr
+draw_param.color=ovr[2]
 for(var _jj3=0;_jj3<ovr[1].length;++_jj3){draw_param.z++
 draw_param.frame=ovr[1][_jj3]
-sprites[""+ovr[0]+lod].draw(draw_param)}}}if(extra){draw_param.z++
-var _ovr=detailFor(extra,dmask)
+sprites[""+ovr[0]+lod].draw(draw_param)}}}if(extra)if(extra.ovr_idx){if(last_overlay){var _ovr=last_overlay[1]
+for(var _jj4=0;_jj4<_ovr.length;++_jj4){draw_param.z++
+draw_param.frame=extra.ovr_idx+_ovr[_jj4]
+sprites[""+last_overlay[0]+lod].draw(draw_param)}}}else{var _ovr2=detailFor(extra,dmask)
 draw_param.color=extra.shader_param
-for(var _jj4=0;_jj4<_ovr.length;++_jj4){draw_param.frame=_ovr[_jj4]
+for(var _jj5=0;_jj5<_ovr2.length;++_jj5){draw_param.z++
+draw_param.frame=_ovr2[_jj5]
 sprites[""+extra.sprite+lod].draw(draw_param)}}}}}}var solar_mouse_pos=vec2()
 function drawSolarSystem(solar_system,x0,y0,z,w,h,star_xp,star_yp,fade){mousePos(solar_mouse_pos)
 var pmtex=planetMapTexture(false)
@@ -1337,8 +1349,8 @@ solarZoom(1)}}galaxy.getStarData(star)}var _solar_system=solar_override_system||
 last_solar_system=_solar_system||null
 if(_solar_system){var planets=_solar_system.planets,star_data=_solar_system.star_data,name=_solar_system.name
 if(!hide_solar){overlayText((name||(star&&star.id?"Star #"+star.id:"")||"Override Star")+(", Type: "+star_data.label))
-for(var _ii6=0;_ii6<planets.length;++_ii6){var _planet2=planets[_ii6]
-if(!planet_view||selected_planet_index===_ii6)overlayText((!planet_view&&selected_planet_index===_ii6?"*":" ")+" Planet #"+(_ii6+1)+": Class "+_planet2.type.name)}}var do_solar_view=eff_solar_view?eff_solar_view:debugDefineIsSet("AUTOSOLAR")&&gal_zoomer.zoom_level>15.5?1:0
+for(var _ii7=0;_ii7<planets.length;++_ii7){var _planet2=planets[_ii7]
+if(!planet_view||selected_planet_index===_ii7)overlayText((!planet_view&&selected_planet_index===_ii7?"*":" ")+" Planet #"+(_ii7+1)+": Class "+_planet2.type.name)}}var do_solar_view=eff_solar_view?eff_solar_view:debugDefineIsSet("AUTOSOLAR")&&gal_zoomer.zoom_level>15.5?1:0
 if(hide_solar)do_solar_view=0
 if(do_solar_view){var selected_planet=drawSolarSystem(_solar_system,map_x0,map_y0,Z.SOLAR,w,w,xp,yp,do_solar_view)
 last_selected_planet=selected_planet
@@ -3960,7 +3972,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730585568402")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730596415060")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6504,7 +6516,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730585568402")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730596415060")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12212,7 +12224,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730585568402"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730596415060"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12220,10 +12232,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730585568402")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730585568402"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730596415060")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730596415060"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730585568402"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730596415060"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14305,4 +14317,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":79,"./packet":90,"./perfcounters":91,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730585568402
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730596415060
