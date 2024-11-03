@@ -972,7 +972,7 @@ sampleBiomeMap = function sampleBiomeMap(): number {
     let tex: Texture;
     let tex_idx: number;
     if (sublayer === 0) {
-      // orrey view and planet globe view
+      // orrery view and planet globe view
       // (basically) never two in the same frame, so just loop through the pool
       tex_idx = tex_pool.tex_idx;
       tex_pool.tex_idx = (tex_pool.tex_idx + 1) % MAX_TEXTURES;

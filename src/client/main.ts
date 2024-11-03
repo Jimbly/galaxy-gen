@@ -331,6 +331,9 @@ export function main(): void {
     dirt0: autoAtlas('dirt', 'def'), // 16x20
     dirt1: autoAtlas('dirt-l1', 'def'), // 16x20
     dirt2: autoAtlas('dirt-l2', 'def'), // 16x20
+    gasgiant0: autoAtlas('gas-giant', 'def'), // 8x21
+    gasgiant1: autoAtlas('gas-giant', 'def'), // 8x21
+    gasgiant2: autoAtlas('gas-giant', 'def'), // 8x21
   };
   for (let key in sprites) {
     sprites[key as keyof typeof sprites].texs.push(tex_palette_planets);
@@ -772,6 +775,23 @@ export function main(): void {
     '00?001?1?': 9*8,
   });
 
+  let frame_offs_gasgiant = frameListToBitmask({
+    '?1?100?00': 0*16,
+    '?00100?00': 1*16,
+    '?00100?1?': 2*16,
+    '?1?000000': 3*16,
+    '000000?1?': 4*16,
+    '100000001': 5*16,
+    '?1?00100?': 6*16,
+    '00?00100?': 7*16,
+    '00?001?1?': 8*16,
+    '001000100': 9*16,
+    '000000001': 10*16,
+    '001000000': 11*16,
+    '000000100': 12*16,
+    '100000000': 13*16,
+  });
+
   let frame_offs_tree = frameListToBitmask({
     '0001': 1,
     '0010': 3,
@@ -808,17 +828,46 @@ export function main(): void {
     '1111': 2 + 26,
   });
 
-  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'sand' | 'parched' | 'ice' | 'mountains' | 'treesmountains';
+  type SpriteName = 'grass' | 'dirt' | 'lava' | 'ocean' | 'gasgiant' | 'sand' |
+    'parched' | 'ice' | 'mountains' | 'treesmountains';
   type SubBiome = {
     sprite: SpriteName;
     frame: number;
-    anim?: boolean;
+    anim: number;
     ovr_idx?: number;
     ord: number;
     color_biome?: Biome;
     shader_param: ROVec4;
     frame_offs?: Record<number, number[]>;
+    extra_overlay?: {
+      ovr_idx: number;
+      anim: number;
+    };
   };
+  function gas1(biome: Biome): SubBiome {
+    return {
+      sprite: 'gasgiant',
+      frame: 1*16 + 15*16,
+      anim: 2,
+      ovr_idx: 2*16 + 15*16,
+      frame_offs: frame_offs_gasgiant,
+      color_biome: biome,
+      extra_overlay: {
+        ovr_idx: 2*16,
+        anim: 3,
+      },
+    } as SubBiome;
+  }
+  function gas2(biome: Biome): SubBiome {
+    return {
+      sprite: 'gasgiant',
+      frame: 1*16,
+      anim: 3,
+      ovr_idx: -15*16,
+      frame_offs: frame_offs_gasgiant,
+      color_biome: biome,
+    } as SubBiome;
+  }
   const BASE = {
     NULL: { // lowest ord
       sprite: 'grass',
@@ -827,21 +876,45 @@ export function main(): void {
     WATER_DEEP: {
       sprite: 'ocean',
       frame: 6*8,
-      anim: true,
+      anim: 1,
       color_biome: BIOMES.WATER_DEEP,
     } as SubBiome,
     WATER_SHALLOW: {
       sprite: 'ocean',
       frame: 1*8,
-      anim: true,
+      anim: 1,
       ovr_idx: 2*8,
       frame_offs: frame_offs_water,
       color_biome: BIOMES.WATER_SHALLOW,
     } as SubBiome,
+
+    GAS_ORANGE_LIGHTa: gas1(BIOMES.GAS_ORANGE_LIGHT),
+    GAS_ORANGE_LIGHTb: gas2(BIOMES.GAS_ORANGE_LIGHT),
+    GAS_ORANGE_DARKa: gas1(BIOMES.GAS_ORANGE_DARK),
+    GAS_ORANGE_DARKb: gas2(BIOMES.GAS_ORANGE_DARK),
+    GAS_GRAYa: gas1(BIOMES.GAS_GRAY),
+    GAS_GRAYb: gas2(BIOMES.GAS_GRAY),
+    GAS_BLUE_DARKa: gas1(BIOMES.GAS_BLUE_DARK),
+    GAS_BLUE_DARKb: gas2(BIOMES.GAS_BLUE_DARK),
+    GAS_BLUE_MEDa: gas1(BIOMES.GAS_BLUE_MED),
+    GAS_BLUE_MEDb: gas2(BIOMES.GAS_BLUE_MED),
+    GAS_BLUE_LIGHTa: gas1(BIOMES.GAS_BLUE_LIGHT),
+    GAS_BLUE_LIGHTb: gas2(BIOMES.GAS_BLUE_LIGHT),
+    GAS_YELLOWa: gas1(BIOMES.GAS_YELLOW),
+    GAS_YELLOWb: gas2(BIOMES.GAS_YELLOW),
+    GAS_YELLOW_REDa: gas1(BIOMES.GAS_YELLOW_RED),
+    GAS_YELLOW_REDb: gas2(BIOMES.GAS_YELLOW_RED),
+    GAS_REDa: gas1(BIOMES.GAS_RED),
+    GAS_REDb: gas2(BIOMES.GAS_RED),
+    GAS_PURPLE_LIGHTa: gas1(BIOMES.GAS_PURPLE_LIGHT),
+    GAS_PURPLE_LIGHTb: gas2(BIOMES.GAS_PURPLE_LIGHT),
+    GAS_PURPLE_DARKa: gas1(BIOMES.GAS_PURPLE_DARK),
+    GAS_PURPLE_DARKb: gas2(BIOMES.GAS_PURPLE_DARK),
+
     LAVAFLOW: {
       sprite: 'ocean',
       frame: 1*8,
-      anim: true,
+      anim: 1,
       // ovr_idx: 2*8,
       // frame_offs: frame_offs_water,
       color_biome: BIOMES.MOLTEN_LAVAFLOW,
@@ -1030,6 +1103,7 @@ export function main(): void {
   }
   for (let key in BASE) {
     let bb = BASE[key as BaseType];
+    bb.anim = bb.anim || 0;
     bb.ord = ord++;
     let color_biome = bb.color_biome || BIOMES.GREEN_PLAINS;
     bb.shader_param = colorFromBiome(color_biome);
@@ -1058,6 +1132,20 @@ export function main(): void {
     [BIOMES.MOONROCK2]: [BASE.MOONROCK2, BASE.MOONROCK2],
     [BIOMES.MOONROCK3]: [BASE.MOONROCK3, BASE.MOONROCK3],
     [BIOMES.MOONROCK4]: [BASE.MOONROCK3, BASE.MOONROCK3, BASE.DETAIL_MOUNTAINS_MOONROCK4],
+
+    [BIOMES.WATER_DEEP]: [BASE.WATER_DEEP, BASE.WATER_DEEP],
+
+    [BIOMES.GAS_ORANGE_LIGHT]: [BASE.GAS_ORANGE_LIGHTa, BASE.GAS_ORANGE_LIGHTa],
+    [BIOMES.GAS_ORANGE_DARK]: [BASE.GAS_ORANGE_DARKa, BASE.GAS_ORANGE_DARKa],
+    [BIOMES.GAS_GRAY]: [BASE.GAS_GRAYa, BASE.GAS_GRAYa],
+    [BIOMES.GAS_BLUE_DARK]: [BASE.GAS_BLUE_DARKa, BASE.GAS_BLUE_DARKa],
+    [BIOMES.GAS_BLUE_MED]: [BASE.GAS_BLUE_MEDa, BASE.GAS_BLUE_MEDa],
+    [BIOMES.GAS_BLUE_LIGHT]: [BASE.GAS_BLUE_LIGHTa, BASE.GAS_BLUE_LIGHTa],
+    [BIOMES.GAS_YELLOW]: [BASE.GAS_YELLOWa, BASE.GAS_YELLOWa],
+    [BIOMES.GAS_YELLOW_RED]: [BASE.GAS_YELLOW_REDa, BASE.GAS_YELLOW_REDa],
+    [BIOMES.GAS_RED]: [BASE.GAS_REDa, BASE.GAS_REDa],
+    [BIOMES.GAS_PURPLE_LIGHT]: [BASE.GAS_PURPLE_LIGHTa, BASE.GAS_PURPLE_LIGHTa],
+    [BIOMES.GAS_PURPLE_DARK]: [BASE.GAS_PURPLE_DARKa, BASE.GAS_PURPLE_DARKa],
   };
 
   type BiomeDetailsRarity = SubBiome[];
@@ -1068,6 +1156,7 @@ export function main(): void {
       ret.push({
         sprite,
         frame: frames[ii],
+        anim: 0,
         ord: 999,
         shader_param: colorFromBiome(colorfrom),
       });
@@ -1123,7 +1212,7 @@ export function main(): void {
     [BIOMES.MOONROCK3]: detailFramesToSubBiome('dirt', BIOME_DETAILS_NO_LIFE_DIRT, BIOMES.MOONROCK3),
   };
 
-  let anim_frame: number;
+  let anim_frame = [0,0,0,0];
   function overlayFor(base: SubBiome, mask: number): null | DetailDef {
     if (!base.frame_offs) {
       return null;
@@ -1134,12 +1223,17 @@ export function main(): void {
     }
     let r = [];
     for (let ii = 0; ii < offs.length; ++ii) {
-      r.push(base.ovr_idx! + offs[ii] + (base.anim ? anim_frame : 0));
+      r.push(base.ovr_idx! + offs[ii] + anim_frame[base.anim]);
+    }
+    if (base.extra_overlay) {
+      for (let ii = 0; ii < offs.length; ++ii) {
+        r.push(base.extra_overlay.ovr_idx + offs[ii] + anim_frame[base.extra_overlay.anim]);
+      }
     }
     return [base.sprite, r, base.shader_param];
   }
   function detailFor(detail: SubBiome, mask: number): number[] {
-    let add = (detail.anim ? anim_frame : 0);
+    let add = anim_frame[detail.anim];
     if (!detail.frame_offs) {
       return [detail.frame + add];
     }
@@ -1262,7 +1356,9 @@ export function main(): void {
           }
         }
       }
-      anim_frame = floor(getFrameTimestamp() * 0.0086) % 8;
+      anim_frame[1] = floor(getFrameTimestamp() * 0.0086) % 8;
+      anim_frame[2] = floor(getFrameTimestamp() * 0.0086*0.25) % 16;
+      anim_frame[3] = floor(getFrameTimestamp() * 0.0086*0.7) % 16;
       let map_num_vert = MAP_SUB_SIZE * zoom;
       let map_num_horiz = map_num_vert * 2;
       let tile_x0 = floor((camera2d.x0Real() - x) / tile_h);
@@ -1354,9 +1450,15 @@ export function main(): void {
 
           let base = my_info.base;
           draw_param.z = z0 + 1;
-          draw_param.frame = base.frame + (base.anim ? anim_frame : 0);
+          draw_param.frame = base.frame + anim_frame[base.anim];
           draw_param.color = base.shader_param;
           sprites[`${base.sprite}${lod}`].draw(draw_param);
+          if (base.extra_overlay) {
+            draw_param.z++;
+            draw_param.frame = base.frame + base.extra_overlay.ovr_idx - base.ovr_idx! +
+              anim_frame[base.extra_overlay.anim];
+            sprites[`${base.sprite}${lod}`].draw(draw_param);
+          }
 
           // Get BASE (and details) of neighbors and draw overlays
           let masks: Record<number, number> = {};
@@ -1380,10 +1482,12 @@ export function main(): void {
             }
           }
           overlays.sort((a, b) => a.ord - b.ord);
+          let last_overlay;
           for (let ii = 0; ii < overlays.length; ++ii) {
             let n = overlays[ii];
             let ovr = overlayFor(n, masks[n.ord]);
             if (ovr) {
+              last_overlay = ovr;
               draw_param.color = ovr[2];
               for (let jj = 0; jj < ovr[1].length; ++jj) {
                 draw_param.z++;
@@ -1394,12 +1498,23 @@ export function main(): void {
           }
 
           if (extra) {
-            draw_param.z++;
-            let ovr = detailFor(extra, dmask);
-            draw_param.color = extra.shader_param;
-            for (let jj = 0; jj < ovr.length; ++jj) {
-              draw_param.frame = ovr[jj];
-              sprites[`${extra.sprite}${lod}`].draw(draw_param);
+            if (extra.ovr_idx) {
+              if (last_overlay) {
+                let ovr = last_overlay[1];
+                for (let jj = 0; jj < ovr.length; ++jj) {
+                  draw_param.z++;
+                  draw_param.frame = extra.ovr_idx + ovr[jj];
+                  sprites[`${last_overlay[0]}${lod}`].draw(draw_param);
+                }
+              }
+            } else {
+              let ovr = detailFor(extra, dmask);
+              draw_param.color = extra.shader_param;
+              for (let jj = 0; jj < ovr.length; ++jj) {
+                draw_param.z++;
+                draw_param.frame = ovr[jj];
+                sprites[`${extra.sprite}${lod}`].draw(draw_param);
+              }
             }
           }
         }
