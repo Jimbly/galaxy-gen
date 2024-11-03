@@ -109,6 +109,8 @@ import {
   BIT_DETAIL_IDX_SHIFT,
   BIT_RARITY_MASK,
   BIT_SAME_LOOSE,
+  NoiseOptsNumberField,
+  NoiseOptsRangeField,
   PLANET_TYPE_NAMES,
   Planet,
   PlanetOverrideParams,
@@ -116,6 +118,7 @@ import {
   planetCreate,
   planetMapFlatTexture,
   planetMapTexture,
+  planetNoiseForType,
   solarSystemCreate,
 } from './solar_system';
 
@@ -394,6 +397,7 @@ export function main(): void {
     name: 'M' as const,
     size: 12,
     seed: 50,
+    noise: clone(planetNoiseForType('M')),
   }, localStorageGetJSON('planet_params', {}));
   let planet_view_params: {
     orbit: number;
@@ -469,6 +473,7 @@ export function main(): void {
   let planet_view = localStorageGetJSON('planet_view', 0);
   let planet_override = localStorageGetJSON('planet_override', false);
   let planet_flatmap = localStorageGetJSON('planet_flatmap', false);
+  let planet_view_page = localStorageGetJSON('planet_view_page', 0);
   let planet_override_planet: null | Planet = null;
   let selected_planet_index: null | number = localStorageGetJSON('selected_planet', null);
   let planet_zoomer = new Zoomer('planet_zoom', 'planet_offs', MAX_PLANET_ZOOM, false);
@@ -476,6 +481,7 @@ export function main(): void {
   let mouse_pos = vec2();
   let use_mouse_pos = false;
   const font_style_fade = font.styleColored(null, 0xFFFFFF40);
+  const font_style_label_overlay = font.styleColored(null, 0x00000090);
   const color_legend_fade = vec4(1,1,1,0.25);
   const color_highlight = vec4(1,1,0,0.75);
   const color_text_backdrop = vec4(0,0,0,0.5);
@@ -1752,36 +1758,128 @@ export function main(): void {
           y += font_height;
 
           if (planet_override) {
-            print(style, x, y, z, `Type: ${planet_params.name}`);
-            y += font_height;
-            let name_idx = (PLANET_TYPE_NAMES.indexOf(planet_params.name) + 1) || 1;
-            name_idx = round(slider(name_idx, { x, y, z, min: 1, max: PLANET_TYPE_NAMES.length }));
-            planet_params.name = PLANET_TYPE_NAMES[name_idx - 1];
+            let page_w = button_height * 2;
+            if (buttonText({ x, y, z, w: page_w, text: 'View', disabled: planet_view_page === 0 })) {
+              planet_view_page = 0;
+              localStorageSetJSON('planet_view_page', planet_view_page);
+            }
+            if (buttonText({ x: x + page_w + 2, y, z, w: page_w, text: 'Nois1', disabled: planet_view_page === 1 })) {
+              planet_view_page = 1;
+              localStorageSetJSON('planet_view_page', planet_view_page);
+            }
+            if (buttonText({ x: x + page_w*2 + 4, y, z, w: page_w, text: 'Nois2', disabled: planet_view_page === 2 })) {
+              planet_view_page = 2;
+              localStorageSetJSON('planet_view_page', planet_view_page);
+            }
             y += button_spacing;
 
-            // print(style, x, y, z, `Size: ${round4(planet_params.size)}`);
-            // y += font_height;
-            // planet_params.size = round(slider(planet_params.size, { x, y, z, min: 4, max: 128 }));
-            // y += button_spacing;
-
-            if (!hide_solar) {
-              let orbit = planet_view_params.orbit;
-              print(style, x, y, z, `Orbit: ${round(orbit)}`);
-              y += font_height;
-              planet_view_params.orbit = round(slider(orbit, { x, y, z, min: 0, max: 360 }));
-              y += button_spacing;
-              if (planet_view_params.orbit !== orbit) {
-                localStorageSetJSON('planet_view_params', planet_view_params);
+            let noise = planet_params.noise;
+            function expandyField(label: string, field: NoiseOptsRangeField,
+              min_value?: number, max_value?: number
+            ): void {
+              if (min_value === undefined) {
+                min_value = 0.1;
+              }
+              max_value = max_value || 8;
+              if (buttonText({ x: x + button_width - button_height, y: y - 3, z, w: button_height, text: '...' })) {
+                let v = noise[field];
+                if (typeof v === 'number') {
+                  noise[field] = {
+                    min: v,
+                    max: v,
+                    freq: 0.3,
+                  };
+                } else {
+                  noise[field] = (v.min + v.max) / 2;
+                }
               }
 
-              let rot = planet_view_params.rot;
-              print(style, x, y, z, `Rotation: ${round(rot)}`);
-              y += font_height;
-              planet_view_params.rot = round(slider(rot, { x, y, z, min: 0, max: 360 }));
-              y += button_spacing;
-              if (planet_view_params.rot !== rot) {
-                localStorageSetJSON('planet_view_params', planet_view_params);
+              let v = noise[field];
+              if (typeof v === 'number') {
+                print(style, x, y, z, `${label}: ${v}`);
+                y += font_height;
+                noise[field] = round4(slider(v, { x, y, z, min: min_value, max: max_value }));
+                y += button_spacing;
+              } else {
+                print(style, x, y, z, `${label}`);
+                y += font_height;
+                print(font_style_label_overlay, x+10, y, z+1, `min: ${v.min}`);
+                v.min = round4(slider(v.min, { x, y, z, min: min_value, max: max_value }));
+                y += button_height;
+                print(font_style_label_overlay, x+10, y, z+1, `max: ${v.max}`);
+                v.max = max(v.min, round4(slider(v.max, { x, y, z, min: min_value, max: max_value })));
+                y += button_height;
+                print(font_style_label_overlay, x+10, y, z+1, `freq: ${v.freq}`);
+                v.freq = round4(slider(v.freq, { x, y, z, min: 0.001, max: 10 }));
+                y += button_spacing;
               }
+            }
+            function simpleField(label: string, field: NoiseOptsNumberField,
+              min_value: number, max_value: number
+            ): void {
+              print(style, x, y, z, `${label}: ${noise[field]}`);
+              y += font_height;
+              noise[field] = round4(slider(noise[field], { x, y, z, min: min_value, max: max_value }));
+              y += button_spacing;
+            }
+
+            if (planet_view_page === 0) {
+              print(style, x, y, z, `Type: ${planet_params.name}`);
+              y += font_height;
+              let name_idx = (PLANET_TYPE_NAMES.indexOf(planet_params.name) + 1) || 1;
+              name_idx = round(slider(name_idx, { x, y, z, min: 1, max: PLANET_TYPE_NAMES.length }));
+              let new_name = PLANET_TYPE_NAMES[name_idx - 1];
+              if (planet_params.name !== new_name) {
+                planet_params.name = new_name;
+                planet_params.noise = planetNoiseForType(new_name);
+              }
+              y += button_spacing;
+
+              // print(style, x, y, z, `Size: ${round4(planet_params.size)}`);
+              // y += font_height;
+              // planet_params.size = round(slider(planet_params.size, { x, y, z, min: 4, max: 128 }));
+              // y += button_spacing;
+
+              if (!hide_solar) {
+                let orbit = planet_view_params.orbit;
+                print(style, x, y, z, `Orbit: ${round(orbit)}`);
+                y += font_height;
+                planet_view_params.orbit = round(slider(orbit, { x, y, z, min: 0, max: 360 }));
+                y += button_spacing;
+                if (planet_view_params.orbit !== orbit) {
+                  localStorageSetJSON('planet_view_params', planet_view_params);
+                }
+
+                let rot = planet_view_params.rot;
+                print(style, x, y, z, `Rotation: ${round(rot)}`);
+                y += font_height;
+                planet_view_params.rot = round(slider(rot, { x, y, z, min: 0, max: 360 }));
+                y += button_spacing;
+                if (planet_view_params.rot !== rot) {
+                  localStorageSetJSON('planet_view_params', planet_view_params);
+                }
+              }
+            } else if (planet_view_page === 1) {
+              expandyField('Freq', 'frequency');
+              // simpleField('Amplitude', 'amplitude'); // doesn't do anything, we normalize
+              expandyField('Perstnc', 'persistence', 0, 1);
+              expandyField('Lacunarity', 'lacunarity', 1, 8);
+            } else if (planet_view_page === 2) {
+              print(style, x, y, z, `Octaves: ${noise.octaves}`);
+              y += font_height;
+              noise.octaves = round(slider(noise.octaves, { x, y, z, min: 1, max: 12 }));
+              y += button_spacing;
+
+              print(style, x, y, z, `Warp: ${noise.domain_warp}`);
+              y += font_height;
+              noise.domain_warp = round(slider(noise.domain_warp, { x, y, z, min: 0, max: 2 }));
+              y += button_spacing;
+
+              if (noise.domain_warp) {
+                simpleField('Warp Freq', 'warp_freq', 0, 4);
+                simpleField('Warp Amp', 'warp_amp', 0.01, 2);
+              }
+              simpleField('Skew', 'skew_x', 0.01, 4);
             }
 
             print(style, x, y, z, `Seed: ${planet_params.seed}`);

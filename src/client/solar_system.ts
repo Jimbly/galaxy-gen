@@ -422,7 +422,7 @@ const biome_entry_gasgiant5: BiomeTableEntry = {
 };
 const biome_table_gasgiant5 = [biome_entry_gasgiant5];
 
-type NoiseOptRange = {
+export type NoiseOptRange = {
   min: number;
   max: number;
   freq: number;
@@ -430,21 +430,20 @@ type NoiseOptRange = {
   add?: number;
 };
 type NoiseOptRangeRT = Required<NoiseOptRange>;
-type NoiseOpts = {
+export type NoiseOpts = {
   frequency: number | NoiseOptRange;
   amplitude: number;
   persistence: number | NoiseOptRange;
   lacunarity: number | NoiseOptRange;
   octaves: number;
-  cutoff: number;
   domain_warp: number;
   warp_freq: number;
   warp_amp: number;
   skew_x: number;
-  skew_y: number;
   key?: string;
 };
-type NoiseOptsRangeField = KeysMatching<NoiseOpts, NoiseOptRange | number>;
+export type NoiseOptsRangeField = KeysMatching<NoiseOpts, NoiseOptRange | number>;
+export type NoiseOptsNumberField = KeysMatching<NoiseOpts, number>;
 
 const noise_base: NoiseOpts = {
   frequency: 2,
@@ -452,12 +451,10 @@ const noise_base: NoiseOpts = {
   persistence: 0.5,
   lacunarity: { min: 1.6, max: 2.8, freq: 0.3 },
   octaves: 6,
-  cutoff: 0.5,
   domain_warp: 0,
   warp_freq: 1,
   warp_amp: 0.1,
   skew_x: 1,
-  skew_y: 1,
 };
 
 function noiseMod(opts: Partial<NoiseOpts>, base?: NoiseOpts): NoiseOpts {
@@ -551,7 +548,7 @@ function randExp(idx: number, mn: number, mx: number): number {
   return mn + (mx - mn) * v;
 }
 
-function typeFromName(name: string): PlanetType {
+function typeFromName(name: PlanetTypeName): PlanetType {
   for (let ii = 0; ii < planet_types.length; ++ii) {
     if (planet_types[ii].name === name) {
       return planet_types[ii];
@@ -560,10 +557,16 @@ function typeFromName(name: string): PlanetType {
   assert(false);
 }
 
+export function planetNoiseForType(name: PlanetTypeName): NoiseOpts {
+  let type = typeFromName(name);
+  return type.noise;
+}
+
 export type PlanetOverrideParams = {
   name?: PlanetTypeName;
   size?: number;
   seed?: number;
+  noise?: NoiseOpts;
 };
 
 type RawData = {
@@ -586,6 +589,7 @@ export class Planet {
   biome_table: BiomeTable;
   tex_idx = 0;
   work_frame = 0;
+  noise: NoiseOpts;
   constructor(override_data?: PlanetOverrideParams) {
     override_data = override_data || {};
     this.type = override_data.name ?
@@ -597,6 +601,7 @@ export class Planet {
     this.seed = override_data.seed || rand[2].uint32();
     let biome_tables = this.type.biome_tables;
     this.biome_table = biome_tables[rand[1].range(biome_tables.length)];
+    this.noise = override_data && override_data.noise || this.type.noise;
   }
 
   texpairs: Partial<Record<number, TexPair>> = {};
@@ -619,7 +624,7 @@ export class Planet {
 
 let noise: SimplexNoise[];
 let noise_warp: SimplexNoise[];
-let noise_skew = vec2();
+let noise_skew_x: number;
 let total_amplitude: number;
 let noise_field: Record<NoiseOptsRangeField, SimplexNoise>;
 let subopts: NoiseOpts;
@@ -651,8 +656,7 @@ function initNoise(seed: number, subopts_in: NoiseOpts): void {
       v.add = v.min + v.mul;
     }
   }
-  noise_skew[0] = subopts.skew_x * 2;
-  noise_skew[1] = subopts.skew_y;
+  noise_skew_x = subopts.skew_x * 2;
 }
 
 let biome_subopts: NoiseOpts;
@@ -721,8 +725,8 @@ sampleBiomeMap = function sampleBiomeMap(): number {
     return v.add + v.mul * noise_field[field].noise2D(sample_pos[0] * v.freq, sample_pos[1] * v.freq);
   }
   function sample(x: number, y: number): number {
-    sample_pos[0] = x * noise_skew[0];
-    sample_pos[1] = y * noise_skew[1];
+    sample_pos[0] = x * noise_skew_x;
+    sample_pos[1] = y;
     let warp_freq = subopts.warp_freq;
     let warp_amp = subopts.warp_amp;
     for (let ii = 0; ii < subopts.domain_warp; ++ii) {
@@ -904,7 +908,7 @@ sampleBiomeMap = function sampleBiomeMap(): number {
       planet_w *= zoom;
     }
     assert(tex_data.length >= tex_h * tex_w);
-    initNoise(this.seed, this.type.noise);
+    initNoise(this.seed, this.noise);
     initBiomeNoise(this.type.noise_biome || noise_biome_base);
     planet_gen_layer = layer;
     for (let idx=0, jj = 0; jj < tex_h; ++jj) {
