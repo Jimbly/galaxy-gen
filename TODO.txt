@@ -1,15 +1,13 @@
 # Planet project
 
 Next:
-  Check perf on phone/chimera
-  Title screen (just an overlay that fades away nicely?) to kickstart music
-  POIs?
+  Dynamic loading of soundscape files, fade them in when loaded
 
 Planet improvements:
+  POIs?
   Variations with each tree type (different biomes on one planet?  different planets?)
   Rivers?
   Marsh tileset not used for anything, make a swamp biome / planet?
-
 
 Always show frontish/lit side when in orbit view?
 
