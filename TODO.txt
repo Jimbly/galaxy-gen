@@ -1,8 +1,5 @@
 # Planet project
 
-Next:
-  Dynamic loading of soundscape files, fade them in when loaded
-
 Planet improvements:
   POIs?
   Variations with each tree type (different biomes on one planet?  different planets?)
