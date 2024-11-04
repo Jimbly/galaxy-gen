@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730680679017"
+window.glov_build_version="1730690724949"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -498,14 +498,17 @@ function distSq(x1,y1,x2,y2){var dx=x2-x1
 var dy=y2-y1
 return dx*dx+dy*dy}var dy=[0,1,-1]
 var dx=[0,1,-1]
-Galaxy.prototype.starsNear=function(x,y,num){var layers=this.layers
+Galaxy.prototype.starsNear=function(x,y,num){profilerStart("starsNear")
+var layers=this.layers
 var layer_idx=MAX_LAYER-1
 var layer=layers[layer_idx]
-if(!layer)return[]
-var layer_res=pow(LAYER_STEP,layer_idx)
+if(!layer){profilerStop("starsNear")
+return[]}var layer_res=pow(LAYER_STEP,layer_idx)
 var cx=floor(x*layer_res)
 var cy=floor(y*layer_res)
-var closest=new Array(2*num)
+var closest_len=2*num
+var closest=new Array(closest_len)
+for(var ii=0;ii<closest.length;++ii)closest[ii]=-1
 for(var ddy=0;ddy<=3;++ddy){var yy=cy+dy[ddy]
 if(yy<0||yy>=layer_res)continue
 for(var ddx=0;ddx<=3;++ddx){var xx=cx+dx[ddx]
@@ -518,18 +521,19 @@ assert(void 0!==star_storage_start)
 assert(void 0!==star_count)
 assert(void 0!==star_idx)
 var store_idx=2*star_storage_start
-for(var ii=0;ii<star_count;++ii){var _star_id=star_idx+ii
+for(var _ii15=0;_ii15<star_count;++_ii15){var _star_id=star_idx+_ii15
 var star_dist=distSq(x,y,star_storage[store_idx++],star_storage[store_idx++])
-for(var jj=0;jj<closest.length;jj+=2){var other_id=closest[jj+1]
-if(void 0===other_id){closest[jj]=star_dist
+for(var jj=0;jj<closest_len;jj+=2){var other_id=closest[jj+1]
+if(-1===other_id){closest[jj]=star_dist
 closest[jj+1]=_star_id
 break}var other_dist=closest[jj]
 if(star_dist<other_dist){closest[jj]=star_dist
 closest[jj+1]=_star_id
 star_dist=other_dist
 _star_id=other_id}}}}}var ret=[]
-for(var _ii15=1;_ii15<closest.length;_ii15+=2){var id=closest[_ii15]
-if(void 0!==id)ret.push(id)}return ret}
+for(var _ii16=1;_ii16<closest_len;_ii16+=2){var id=closest[_ii16]
+if(-1!==id)ret.push(id)}profilerStop("starsNear")
+return ret}
 Galaxy.prototype.getStar=function(star_id){var layers=this.layers,stars=this.stars
 if(!stars)this.stars=stars={}
 var existing=stars[star_id]
@@ -572,7 +576,8 @@ module.exports={"font_size":32,"imageW":1024,"imageH":512,"spread":8,"channels":
 },{}],7:[function(require,module,exports){
 "use strict"
 exports.main=main
-require("../glov/client/local_storage.js").setStoragePrefix("galaxy-gen")
+function _extends(){return(_extends=Object.assign?Object.assign.bind():function(target){for(var i=1;i<arguments.length;i++){var source=arguments[i]
+for(var key in source)if(Object.prototype.hasOwnProperty.call(source,key))target[key]=source[key]}return target}).apply(this,arguments)}require("../glov/client/local_storage.js").setStoragePrefix("galaxy-gen")
 var assert=require("assert")
 var _glovClientAutoatlas=require("../glov/client/autoatlas")
 var autoAtlas=_glovClientAutoatlas.autoAtlas
@@ -588,8 +593,10 @@ var _glovClientFramebuffer=require("../glov/client/framebuffer")
 var copyCanvasToClipboard=_glovClientFramebuffer.copyCanvasToClipboard
 var _glovClientInput=require("../glov/client/input")
 var KEYS=_glovClientInput.KEYS
+var eatAllInput=_glovClientInput.eatAllInput
 var inputClick=_glovClientInput.inputClick
 var inputDrag=_glovClientInput.inputDrag
+var inputTouchMode=_glovClientInput.inputTouchMode
 var keyDown=_glovClientInput.keyDown
 var keyDownEdge=_glovClientInput.keyDownEdge
 var mouseMoved=_glovClientInput.mouseMoved
@@ -641,6 +648,7 @@ var _glovCommonUtil=require("../glov/common/util")
 var clamp=_glovCommonUtil.clamp
 var clone=_glovCommonUtil.clone
 var deepEqual=_glovCommonUtil.deepEqual
+var easeIn=_glovCommonUtil.easeIn
 var easeInOut=_glovCommonUtil.easeInOut
 var easeOut=_glovCommonUtil.easeOut
 var lerp=_glovCommonUtil.lerp
@@ -763,6 +771,7 @@ var shader_planet_pixel=shaderCreate("shaders/planet_pixel.fp")
 var shader_planet_pixel_flat=shaderCreate("shaders/planet_pixel_flat.fp")
 var shader_pixelart=shaderCreate("shaders/pixelart.fp")
 var white_tex=textureWhite()
+var sprite_splash=spriteCreate({name:"splash"})
 var sprites={grass0:autoAtlas("grass","def"),grass1:autoAtlas("grass-l1","def"),grass2:autoAtlas("grass-l2","def"),lava0:autoAtlas("lava","def"),lava1:autoAtlas("lava-l1","def"),lava2:autoAtlas("lava-l2","def"),ice0:autoAtlas("ice","def"),ice1:autoAtlas("ice-l1","def"),ice2:autoAtlas("ice-l2","def"),sand0:autoAtlas("sand","def"),sand1:autoAtlas("sand-l1","def"),sand2:autoAtlas("sand-l2","def"),parched0:autoAtlas("parched","def"),parched1:autoAtlas("parched-l1","def"),parched2:autoAtlas("parched-l2","def"),treesmountains0:autoAtlas("trees-mountains","def"),treesmountains1:autoAtlas("trees-mountains-l1","def"),treesmountains2:autoAtlas("trees-mountains-l2","def"),mountains0:autoAtlas("mountains","def"),mountains1:autoAtlas("mountains-l1","def"),mountains2:autoAtlas("mountains-l2","def"),ocean0:autoAtlas("ocean-animated","def"),ocean1:autoAtlas("ocean-animated-l1","def"),ocean2:autoAtlas("ocean-animated-l2","def"),dirt0:autoAtlas("dirt","def"),dirt1:autoAtlas("dirt-l1","def"),dirt2:autoAtlas("dirt-l2","def"),gasgiant0:autoAtlas("gas-giant","def"),gasgiant1:autoAtlas("gas-giant","def"),gasgiant2:autoAtlas("gas-giant","def")}
 for(var key in sprites)sprites[key].texs.push(tex_palette_planets)
 var MAX_ZOOM=16
@@ -794,7 +803,7 @@ while(true){if(v>check)return v.toFixed(precis)
 check*=.1
 precis++}}var cells_drawn=0
 addMetric({name:"cells",show_stat:"false",labels:{"cells: ":function cells(){return cells_drawn.toString()}}})
-var gal_zoomer=new Zoomer("zoom","offs",MAX_ZOOM,true)
+var gal_zoomer=new Zoomer("zoom","offs",MAX_ZOOM,false)
 var solar_view=localStorageGetJSON("solar_view",0)
 var solar_override=localStorageGetJSON("solar_override",false)
 var solar_override_system=null
@@ -879,7 +888,8 @@ v2addScale(cur_pos,cur_pos,unit_vec,.5)}if(ii)drawLine(last_pos[0],last_pos[1],c
 var ORBIT_RATE=2e-4
 var ROTATION_RATE=15e-5
 var temp_fade=vec4(1,1,1,1)
-function drawPlanet(solar_system,selected_planet,x0,y0,z,w,h,fade){var planet=solar_system.planets[selected_planet.idx]
+function drawPlanet(solar_system,selected_planet,x0,y0,z,w,h,fade){profilerStart("drawPlanet")
+var planet=solar_system.planets[selected_planet.idx]
 var theta=planet.orbit+planet.orbit_speed*walltime()*ORBIT_RATE
 theta%=2*PI
 var rot=getFrameTimestamp()*ROTATION_RATE
@@ -902,7 +912,7 @@ var x=xmid
 var y=ymid
 temp_fade[3]=min(8*fade,1)
 var _planet_tex=planet.getTexture(1,PLANET_FULL_RADIUS,0,0,0,false)
-if(_planet_tex)spriteQueueRaw([_pmtex,_planet_tex,tex_palette_planets],x-sprite_size,y-sprite_size,z,2*sprite_size,2*sprite_size,0,0,1,1,temp_fade,shader_planet_pixel,_planet_shader_params)}}var MAP_FULL_SIZE=256
+if(_planet_tex)spriteQueueRaw([_pmtex,_planet_tex,tex_palette_planets],x-sprite_size,y-sprite_size,z,2*sprite_size,2*sprite_size,0,0,1,1,temp_fade,shader_planet_pixel,_planet_shader_params)}profilerStop("drawPlanet")}var MAP_FULL_SIZE=256
 var MAP_SUBDIVIDE=2
 var MAP_SUB_SIZE=MAP_FULL_SIZE/pow(2,MAP_SUBDIVIDE)
 var EMPTY_RAW_DATA=new Uint8Array(MAP_SUB_SIZE*MAP_SUB_SIZE)
@@ -1114,14 +1124,24 @@ selected_planet_index=closest_planet.idx}else selected_planet_index=null
 var br0=w/2*1.5
 var br1=h/2*VSCALE*1.5
 drawElipse(xmid-br0,ymid-br1,xmid+br0,ymid+br1,z-2.1,0,[0,0,0,fade])
-return closest_planet}var last_solar_system=null
+return closest_planet}var modal_up=!engine.DEBUG
+var modal_fade=modal_up?1:0
+var last_solar_system=null
 var last_selected_planet=null
 var drag_temp=vec2()
-function test(dt){gl.clearColor(0,0,0,1)
+function test(dt){profilerStart("top")
+gl.clearColor(0,0,0,1)
 var z=Z.UI
 var button_height=uiButtonHeight()
 var button_width=uiButtonWidth()
 var font_height=uiTextHeight()
+if(modal_fade&&!modal_up)if((modal_fade-=.001*dt)<0)modal_fade=0
+if(modal_up||modal_fade){z=Z.MODAL
+drawRect(0,0,game_width,game_height,z,[0,0,0,.5*easeIn(modal_fade,2)])
+z++
+sprite_splash.draw({x:0,y:0,z:z,w:346,h:256,color:[1,1,1,easeIn(modal_fade,2)]})
+if(modal_up){if(inputClick({x:-Infinity,y:-Infinity,w:Infinity,h:Infinity})){modal_up=false
+modal_fade=1}eatAllInput()}}z=Z.UI
 var x=4
 var button_spacing=button_height+6
 var y=4
@@ -1145,13 +1165,16 @@ for(var cy=layer_y0;cy<=layer_y1;++cy)for(var cx=layer_x0;cx<=layer_x1;++cx)if(!
 return true}var max_okay_zoom=gal_zoomer.zoom_level
 if(galaxy){var zlis=[LAYER_STEP/2*ceil(gal_zoomer.zoom_level/(LAYER_STEP/2)),LAYER_STEP/2*ceil((gal_zoomer.zoom_level+1)/(LAYER_STEP/2))]
 for(var ii=0;ii<zlis.length;++ii)if(checkLevel(zlis[ii]))max_okay_zoom=zlis[ii]}if(galaxy&&!debugDefineIsSet("ATTRACT"))galaxy.loading=false
-if(!deepEqual(params,gen_params)){gen_params=clone(params)
+if(!deepEqual(params,gen_params)){profilerStart("galaxy recreate")
+gen_params=clone(params)
 var first=true
 if(galaxy){first=false
 galaxy.dispose()}(galaxy=createGalaxy(params)).loading=first||debugDefineIsSet("ATTRACT")
-allocSprite()}if(keyDownEdge(KEYS.C)&&keyDown(KEYS.CTRL))copyCanvasToClipboard()
+allocSprite()
+profilerStop()}if(keyDownEdge(KEYS.C)&&keyDown(KEYS.CTRL))copyCanvasToClipboard()
 var hide_solar=eff_planet_view>=2
 if(eff_planet_view<1&&planet_zoomer.target_zoom_level)planet_zoomer.resetZoom(0,0,0)
+profilerStopStart("panel")
 if(show_panel){if(buttonText({x:x,y:y,text:"View: "+(view?"Pixely":"Raw"),w:.75*button_width})||keyDownEdge(KEYS.V)){localStorageSetJSON("view",view=(view+1)%2)
 setTimeout(function(){return engine.setPixelyStrict(1===view)},0)}if(buttonText({x:x+button_width-button_height,y:y,text:"<<",w:button_height})||keyDownEdge(KEYS.ESC))localStorageSetJSON("panel",show_panel=!show_panel)
 y+=button_spacing
@@ -1266,19 +1289,23 @@ param.noise_freq=round4(slider(param.noise_freq,{x:x,y:y,z:z,min:.1,max:100*pow(
 print(style,x,y+=button_spacing,z,"Noise Weight: "+param.noise_weight)
 y+=font_height
 param.noise_weight=round4(slider(param.noise_weight,{x:x,y:y,z:z,min:0,max:4}))
-y+=button_spacing}}}panel({x:x-4,y:0,w:button_width+8,h:y,z:z-1})}else{if(!debugDefineIsSet("ATTRACT")&&buttonText({x:x,y:y,text:">>",w:button_height})||keyDownEdge(KEYS.ESC))localStorageSetJSON("panel",show_panel=!show_panel)
-y+=button_spacing}if(solar_view&&solar_override)if(!solar_override_system||!deepEqual(solar_params,gen_solar_params)){gen_solar_params=clone(solar_params)
+y+=button_spacing}}}panel({x:x-4,y:0,w:button_width+8,h:y,z:z-1})}else{if(!debugDefineIsSet("ATTRACT")&&!inputTouchMode()&&!modal_up&&buttonText({x:x,y:y,text:">>",w:button_height})||keyDownEdge(KEYS.ESC))localStorageSetJSON("panel",show_panel=!show_panel)
+y+=button_spacing}profilerStopStart("check overrides")
+if(solar_view&&solar_override)if(!solar_override_system||!deepEqual(solar_params,gen_solar_params)){gen_solar_params=clone(solar_params)
 localStorageSetJSON("solar_params",solar_params)
 solar_override_system=solarSystemCreate(solar_params.seed,{id:solar_params.star_id})
 planet_override_planet=null}if(planet_view&&planet_override)if(!planet_override_planet||!deepEqual(planet_params,gen_planet_params)){gen_planet_params=clone(planet_params)
 localStorageSetJSON("planet_params",planet_params)
-planet_override_planet=planetCreate((solar_override?solar_params.seed:galaxy.params.seed)+planet_params.seed,solar_override?solar_params.star_id:last_solar_system&&last_solar_system.star_id||0,planet_params)}if(buttonText({x:x=game_width-w+4,y:y=w-button_height,z:z,w:button_height,text:"-"})||keyDownEdge(KEYS.MINUS)||keyDownEdge(KEYS.Q)){use_mouse_pos=false
+planet_override_planet=planetCreate((solar_override?solar_params.seed:galaxy.params.seed)+planet_params.seed,solar_override?solar_params.star_id:last_solar_system&&last_solar_system.star_id||0,planet_params)}profilerStopStart("zooming")
+x=game_width-w+4
+y=w-button_height
+if(!modal_up&&buttonText(_extends({text:"-",z:z},inputTouchMode()?{x:2,y:y-2*button_height-2,w:3*button_height,h:3*button_height,font_height:3*font_height}:{x:x,y:y,w:button_height}))||keyDownEdge(KEYS.MINUS)||keyDownEdge(KEYS.Q)){use_mouse_pos=false
 doZoom(.5,.5,-1)}x+=button_height+2
 var SLIDER_W=110
 var eff_zoom=gal_zoomer.target_zoom_level+solar_view+planet_view+planet_zoomer.target_zoom_level
-var new_zoom=roundZoom(slider(eff_zoom,{x:x,y:y,z:z,w:SLIDER_W,min:0,max:MAX_ZOOM+MAX_PLANET_VIEW+planet_zoomer.max_zoom+1}))
+if(!inputTouchMode()&&!modal_up){var new_zoom=roundZoom(slider(eff_zoom,{x:x,y:y,z:z,w:SLIDER_W,min:0,max:MAX_ZOOM+MAX_PLANET_VIEW+planet_zoomer.max_zoom+1}))
 if(abs(new_zoom-eff_zoom)>1e-6)doZoom(.5,.5,new_zoom-eff_zoom)
-if(buttonText({x:x+=SLIDER_W+2,y:y,z:z,w:button_height,text:"+"})||keyDownEdge(KEYS.EQUALS)||keyDownEdge(KEYS.E)){use_mouse_pos=false
+x+=SLIDER_W+2}if(!modal_up&&buttonText(_extends({text:"+",z:z},inputTouchMode()?{x:game_width-3*button_height-2,y:y-2*button_height-2,w:3*button_height,h:3*button_height,font_height:3*font_height}:{x:x,y:y,w:button_height}))||keyDownEdge(KEYS.EQUALS)||keyDownEdge(KEYS.E)){use_mouse_pos=false
 doZoom(.5,.5,1)}x+=button_height+2
 var mouse_wheel=mouseWheel()
 if(inputClick({button:2}))--mouse_wheel
@@ -1287,13 +1314,13 @@ mousePos(mouse_pos)
 if(mouse_wheel<0&&eff_solar_view_unsmooth&&!solar_view||mouse_wheel<0&&eff_planet_view_unsmooth&&!planet_view||mouse_wheel<0&&planet_view&&planet_zoomer.zoom_level&&!planet_zoomer.target_zoom_level||mouse_wheel<0&&planet_view&&eff_planet_view_unsmooth>planet_view||mouse_wheel>0&&planet_view&&eff_planet_view_unsmooth<planet_view||mouse_wheel>0&&solar_view&&eff_solar_view_unsmooth<solar_view);else doZoom((mouse_pos[0]-map_x0)/w,(mouse_pos[1]-map_y0)/w,mouse_wheel)}zoomTick(max_okay_zoom)
 var zoom=pow(2,gal_zoomer.zoom_level)
 var zoom_text_y=floor(y+(button_height-font_height)/2)
-var zoom_text_w=print(null,x,zoom_text_y,z,solar_view?planet_view?planet_view>1?"Atmos":"Orbit ":"Solar":zoom.toFixed(0)+"X")
-drawRect(x-2,zoom_text_y,x+zoom_text_w+2,zoom_text_y+font_height,z-1,color_text_backdrop)
-var planet_zoom=pow(2,planet_zoomer.zoom_level)
+if(inputTouchMode())x=(game_width-30)/2
+if(!modal_up){var zoom_text_w=print(null,x,zoom_text_y,z,solar_view?planet_view?planet_view>1?"Atmos":"Orbit ":"Solar":zoom.toFixed(0)+"X")
+drawRect(x-2,zoom_text_y,x+zoom_text_w+2,zoom_text_y+font_height,z-1,color_text_backdrop)}var planet_zoom=pow(2,planet_zoomer.zoom_level)
 x=game_width-w
-if(!solar_view){var legend_scale=.25
-var legend_x0=game_width-w*legend_scale-2
-var legend_x1=game_width-4
+if(!solar_view&&!modal_up){var legend_scale=.25
+var legend_x1=game_width-(inputTouchMode()?60:4)
+var legend_x0=legend_x1-w*legend_scale+2
 var legend_color=solar_view?color_legend_fade:unit_vec
 drawLine(legend_x0,(y=w)-4.5,legend_x1,y-4.5,z,1,1,legend_color)
 drawLine(legend_x0-.5,y-7,legend_x0-.5,y-2,z,1,1,legend_color)
@@ -1301,7 +1328,13 @@ drawLine(legend_x1+.5,y-7,legend_x1+.5,y-2,z,1,1,legend_color)
 var ly=legend_scale*params.width_ly/zoom
 var legend_y=y-6-font_height
 font.drawSizedAligned(solar_view?font_style_fade:null,legend_x0,legend_y,z,font_height,font.ALIGN.HCENTER,legend_x1-legend_x0,0,format(ly)+"ly")
-drawRect(legend_x0-2,legend_y,legend_x1+2,y,z-1,color_text_backdrop)}x=map_x0
+drawRect(legend_x0-2,legend_y,legend_x1+2,y,z-1,color_text_backdrop)}var overlay_y=0
+var overlay_x=show_panel?map_x0+2:2*button_height
+var overlay_w=0
+function overlayText(line){if(debugDefineIsSet("ATTRACT"))return
+var textw=print(null,overlay_x,overlay_y,z,line)
+overlay_w=max(overlay_w,textw)
+overlay_y+=font_height}x=map_x0
 y=map_y0
 v2set(drag_temp,0,0)
 var kb_scale=keyDown(KEYS.SHIFT)?.5:.125
@@ -1312,22 +1345,17 @@ drag_temp[1]-=keyDown(KEYS.S)*kb_scale
 var drag=inputDrag()
 if(drag&&drag.delta){v2add(drag_temp,drag_temp,drag.delta)
 use_mouse_pos=true}if(drag_temp[0]||drag_temp[1])if(solar_view){if(eff_planet_view>1)planet_zoomer.drag(drag_temp,w)}else gal_zoomer.drag(drag_temp,w)
-if(debugDefineIsSet("ATTRACT")||true){gal_zoomer.zoom_offs[0]=clamp(gal_zoomer.zoom_offs[0],0,1-1/zoom)
-gal_zoomer.zoom_offs[1]=clamp(gal_zoomer.zoom_offs[1],0,1-1/zoom)}else{gal_zoomer.zoom_offs[0]=clamp(gal_zoomer.zoom_offs[0],-1/zoom,1)
-gal_zoomer.zoom_offs[1]=clamp(gal_zoomer.zoom_offs[1],-1/zoom,1)}if(eff_planet_view>1){if(planet_zoomer.zoom_offs[0]<-1)planet_zoomer.zoom_offs[0]+=2
+if(debugDefineIsSet("ATTRACT")){gal_zoomer.zoom_offs[0]=clamp(gal_zoomer.zoom_offs[0],0,1-1/zoom)
+gal_zoomer.zoom_offs[1]=clamp(gal_zoomer.zoom_offs[1],0,1-1/zoom)}else{var xover=(game_width-256)/2/256
+gal_zoomer.zoom_offs[0]=clamp(gal_zoomer.zoom_offs[0],-xover/zoom,1-1/zoom+xover/zoom)
+gal_zoomer.zoom_offs[1]=clamp(gal_zoomer.zoom_offs[1],0,1-1/zoom)}if(eff_planet_view>1){if(planet_zoomer.zoom_offs[0]<-1)planet_zoomer.zoom_offs[0]+=2
 if(planet_zoomer.zoom_offs[0]>1)planet_zoomer.zoom_offs[0]-=2
 planet_zoomer.zoom_offs[1]=clamp(planet_zoomer.zoom_offs[1],0,1-1/planet_zoom)}if(mouseMoved())use_mouse_pos=true
 if(use_mouse_pos)mousePos(mouse_pos)
 else{mouse_pos[0]=map_x0+w/2
 mouse_pos[1]=map_y0+w/2}mouse_pos[0]=gal_zoomer.zoom_offs[0]+(mouse_pos[0]-map_x0)/w/zoom
 mouse_pos[1]=gal_zoomer.zoom_offs[1]+(mouse_pos[1]-map_y0)/w/zoom
-var overlay_y=0
-var overlay_x=show_panel?map_x0+2:2*button_height
-var overlay_w=0
-function overlayText(line){if(debugDefineIsSet("ATTRACT"))return
-var textw=print(null,overlay_x,overlay_y,z,line)
-overlay_w=max(overlay_w,textw)
-overlay_y+=font_height}if(0)overlayText((use_mouse_pos?"Mouse":"Target")+": "+mouse_pos[0].toFixed(9)+","+mouse_pos[1].toFixed(9))
+if(0)overlayText((use_mouse_pos?"Mouse":"Target")+": "+mouse_pos[0].toFixed(9)+","+mouse_pos[1].toFixed(9))
 function highlightCell(cell){var zoom_offs=gal_zoomer.zoom_offs
 var xp=x+(cell.x0-zoom_offs[0])*zoom*w
 var yp=y+(cell.y0-zoom_offs[1])*zoom*w
@@ -1343,12 +1371,14 @@ if(cell.pois.length)overlayText("POIs: "+cell.pois.length)}if(debugDefineIsSet("
 var dy=floor((mouse_pos[1]-cell.y0)/cell.w*galaxy.buf_dim)
 if(cell.data)overlayText("Value: "+cell.data[dy*galaxy.buf_dim+dx].toFixed(5))}}var did_highlight=false
 function checkCellHighlight(cell){if(cell.ready&&!did_highlight&&mouse_pos[0]>=cell.x0&&mouse_pos[0]<cell.x0+cell.w&&mouse_pos[1]>=cell.y0&&mouse_pos[1]<cell.y0+cell.h){did_highlight=true
-highlightCell(cell)}}function drawCell(alpha,parent,cell){var zoom_level=gal_zoomer.zoom_level,zoom_offs=gal_zoomer.zoom_offs;++cells_drawn
+highlightCell(cell)}}profilerStopStart("draw cells")
+function drawCell(alpha,parent,cell){profilerStart("drawCell")
+var zoom_level=gal_zoomer.zoom_level,zoom_offs=gal_zoomer.zoom_offs;++cells_drawn
 var qx=cell.cx-parent.cx*LAYER_STEP
 var qy=cell.cy-parent.cy*LAYER_STEP
 var draw_param={x:x+(cell.x0-zoom_offs[0])*zoom*w,y:y+(cell.y0-zoom_offs[1])*zoom*w,w:w*zoom*cell.w,h:w*zoom*cell.h,z:Z.BACKGROUND,nozoom:true,shader:1===view?shader_galaxy_pixel:shader_galaxy_blend,shader_params:void 0}
 var partial=false
-if(!parent.tex){if(!cell.tex)return
+if(!parent.tex){if(!cell.tex)return profilerStop()
 alpha=1
 partial=true}else if(!cell.tex){alpha=0
 partial=true}var dither=lerp(clamp(zoom_level-12.5,0,1),params.dither,0)
@@ -1356,7 +1386,9 @@ draw_param.shader_params={params:[alpha?buf_dim:buf_dim/LAYER_STEP,dither],scale
 var texs=cell.texs
 if(!texs){texs=[cell.tex||white_tex,parent.tex||white_tex,tex_palette]
 if(!partial)cell.texs=texs}debug_sprite.texs=texs
-debug_sprite.draw(draw_param)}function drawLevel(layer_idx,alpha,do_highlight){var zoom_offs=gal_zoomer.zoom_offs
+debug_sprite.draw(draw_param)
+profilerStop()}function drawLevel(layer_idx,alpha,do_highlight){profilerStart("drawLevel")
+var zoom_offs=gal_zoomer.zoom_offs
 var gal_x0=(camera2d.x0Real()-map_x0)/w/zoom+zoom_offs[0]
 var gal_x1=(camera2d.x1Real()-map_x0)/w/zoom+zoom_offs[0]
 var gal_y0=(camera2d.y0Real()-map_y0)/w/zoom+zoom_offs[1]
@@ -1373,14 +1405,15 @@ var py=floor(cy/LAYER_STEP)
 var parent=galaxy.getCellTextured(layer_idx-1,py*pres+px)
 drawCell(alpha,parent,cell)
 if(do_highlight)checkCellHighlight(cell)
-else checkCellHighlight(parent)}}var blend_range=1
+else checkCellHighlight(parent)}profilerStop("drawLevel")}var blend_range=1
 var draw_level=max(cells_drawn=0,(gal_zoomer.zoom_level-1)/(LAYER_STEP/2)+blend_range/2)
 var level0=floor(draw_level)
 var extra=min((draw_level-level0)/blend_range,1)
 if(!extra&&level0){level0--
 extra=1}drawLevel(level0+1,extra,Boolean(extra))
 var globe_view
-if(gal_zoomer.zoom_level>=12){var star
+if(gal_zoomer.zoom_level>=12){profilerStopStart("solar system")
+var star
 var SELECT_DIST=40
 if(!solar_override_system)if((solar_view||eff_solar_view)&&null!==selected_star_id)star=galaxy.getStar(selected_star_id)
 else{var closest=galaxy.starsNear(mouse_pos[0],mouse_pos[1],1)
@@ -1406,7 +1439,7 @@ last_solar_system=_solar_system||null
 if(_solar_system){var planets=_solar_system.planets,star_data=_solar_system.star_data,name=_solar_system.name
 if(!hide_solar){overlayText((name||(star&&star.id?"Star #"+star.id:"")||"Override Star")+(", Type: "+star_data.label))
 for(var _ii7=0;_ii7<planets.length;++_ii7){var _planet2=planets[_ii7]
-if(!planet_view||selected_planet_index===_ii7)overlayText((!planet_view&&selected_planet_index===_ii7?"*":" ")+" Planet #"+(_ii7+1)+": Class "+_planet2.type.name)}}var do_solar_view=eff_solar_view?eff_solar_view:debugDefineIsSet("AUTOSOLAR")&&gal_zoomer.zoom_level>15.5?1:0
+if(!planet_view||selected_planet_index===_ii7)overlayText((!planet_view&&selected_planet_index===_ii7?"*":" ")+" Planet, Class "+_planet2.type.name)}}var do_solar_view=eff_solar_view?eff_solar_view:debugDefineIsSet("AUTOSOLAR")&&gal_zoomer.zoom_level>15.5?1:0
 if(hide_solar)do_solar_view=0
 if(do_solar_view){var selected_planet=drawSolarSystem(_solar_system,map_x0,map_y0,Z.SOLAR,w,w,xp,yp,do_solar_view)
 last_selected_planet=selected_planet
@@ -1414,21 +1447,24 @@ if(solar_view){var do_planet_view=eff_planet_view?min(eff_planet_view,1):0
 if(do_planet_view&&null!==selected_planet_index&&(selected_planet||planet_override&&planet_override_planet)){globe_view={pos:[map_x0+w/2,map_y0+w/2],r:PLANET_FULL_RADIUS*do_planet_view*.87}
 drawPlanet(_solar_system,selected_planet||{idx:0,x:0,y:0,z:Z.SOLAR},map_x0,map_y0,Z.PLANET,w,w,do_planet_view)}else if(!selected_planet){selected_planet_index=null
 planet_view=0}}}}else if(star)overlayText("Star #"+star.id)
-if(eff_planet_view>1){assert(_solar_system)
+if(eff_planet_view>1&&_solar_system){assert(_solar_system)
 assert(null!==selected_planet_index)
 var _planets=_solar_system.planets
 var _planet3=planet_override?planet_override_planet:_planets[selected_planet_index]
 if(!_planet3){planet_view=0
 if(planet_zoomer.target_zoom_level)planet_zoomer.resetZoom(0,0,0)}else{var ww=planet_zoom*w
-planetMapMode(_planet3,map_x0+(0-planet_zoomer.zoom_offs[0])*ww,map_y0+(0-planet_zoomer.zoom_offs[1])*ww,Z.PLANET_MAP,ww,clamp(eff_planet_view-1,0,1),planet_zoomer.zoom_level)}}}soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom]||0)
+planetMapMode(_planet3,map_x0+(0-planet_zoomer.zoom_offs[0])*ww,map_y0+(0-planet_zoomer.zoom_offs[1])*ww,Z.PLANET_MAP,ww,clamp(eff_planet_view-1,0,1),planet_zoomer.zoom_level)}}}if(!engine.DEBUG){profilerStopStart("soundscape")
+soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom]||0)
 if(debugDefineIsSet("SOUNDSCAPE")){var text=soundscape.debug()
 text.unshift("Zoom level = "+eff_zoom)
-text.forEach(overlayText)}if(inputClick({x:-Infinity,y:-Infinity,w:Infinity,h:Infinity})){use_mouse_pos=true
+text.forEach(overlayText)}}profilerStopStart("bottom")
+if(inputClick({x:-Infinity,y:-Infinity,w:Infinity,h:Infinity})){use_mouse_pos=true
 mousePos(mouse_pos)
 var zoom_dir=solar_view&&null===selected_planet_index?-1:1
 if(globe_view)zoom_dir=v2dist(mouse_pos,globe_view.pos)<globe_view.r?1:-1
 doZoom((mouse_pos[0]-map_x0)/w,(mouse_pos[1]-map_y0)/w,zoom_dir)}drawRect(overlay_x-2,0,overlay_x+overlay_w+2,overlay_y,z-1,color_text_backdrop)
-if(debugDefineIsSet("ATTRACT")&&!netDisconnected())engine.postRender(saveSnapshot)}function testInit(dt){engine.setState(test)
+if(debugDefineIsSet("ATTRACT")&&!netDisconnected())engine.postRender(saveSnapshot)
+profilerStop()}function testInit(dt){engine.setState(test)
 test(dt)}engine.setState(testInit)}
 
 },{"../glov/client/autoatlas":12,"../glov/client/camera2d":16,"../glov/client/engine":22,"../glov/client/framebuffer":30,"../glov/client/input":38,"../glov/client/local_storage":41,"../glov/client/local_storage.js":41,"../glov/client/net":49,"../glov/client/perf":52,"../glov/client/shaders":62,"../glov/client/slider":64,"../glov/client/spot":67,"../glov/client/sprite_sets.js":68,"../glov/client/sprites":69,"../glov/client/textures":71,"../glov/client/ui":73,"../glov/client/walltime":76,"../glov/common/util":97,"../glov/common/vmath":99,"./biomes":2,"./galaxy":3,"./img/font/04b03_8x1.json":4,"./img/font/04b03_8x2.json":5,"./img/font/palanquin32.json":6,"./simple_soundscape":8,"./solar_system":9,"assert":undefined}],8:[function(require,module,exports){
@@ -1828,7 +1864,7 @@ var planets=[]
 if(98897686813===id){this.name="Sol"
 planets.push(new Planet({name:"D",size:4}))
 planets.push(new Planet({name:"K",size:6}))
-planets.push(new Planet({name:"M",size:8,seed:5}))
+planets.push(new Planet({name:"M",size:8,seed:8}))
 planets.push(new Planet({name:"Y",size:5}))
 planets.push(new Planet({name:"T",size:16,seed:1}))
 planets.push(new Planet({name:"J",size:12,seed:1}))
@@ -4100,7 +4136,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730680679017")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730690724949")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6644,7 +6680,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730680679017")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730690724949")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12354,7 +12390,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730680679017"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730690724949"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12362,10 +12398,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730680679017")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730680679017"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730690724949")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730690724949"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730680679017"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730690724949"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14447,4 +14483,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":80,"./packet":91,"./perfcounters":92,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730680679017
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730690724949
