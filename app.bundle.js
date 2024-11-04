@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730690724949"
+window.glov_build_version="1730692261986"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -1453,7 +1453,7 @@ var _planets=_solar_system.planets
 var _planet3=planet_override?planet_override_planet:_planets[selected_planet_index]
 if(!_planet3){planet_view=0
 if(planet_zoomer.target_zoom_level)planet_zoomer.resetZoom(0,0,0)}else{var ww=planet_zoom*w
-planetMapMode(_planet3,map_x0+(0-planet_zoomer.zoom_offs[0])*ww,map_y0+(0-planet_zoomer.zoom_offs[1])*ww,Z.PLANET_MAP,ww,clamp(eff_planet_view-1,0,1),planet_zoomer.zoom_level)}}}if(!engine.DEBUG){profilerStopStart("soundscape")
+planetMapMode(_planet3,map_x0+(0-planet_zoomer.zoom_offs[0])*ww,map_y0+(0-planet_zoomer.zoom_offs[1])*ww,Z.PLANET_MAP,ww,clamp(eff_planet_view-1,0,1),planet_zoomer.zoom_level)}}}if(!engine.DEBUG||true){profilerStopStart("soundscape")
 soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom]||0)
 if(debugDefineIsSet("SOUNDSCAPE")){var text=soundscape.debug()
 text.unshift("Zoom level = "+eff_zoom)
@@ -1479,10 +1479,13 @@ var clamp=_glovCommonUtil.clamp
 var floor=Math.floor,random=Math.random
 var FADE_TIME=1e3
 var SimpleSoundscape=function(){function SimpleSoundscape(param){this.levels=void 0
+this.sound_need_load={}
+this.sound_load_requested={}
 this.last_level_idx=-1
 this.playing_sounds={}
 this.last_time=0
 this.level_debug=-1
+this.new_loads=[]
 var levels=this.levels=[]
 for(var ii=0;ii<param.levels.length;++ii){var level_in=param.levels[ii]
 var level=[]
@@ -1490,10 +1493,11 @@ for(var jj=0;jj<level_in.length;++jj){var options_in=level_in[jj]
 var options=[]
 for(var kk=0;kk<options_in.length;++kk){var basename=options_in[kk]
 var soundname=""+param.prefix+basename
-soundLoad(soundname,{loop:true})
+this.sound_need_load[soundname]=true
 var sound={soundname:soundname}
 options.push(sound)}level.push(options)}levels.push(level)}}var _proto=SimpleSoundscape.prototype
-_proto.tick=function tick(level_idx){this.level_debug=level_idx
+_proto.tick=function tick(level_idx){var _this=this
+this.level_debug=level_idx
 if(!soundResumed())return
 level_idx=clamp(level_idx,0,this.levels.length-1)
 var seen={}
@@ -1502,30 +1506,43 @@ var complete_rebuild=level_idx!==this.last_level_idx
 var new_stems=complete_rebuild
 var sync_to=null
 if(!complete_rebuild){var keys=Object.keys(this.playing_sounds)
-if(keys.length){var sound=this.playing_sounds[keys[0]]
-var new_time=(sync_to=sound).location()
+if(keys.length){for(var ii=0;ii<keys.length;++ii){var sound=this.playing_sounds[keys[ii]]
+if(true!==sound){sync_to=sound
+break}}if(sync_to){var new_time=sync_to.location()
 if(new_time<this.last_time)new_stems=true
-this.last_time=new_time}}if(complete_rebuild||new_stems){this.last_level_idx=level_idx
-var new_sounds=[]
-for(var ii=0;ii<level.length;++ii){var options=level[ii]
+this.last_time=new_time}}}var new_sounds=[]
+if(complete_rebuild||new_stems){this.last_level_idx=level_idx
+var _loop=function _loop(_ii){var options=level[_ii]
 var option=options[floor(random()*options.length)]
-if(option){var existing=this.playing_sounds[option.soundname]
-if(!existing){var _sound=soundPlay(option.soundname,1e-4)
-if(_sound){_sound.fade(1,FADE_TIME)
-this.playing_sounds[option.soundname]=_sound
-new_sounds.push(_sound)}}else if(!sync_to)sync_to=existing
-seen[option.soundname]=true}}for(var key in this.playing_sounds)if(!seen[key]){var _sound2=this.playing_sounds[key]
-if(!sync_to)sync_to=_sound2
+if(option){var existing=_this.playing_sounds[option.soundname]
+if(!existing){_this.playing_sounds[option.soundname]=true
+if(_this.sound_need_load[option.soundname]){if(!_this.sound_load_requested[option.soundname]){_this.sound_load_requested[option.soundname]=true
+soundLoad(option.soundname,{loop:true},function(err){if(!err){delete _this.sound_need_load[option.soundname]
+_this.new_loads.push(option.soundname)}})}}else{var _sound2=soundPlay(option.soundname,1e-4)
+if(_sound2){_sound2.fade(1,FADE_TIME)
+_this.playing_sounds[option.soundname]=_sound2
+new_sounds.push(_sound2)}}}else if(true===existing);else if(!sync_to)sync_to=existing
+seen[option.soundname]=true}}
+for(var _ii=0;_ii<level.length;++_ii)_loop(_ii)
+for(var key in this.playing_sounds)if(!seen[key]){var _sound=this.playing_sounds[key]
+if(!sync_to&&true!==_sound)sync_to=_sound
 delete this.playing_sounds[key]
-_sound2.fade(0,FADE_TIME)}if(sync_to){var loc=this.last_time=sync_to.location()
-for(var _ii=0;_ii<new_sounds.length;++_ii)new_sounds[_ii].location(loc)}}}
-_proto.debug=function debug(){var _this=this
+if(true!==_sound)_sound.fade(0,FADE_TIME)}}if(this.new_loads.length)for(var _ii2=0;_ii2<this.new_loads.length;++_ii2){var soundname=this.new_loads[_ii2]
+if(this.playing_sounds[soundname]){var _sound3=soundPlay(soundname,1e-4)
+if(_sound3){_sound3.fade(1,FADE_TIME)
+this.playing_sounds[soundname]=_sound3
+new_sounds.push(_sound3)}}}this.new_loads.length=0
+if(sync_to){var loc=this.last_time=sync_to.location()
+for(var _ii3=0;_ii3<new_sounds.length;++_ii3)new_sounds[_ii3].location(loc)}}
+_proto.debug=function debug(){var _this2=this
 var keys=Object.keys(this.playing_sounds)
 var ret=[]
 ret.push("Level "+this.last_level_idx+" (desired: "+this.level_debug+")")
 if(keys.length){var sound=this.playing_sounds[keys[0]]
-ret.push("Time = "+this.last_time.toFixed(1)+" / "+sound.duration().toFixed(1))}return ret=ret.concat(keys.map(function(key){var delta=(_this.playing_sounds[key].location()-_this.last_time).toFixed(3)
-if("-"!==delta[0])delta="+"+delta
+ret.push("Time = "+this.last_time.toFixed(1)+" / "+(true===sound?"?":sound.duration().toFixed(1)))}return ret=ret.concat(keys.map(function(key){var sound=_this2.playing_sounds[key]
+var delta
+if(true===sound)delta="(loading)"
+else if("-"!==(delta=(sound.location()-_this2.last_time).toFixed(3))[0])delta="+"+delta
 return key+": "+delta}))}
 return SimpleSoundscape}()
 exports.SimpleSoundscape=SimpleSoundscape
@@ -4136,7 +4153,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730690724949")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730692261986")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6680,7 +6697,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730690724949")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730692261986")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12390,7 +12407,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730690724949"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730692261986"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12398,10 +12415,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730690724949")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730690724949"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730692261986")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730692261986"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730690724949"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730692261986"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14483,4 +14500,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":80,"./packet":91,"./perfcounters":92,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730690724949
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730692261986
