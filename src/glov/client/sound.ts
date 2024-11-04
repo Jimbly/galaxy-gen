@@ -54,7 +54,7 @@ export interface GlovSoundSetUp {
   volume(vol: number): void;
   playing(): boolean;
   duration(): number;
-  location(): number;
+  location(time?: number): number;
   fade(target_volume: number, time: number): void;
 }
 
@@ -541,8 +541,13 @@ export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean)
     volume_current: volume,
     stop: sound.stop.bind(sound, id),
     playing: sound.playing.bind(sound, id), // not reliable if it hasn't started yet? :(
-    location: () => { // get current location
-      let v = sound!.seek(id); // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+    location: (time?: number) => { // get current location
+      let v;
+      if (time !== undefined) {
+        v = sound!.seek(time, id); // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+      } else {
+        v = sound!.seek(time, id); // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+      }
       if (typeof v !== 'number') {
         // Howler sometimes returns `self` from `seek()`
         return 0;

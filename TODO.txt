@@ -1,7 +1,6 @@
 # Planet project
 
 Next:
-  Add sliders for planet gen parameters and iterate
   Audio
   Check perf on phone/chimera
   Check on Sol

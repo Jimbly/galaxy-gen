@@ -105,6 +105,7 @@ import {
   createGalaxy,
   distSq,
 } from './galaxy';
+import { SimpleSoundscape } from './simple_soundscape';
 import {
   BIT_DETAIL_IDX_SHIFT,
   BIT_RARITY_MASK,
@@ -138,6 +139,37 @@ Z.UI = 100;
 const game_width = 256 + 90;
 const game_height = 256;
 
+const EFF_ZOOM_TO_SOUNDSCAPE = [
+  0, // 0
+  0, // 1
+  0, // 2
+  1, // 3
+  1, // 4
+  1, // 5
+  1, // 6
+  2, // 7
+  2, // 8
+  2, // 9
+  2, // 10
+  3, // 11 // start seeing stars
+  3, // 12
+  3, // 13
+  3, // 14
+  3, // 15
+  3, // 16 // fully zoomed galaxy
+  3, // 17 // orrery - same as previous
+  2, // 18 // globe / orbit
+  2, // 19 // map view full - same as previous
+  4, // 20
+  4, // 21
+  5, // 22
+  5, // 23
+  6, // 24
+  6, // 25
+  6, // 26 // full pixel art
+];
+
+
 function zoomTime(amount: number): number {
   return abs(amount) * 500;
 }
@@ -159,7 +191,7 @@ class Zoomer {
     public max_zoom: number,
     public auto_recenter: boolean
   ) {
-    this.zoom_level = localStorageGetJSON(this.zoom_level_key, 0);
+    this.zoom_level = round(localStorageGetJSON(this.zoom_level_key, 0));
     v2set(this.zoom_offs,
       localStorageGetJSON(`${this.zoom_offs_key}x`, 0),
       localStorageGetJSON(`${this.zoom_offs_key}y`, 0));
@@ -284,6 +316,28 @@ export function main(): void {
 
   scaleSizes(13 / 32);
   setFontHeight(8);
+
+  let soundscape = new SimpleSoundscape({
+    prefix: 'music/',
+    levels: [
+      [['1_TRACK']],
+      [['2_TRACK'],
+       ['2_SIMPLE_MELODY_01', '2_SIMPLE_MELODY_02']],
+      [['3_TRACK'],
+       ['3_SIMPLE_MELODY_01', '3_SIMPLE_MELODY_02']],
+      [['4_TRACK'],
+       ['4_BASS_01', '4_BASS_02'],
+       ['4_SEQUENCE_01', '4_SEQUENCE_02'],
+       ['4_SIMPLE_MELODY_01', '4_SIMPLE_MELODY_02', '4_SIMPLE_MELODY_03']],
+      [['5_TRACK'],
+       ['5_SIMPLE_MELODY_01', '5_SIMPLE_MELODY_02'],
+       ['5_SLOW_ARP_01', '5_SLOW_ARP_02']],
+      [['6_TRACK'],
+       ['6_SIMPLE_MELODY_01', '6_SIMPLE_MELODY_02']],
+      [['7_TRACK'],
+       ['7_SIMPLE_MELODY_01', '7_SIMPLE_MELODY_02']],
+    ]
+  });
 
   let tex_palette = textureLoad({
     url: 'palette/pal2.png',
@@ -2474,6 +2528,14 @@ export function main(): void {
       }
     }
 
+    soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom] || 0);
+
+    if (debugDefineIsSet('SOUNDSCAPE')) {
+      let text = soundscape.debug();
+      text.unshift(`Zoom level = ${eff_zoom}`);
+      text.forEach(overlayText);
+    }
+
     if (inputClick({
       x: -Infinity,
       y: -Infinity,
@@ -2493,6 +2555,7 @@ export function main(): void {
     }
 
     drawRect(overlay_x - 2, 0, overlay_x + overlay_w + 2, overlay_y, z - 1, color_text_backdrop);
+
 
     if (debugDefineIsSet('ATTRACT') && !netDisconnected()) {
       engine.postRender(saveSnapshot);
