@@ -1,6 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict"
-window.glov_build_version="1730680003633"
+window.glov_build_version="1730680679017"
 var called_once=false
 function onLoad(){if(called_once)return
 called_once=true
@@ -687,7 +687,7 @@ Z.PLANET_MAP=80
 Z.UI=100
 var game_width=346
 var game_height=256
-var EFF_ZOOM_TO_SOUNDSCAPE=[0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,3,3,3,2,2,4,4,5,5,6,6,6]
+var EFF_ZOOM_TO_SOUNDSCAPE=[0,0,0,1,1,1,1,1,2,2,2,2,2,2,3,3,3,3,2,2,4,4,5,5,6,6,6]
 function zoomTime(amount){return 500*abs(amount)}var Zoomer=function(){function Zoomer(zoom_level_key,zoom_offs_key,max_zoom,auto_recenter){this.zoom_level=void 0
 this.zoom_offs=vec2()
 this.target_zoom_level=void 0
@@ -1437,6 +1437,7 @@ exports.SimpleSoundscape=void 0
 var _glovClientSound=require("../glov/client/sound")
 var soundLoad=_glovClientSound.soundLoad
 var soundPlay=_glovClientSound.soundPlay
+var soundResumed=_glovClientSound.soundResumed
 var _glovCommonUtil=require("../glov/common/util")
 var clamp=_glovCommonUtil.clamp
 var floor=Math.floor,random=Math.random
@@ -1457,6 +1458,7 @@ soundLoad(soundname,{loop:true})
 var sound={soundname:soundname}
 options.push(sound)}level.push(options)}levels.push(level)}}var _proto=SimpleSoundscape.prototype
 _proto.tick=function tick(level_idx){this.level_debug=level_idx
+if(!soundResumed())return
 level_idx=clamp(level_idx,0,this.levels.length-1)
 var seen={}
 var level=this.levels[level_idx]
@@ -4098,7 +4100,7 @@ var unlocatePaths=_locate_asset.unlocatePaths
 var error_report_disabled=false
 function errorReportDisable(){error_report_disabled=true}var ignore_promises=false
 function errorReportIgnoreUncaughtPromises(){ignore_promises=true}function errorReportSetDetails(key,value){if(value)error_report_details[key]=escape(String(value))
-else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730680003633")
+else delete error_report_details[key]}function errorReportSetDynamicDetails(key,fn){error_report_dynamic_details[key]=fn}errorReportSetDetails("build","1730680679017")
 errorReportSetDetails("project",getStoragePrefix())
 errorReportSetDetails("sesuid",session_uid)
 errorReportSetDynamicDetails("platform",platformGetID)
@@ -6642,7 +6644,7 @@ callEach(post_net_init,post_net_init=null)
 filewatchStartup(client)
 if(params.engine){params.engine.addTickFunc(function(dt){client.checkDisconnect()
 subs.tick(dt)})
-params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730680003633")).toISOString().replace("T"," ").slice(5,-8)
+params.engine.onLoadMetrics(function(obj){subs.onceConnected(function(){client.send("load_metrics",obj)})})}}var build_timestamp_string=new Date(Number("1730680679017")).toISOString().replace("T"," ").slice(5,-8)
 function buildString(){return wsclient.CURRENT_VERSION?wsclient.CURRENT_VERSION+" ("+build_timestamp_string+")":build_timestamp_string}function netDisconnectedRaw(){return!client||!client.connected||client.disconnected||!client.socket||1!==client.socket.readyState}function netDisconnected(){return netDisconnectedRaw()||subs.logging_in}function netForceDisconnect(){var _client$socket
 if(subs)subs.was_logged_in=false
 null==client||(null==(_client$socket=client.socket)||(null==_client$socket.close||_client$socket.close()))}function netClient(){return client}function netClientId(){return client.id}function netUserId(){return subs.getUserId()}function netSubs(){return subs}function isChunkedSendFileData(data){return!data.err}
@@ -12352,7 +12354,7 @@ this.onMsg("cack",this.onConnectAck.bind(this))
 this.onMsg("build",this.onBuildChange.bind(this))
 this.onMsg("error",this.onError.bind(this))}WSClient.prototype.logPacketDispatch=function(source,pak,buf_offs,msg){perfCounterAdd("ws."+msg)}
 WSClient.prototype.timeSinceDisconnect=function(){return Date.now()-this.disconnect_time}
-function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730680003633"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
+function getVersionUrlParams(){return"plat="+platformGetID()+"&ver="+exports.CURRENT_VERSION+"&build="+"1730680679017"+"&sesuid="+session_uid}function jsonParseResponse(response){if(!response)return null
 if("<"===response.trim()[0])return null
 try{return JSON.parse(response)}catch(e){return null}}function whenServerReady(cb){var retry_count=0
 function doit(){fetch({url:getAPIPath()+"ready?"+getVersionUrlParams()},function(err,response){if(err){var response_data=jsonParseResponse(response)
@@ -12360,10 +12362,10 @@ if("ERR_CLIENT_VERSION_OLD"!==(null==response_data?void 0:response_data.status))
 setTimeout(doit,min(retry_count*retry_count*100,15e3)*(.75+.5*random()))
 return}}cb()})}doit()}WSClient.prototype.onBuildChange=function(obj){if(obj.app!==this.client_app)return
 this.onBuildTimestamp(obj.ver)}
-WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730680003633")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
-else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730680003633"+"), reloading")
+WSClient.prototype.onBuildTimestamp=function(build_timestamp){if(build_timestamp!=="1730680679017")if(this.on_build_timestamp_mismatch)this.on_build_timestamp_mismatch()
+else if(getAbilityReloadUpdates()){console.error("App build mismatch (server: "+build_timestamp+", client: "+"1730680679017"+"), reloading")
 whenServerReady(function(){if(window.reloadSafe)window.reloadSafe()
-else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730680003633"+"), ignoring")}
+else document.location.reload()})}else console.warn("App build mismatch (server: "+build_timestamp+", client: "+"1730680679017"+"), ignoring")}
 WSClient.prototype.onConnectAck=function(data,resp_func){var client=this
 client.connected=true
 client.connect_error=null
@@ -14445,4 +14447,4 @@ return resp_func(error_msg)}return handler(client,data,resp_func)},filter)}
 },{"./ack":80,"./packet":91,"./perfcounters":92,"assert":undefined}]},{},[1])
 
 
-//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730680003633
+//# sourceMappingURL=http://localhost:3000/app.bundle.js.map?ver=1730680679017
