@@ -1,9 +1,8 @@
 # Planet project
 
 Next:
-  Audio
   Check perf on phone/chimera
-  Check on Sol
+  Title screen (just an overlay that fades away nicely?) to kickstart music
   POIs?
 
 Planet improvements:

@@ -1253,16 +1253,22 @@ export function distSq(x1: number, y1: number, x2: number, y2: number): number {
   const dy = [0, 1, -1];
   const dx = [0, 1, -1];
   Galaxy.prototype.starsNear = function (x: number, y: number, num: number): number[] {
+    profilerStartFunc();
     let { layers } = this;
     let layer_idx = MAX_LAYER - 1;
     let layer = layers[layer_idx];
     if (!layer) {
+      profilerStopFunc();
       return [];
     }
     let layer_res = pow(LAYER_STEP, layer_idx);
     let cx = floor(x * layer_res);
     let cy = floor(y * layer_res);
-    let closest = new Array(num * 2); // dist, id
+    let closest_len = num * 2;
+    let closest = new Array(closest_len); // dist, id
+    for (let ii = 0; ii < closest.length; ++ii) {
+      closest[ii] = -1;
+    }
     for (let ddy = 0; ddy <= 3; ++ddy) {
       let yy = cy + dy[ddy];
       if (yy < 0 || yy >= layer_res) {
@@ -1290,9 +1296,9 @@ export function distSq(x1: number, y1: number, x2: number, y2: number): number {
           let star_y = star_storage[store_idx++];
           let star_id = star_idx + ii;
           let star_dist = distSq(x, y, star_x, star_y);
-          for (let jj = 0; jj < closest.length; jj+=2) {
+          for (let jj = 0; jj < closest_len; jj+=2) {
             let other_id = closest[jj+1];
-            if (other_id === undefined) {
+            if (other_id === -1) {
               closest[jj] = star_dist;
               closest[jj+1] = star_id;
               break;
@@ -1310,12 +1316,13 @@ export function distSq(x1: number, y1: number, x2: number, y2: number): number {
       }
     }
     let ret = [];
-    for (let ii = 1; ii < closest.length; ii+=2) {
+    for (let ii = 1; ii < closest_len; ii+=2) {
       let id = closest[ii];
-      if (id !== undefined) {
+      if (id !== -1) {
         ret.push(id);
       }
     }
+    profilerStopFunc();
     return ret;
   };
 }

@@ -1163,7 +1163,7 @@ export class SolarSystem {
       this.name = 'Sol';
       planets.push(new Planet({ name: 'D', size: 4 })); // Mercury
       planets.push(new Planet({ name: 'K', size: 6 })); // Venus
-      planets.push(new Planet({ name: 'M', size: 8, seed: 5 })); // Earth
+      planets.push(new Planet({ name: 'M', size: 8, seed: 8 })); // Earth
       planets.push(new Planet({ name: 'Y', size: 5 })); // Mars
 
       planets.push(new Planet({ name: 'T', size: 16, seed: 1 })); // Jupiter

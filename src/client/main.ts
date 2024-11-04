@@ -690,6 +690,7 @@ export function main(): void {
     h: number,
     fade: number,
   ): void {
+    profilerStartFunc();
     let { planets } = solar_system;
     let planet = planets[selected_planet.idx];
     let theta = planet.orbit + planet.orbit_speed * walltime()*ORBIT_RATE;
@@ -743,6 +744,7 @@ export function main(): void {
           temp_fade, shader_planet_pixel, planet_shader_params);
       }
     }
+    profilerStopFunc();
   }
 
   const MAP_FULL_SIZE = 256;
@@ -1716,6 +1718,7 @@ export function main(): void {
   let last_selected_planet: SelectedPlanet | null = null;
   let drag_temp = vec2();
   function test(dt: number): void {
+    profilerStart('top');
 
     gl.clearColor(0, 0, 0, 1);
     let z = Z.UI;
@@ -1777,6 +1780,7 @@ export function main(): void {
     }
 
     if (!deepEqual(params, gen_params)) {
+      profilerStart('galaxy recreate');
       gen_params = clone(params);
       let first = true;
       if (galaxy) {
@@ -1786,6 +1790,7 @@ export function main(): void {
       galaxy = createGalaxy(params);
       galaxy.loading = first || debugDefineIsSet('ATTRACT');
       allocSprite();
+      profilerStop();
     }
 
     if (keyDownEdge(KEYS.C) && keyDown(KEYS.CTRL)) {
@@ -1797,6 +1802,7 @@ export function main(): void {
       planet_zoomer.resetZoom(0, 0, 0);
     }
 
+    profilerStopStart('panel');
     if (show_panel) {
       if (buttonText({ x, y, text: `View: ${view ? 'Pixely' : 'Raw'}`, w: button_width * 0.75 }) ||
         keyDownEdge(KEYS.V)
@@ -2084,6 +2090,7 @@ export function main(): void {
       y += button_spacing;
     }
 
+    profilerStopStart('check overrides');
     if (solar_view && solar_override) {
       if (!solar_override_system || !deepEqual(solar_params, gen_solar_params)) {
         gen_solar_params = clone(solar_params);
@@ -2107,6 +2114,7 @@ export function main(): void {
       }
     }
 
+    profilerStopStart('zooming');
     x = game_width - w + 4;
     y = w - button_height;
 
@@ -2298,11 +2306,14 @@ export function main(): void {
       }
     }
 
+    profilerStopStart('draw cells');
+
     cells_drawn = 0;
     type GalaxyCellTexCache = GalaxyCellAlloced & {
       texs?: Texture[];
     };
     function drawCell(alpha: number, parent: GalaxyCellAlloced, cell: GalaxyCellTexCache): void {
+      profilerStartFunc();
       const { zoom_level, zoom_offs } = gal_zoomer;
       ++cells_drawn;
       let qx = cell.cx - parent.cx * LAYER_STEP;
@@ -2320,7 +2331,7 @@ export function main(): void {
       let partial = false;
       if (!parent.tex) {
         if (!cell.tex) {
-          return;
+          return profilerStop();
         }
         alpha = 1;
         partial = true;
@@ -2342,8 +2353,10 @@ export function main(): void {
       }
       debug_sprite.texs = texs;
       debug_sprite.draw(draw_param);
+      profilerStop();
     }
     function drawLevel(layer_idx: number, alpha: number, do_highlight: boolean): void {
+      profilerStartFunc();
       const { zoom_offs } = gal_zoomer;
       let gal_x0 = (camera2d.x0Real() - map_x0) / w / zoom + zoom_offs[0];
       let gal_x1 = (camera2d.x1Real() - map_x0) / w / zoom + zoom_offs[0];
@@ -2371,6 +2384,7 @@ export function main(): void {
           }
         }
       }
+      profilerStopFunc();
     }
     const blend_range = 1;
     let draw_level = max(0, (gal_zoomer.zoom_level - 1) / (LAYER_STEP/2) + blend_range/2);
@@ -2385,6 +2399,7 @@ export function main(): void {
     let globe_view: undefined | { pos: Vec2; r: number };
 
     if (gal_zoomer.zoom_level >= 12) {
+      profilerStopStart('solar system');
       let star;
       const SELECT_DIST = 40;
       if (!solar_override_system) {
@@ -2461,7 +2476,7 @@ export function main(): void {
             let planet = planets[ii];
             if (!planet_view || selected_planet_index === ii) {
               overlayText(`${!planet_view && selected_planet_index === ii ? '*' : ' '}` +
-                ` Planet #${ii+1}: Class ${planet.type.name}`);
+                ` Planet, Class ${planet.type.name}`);
             }
           }
         }
@@ -2528,13 +2543,18 @@ export function main(): void {
       }
     }
 
-    soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom] || 0);
+    if (!engine.DEBUG) {
+      profilerStopStart('soundscape');
+      soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom] || 0);
 
-    if (debugDefineIsSet('SOUNDSCAPE')) {
-      let text = soundscape.debug();
-      text.unshift(`Zoom level = ${eff_zoom}`);
-      text.forEach(overlayText);
+      if (debugDefineIsSet('SOUNDSCAPE')) {
+        let text = soundscape.debug();
+        text.unshift(`Zoom level = ${eff_zoom}`);
+        text.forEach(overlayText);
+      }
     }
+
+    profilerStopStart('bottom');
 
     if (inputClick({
       x: -Infinity,
@@ -2560,6 +2580,7 @@ export function main(): void {
     if (debugDefineIsSet('ATTRACT') && !netDisconnected()) {
       engine.postRender(saveSnapshot);
     }
+    profilerStop();
   }
 
   function testInit(dt: number): void {
