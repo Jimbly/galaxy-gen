@@ -8,6 +8,12 @@ Planet improvements:
 
 Always show frontish/lit side when in orbit view?
 
+
+# Things to integrate or get inspired by:
+
+  https://old.reddit.com/r/proceduralgeneration/comments/nt38li/a_pixel_planet_generator_this_project_is_already/
+  https://github.com/Deep-Fold/PixelPlanets
+
 # Galaxy
 
 renderStars takes too long - split into multiple passes too

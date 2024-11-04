@@ -6,8 +6,5 @@ Procedural Galaxy Generator Toy
 * Built on [GLOV.js](https://github.com/jimbly/glovjs)
 
 Attributions
-* Some tiles by [Aleksandr Makarov](https://iknowkingrabbit.itch.io/heroic-overworld)
-
-TODO:
-* Integrate something like this planet generator? https://old.reddit.com/r/proceduralgeneration/comments/nt38li/a_pixel_planet_generator_this_project_is_already/
-  * https://github.com/Deep-Fold/PixelPlanets
+* Music by [Alex Hamadey](https://alexhamadey.itch.io/)
+* Some tiles by [Aleksandr Makarov](https://iknowkingrabbit.itch.io/heroic-overworld) (with some modifications)
