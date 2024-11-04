@@ -42,4 +42,14 @@ module.exports = function (config, gb) {
   });
   config.client_png.push('spritesheetpad:**.png');
   config.client_fsdata.push('spritesheetpad:**.auat');
+
+  config.extra_index.push({
+    // example .zip for itch.io publishing
+    name: 'itch',
+    defines: {
+      ...config.default_defines,
+      PLATFORM: 'web',
+    },
+    zip: true,
+  });
 };
