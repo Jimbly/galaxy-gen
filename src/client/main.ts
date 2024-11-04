@@ -2615,7 +2615,7 @@ export function main(): void {
       }
     }
 
-    if (!engine.DEBUG || true) {
+    if (!engine.DEBUG) {
       profilerStopStart('soundscape');
       soundscape.tick(EFF_ZOOM_TO_SOUNDSCAPE[eff_zoom] || 0);
 
