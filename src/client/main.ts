@@ -16,6 +16,7 @@ import {
   KEYS,
   inputClick,
   inputDrag,
+  inputTouchMode,
   keyDown,
   keyDownEdge,
   mouseMoved,
@@ -2081,7 +2082,7 @@ export function main(): void {
         x: x - 4, y: 0, w: button_width + 8, h: y, z: z - 1,
       });
     } else {
-      if (!debugDefineIsSet('ATTRACT') && buttonText({ x, y, text: '>>', w: button_height }) ||
+      if (!debugDefineIsSet('ATTRACT') && !inputTouchMode() && buttonText({ x, y, text: '>>', w: button_height }) ||
         keyDownEdge(KEYS.ESC)
       ) {
         show_panel = !show_panel;
@@ -2118,7 +2119,16 @@ export function main(): void {
     x = game_width - w + 4;
     y = w - button_height;
 
-    if (buttonText({ x, y, z, w: button_height, text: '-' }) ||
+    if (buttonText({
+      text: '-',
+      z,
+      ...(inputTouchMode() ? {
+        x: 2, y: y - button_height * 2 - 2, w: button_height * 3, h: button_height * 3,
+        font_height: font_height * 3,
+      } : {
+        x, y, w: button_height,
+      })
+    }) ||
       keyDownEdge(KEYS.MINUS) || keyDownEdge(KEYS.Q)
     ) {
       use_mouse_pos = false;
@@ -2127,13 +2137,25 @@ export function main(): void {
     x += button_height + 2;
     const SLIDER_W = 110;
     let eff_zoom = gal_zoomer.target_zoom_level + solar_view + planet_view + planet_zoomer.target_zoom_level;
-    let new_zoom = roundZoom(slider(eff_zoom,
-      { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + planet_zoomer.max_zoom + 1 }));
-    if (abs(new_zoom - eff_zoom) > 0.000001) {
-      doZoom(0.5, 0.5, new_zoom - eff_zoom);
+    if (!inputTouchMode()) {
+      let new_zoom = roundZoom(slider(eff_zoom,
+        { x, y, z, w: SLIDER_W, min: 0, max: MAX_ZOOM + MAX_PLANET_VIEW + planet_zoomer.max_zoom + 1 }));
+      if (abs(new_zoom - eff_zoom) > 0.000001) {
+        doZoom(0.5, 0.5, new_zoom - eff_zoom);
+      }
+      x += SLIDER_W + 2;
     }
-    x += SLIDER_W + 2;
-    if (buttonText({ x, y, z, w: button_height, text: '+' }) ||
+    if (buttonText({
+      text: '+',
+      z,
+      ...(inputTouchMode() ? {
+        x: game_width - button_height * 3 - 2,
+        y: y - button_height * 2 - 2, w: button_height * 3, h: button_height * 3,
+        font_height: font_height * 3,
+      } : {
+        x, y, w: button_height,
+      })
+    }) ||
       keyDownEdge(KEYS.EQUALS) ||
       keyDownEdge(KEYS.E)
     ) {
@@ -2164,6 +2186,9 @@ export function main(): void {
     zoomTick(max_okay_zoom);
     let zoom = pow(2, gal_zoomer.zoom_level);
     let zoom_text_y = floor(y + (button_height - font_height)/2);
+    if (inputTouchMode()) {
+      x = (game_width - 30) / 2;
+    }
     let zoom_text_w = print(null, x, zoom_text_y, z,
       solar_view ? planet_view ? planet_view > 1 ? 'Atmos' : 'Orbit ' : 'Solar' : `${zoom.toFixed(0)}X`);
     drawRect(x - 2, zoom_text_y, x + zoom_text_w + 2, zoom_text_y + font_height, z - 1, color_text_backdrop);
@@ -2175,8 +2200,8 @@ export function main(): void {
 
     if (!solar_view) {
       let legend_scale = 0.25;
-      let legend_x0 = game_width - w*legend_scale - 2;
-      let legend_x1 = game_width - 4;
+      let legend_x1 = game_width - (inputTouchMode() ? 60 : 4);
+      let legend_x0 = legend_x1 - w*legend_scale + 2;
       let legend_color = solar_view ? color_legend_fade : unit_vec;
       y = w;
 
@@ -2520,7 +2545,7 @@ export function main(): void {
         overlayText(`Star #${star.id}`);
       }
 
-      if (eff_planet_view > 1) {
+      if (eff_planet_view > 1 && solar_system) {
         assert(solar_system);
         assert(selected_planet_index !== null);
         let { planets } = solar_system;
