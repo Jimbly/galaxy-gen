@@ -147,13 +147,13 @@ const EFF_ZOOM_TO_SOUNDSCAPE = [
   1, // 4
   1, // 5
   1, // 6
-  2, // 7
+  1, // 7
   2, // 8
   2, // 9
   2, // 10
-  3, // 11 // start seeing stars
-  3, // 12
-  3, // 13
+  2, // 11 // start seeing stars
+  2, // 12
+  2, // 13
   3, // 14
   3, // 15
   3, // 16 // fully zoomed galaxy

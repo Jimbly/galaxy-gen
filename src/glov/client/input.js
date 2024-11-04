@@ -669,6 +669,7 @@ function onWheel(event) {
   renderNeeded();
   let saved = mouse_moved; // don't trigger mouseMoved()
   onMouseMove(event, true);
+  // onUserInput(); - Browser doesn't count mousewheel as user input :(
   mouse_moved = saved;
   let normalized = normalizeWheel(event);
   wheel_events.push({

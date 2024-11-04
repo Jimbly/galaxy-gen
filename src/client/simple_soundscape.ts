@@ -1,4 +1,4 @@
-import { GlovSoundSetUp, soundLoad, soundPlay } from 'glov/client/sound';
+import { GlovSoundSetUp, soundLoad, soundPlay, soundResumed } from 'glov/client/sound';
 import { TSMap } from 'glov/common/types';
 import { clamp } from 'glov/common/util';
 
@@ -47,6 +47,9 @@ export class SimpleSoundscape {
   level_debug = -1;
   tick(level_idx: number): void {
     this.level_debug = level_idx;
+    if (!soundResumed()) {
+      return;
+    }
     level_idx = clamp(level_idx, 0, this.levels.length - 1);
     let seen: TSMap<true> = {};
     let level = this.levels[level_idx];
