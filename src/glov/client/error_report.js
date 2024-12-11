@@ -154,6 +154,7 @@ let filtered_errors = new RegExp([
   'setOTDataLayer', // OneTrust
   'otSDKStub', // OneTrust
   'otTCF', // OneTrust
+  't\\.gvl', // OneTrust
   'pubads_20', // Some third-party ad provider
   'ima3\\.js', // Google ads
   'window\\.setDgResult', // likely from ad provider
@@ -175,7 +176,9 @@ let filtered_errors = new RegExp([
   'betal\\.org',
   'changeNetWork', // mobile Vivo
   'CookieDeprecationLabel', // gtag
+  'googletagmanager', // gtag
   '__firefox__',
+  'ucbrowser_script'
 ].join('|'));
 
 export function glovErrorReport(is_fatal, msg, file, line, col) {

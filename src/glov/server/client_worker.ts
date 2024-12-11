@@ -15,7 +15,10 @@ import {
 import { netDelayGet, netDelaySet } from 'glov/common/wscommon';
 import { ApplyChannelDataParam, ChannelWorker } from './channel_worker';
 import { keyMetricsAddTagged } from './key_metrics';
-import { logEx } from './log';
+import {
+  logCat,
+  logEx,
+} from './log';
 import { serverConfig } from './server_config';
 
 import type { ChannelServer } from './channel_server';
@@ -446,6 +449,15 @@ export class ClientWorker extends ChannelWorker {
       ctx.user_id = this.log_user_id;
     }
     logEx(ctx, level, `${this.client_id}:`, ...args);
+  }
+  logCtxCat(cat: string | undefined, level: string, ...args: unknown[]): void {
+    let ctx: DataObject = {
+      client: this.client_id,
+    };
+    if (this.log_user_id) {
+      ctx.user_id = this.log_user_id;
+    }
+    logCat(ctx, cat, level, `${this.client_id}:`, ...args);
   }
 }
 

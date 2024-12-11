@@ -67,6 +67,13 @@ export function editBoxTick() {
 function setActive(edit_box) {
   active_edit_box = edit_box;
   active_edit_box_frame = engine.frame_index;
+  let virt = [0,0];
+  const REQ_PAD = 20;
+  camera2d.domDeltaToVirtual(virt, [0, REQ_PAD]);
+  let padding = camera2d.y1() - (edit_box.y + edit_box.h);
+  if (padding < virt[1]) {
+    engine.setEditBoxNearBottom(REQ_PAD);
+  }
 }
 
 export function editBoxAnyActive() {

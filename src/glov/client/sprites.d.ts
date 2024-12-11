@@ -6,7 +6,7 @@ import type { Box } from './geom_types';
 // TODO: move when converted to TypeScript
 import type { shaderCreate } from 'glov/client/shaders';
 type Shader = ReturnType<typeof shaderCreate>;
-import type { TSMap, UnimplementedData } from 'glov/common/types';
+import type { TSMap, UnimplementedData, VoidFunc } from 'glov/common/types';
 import type { ROVec1, ROVec2, ROVec3, ROVec4 } from 'glov/common/vmath';
 
 export enum BlendMode {
@@ -98,6 +98,8 @@ export interface Sprite {
   lazyLoad(): number;
   getAspect(): number;
   withOrigin(new_origin: ROVec2): Sprite;
+  onReInit(cb: VoidFunc): void;
+  doReInit(): void;
 }
 export interface UISprite extends Sprite {
   uidata: SpriteUIData;

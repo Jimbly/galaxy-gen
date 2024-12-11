@@ -392,6 +392,17 @@ export function v3dist(a: ROVec3, b: ROVec3): number {
   return sqrt(v3distSq(a,b));
 }
 
+// Returns 0 if inside, otherwise squared distance to nearest part of the box
+export function v3pointBoxDistSq(pt: ROVec3, boxpos: ROVec3, boxsize: ROVec3): number {
+  let dx = pt[0] - boxpos[0];
+  let dy = pt[1] - boxpos[1];
+  let dz = pt[2] - boxpos[2];
+  dx = dx < 0 ? -dx : dx > boxsize[0] ? dx - boxsize[0] : 0;
+  dy = dy < 0 ? -dy : dy > boxsize[1] ? dy - boxsize[1] : 0;
+  dz = dz < 0 ? -dz : dz > boxsize[2] ? dz - boxsize[2] : 0;
+  return dx*dx + dy*dy + dz*dz;
+}
+
 export function v3div(out: Vec3, a: ROVec3, b: ROVec3): Vec3 {
   out[0] = a[0] / b[0];
   out[1] = a[1] / b[1];

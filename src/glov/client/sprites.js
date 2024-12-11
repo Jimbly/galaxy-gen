@@ -47,7 +47,11 @@ const {
   shadersBind,
   shadersPrelink,
 } = require('./shaders.js');
-const { deprecate, nextHighestPowerOfTwo } = require('glov/common/util.js');
+const {
+  callEach,
+  deprecate,
+  nextHighestPowerOfTwo,
+} = require('glov/common/util.js');
 const {
   vec2,
   vec4,
@@ -1040,6 +1044,17 @@ Sprite.prototype.getAspect = function () {
   return tex.src_width / tex.src_height;
 };
 
+Sprite.prototype.onReInit = function (cb) {
+  this.on_reinit = this.on_reinit || [];
+  this.on_reinit.push(cb);
+};
+
+Sprite.prototype.doReInit = function () {
+  if (this.on_reinit) {
+    callEach(this.on_reinit);
+  }
+};
+
 Sprite.prototype.withOrigin = function (new_origin) {
   let cache_v = String(new_origin[0] + new_origin[1] * 1007);
   if (!this.origin_cache) {
@@ -1054,7 +1069,13 @@ Sprite.prototype.withOrigin = function (new_origin) {
       color: this.color,
       uvs: this.uvs,
     });
-    new_sprite.uidata = this.uidata;
+    let doInit = () => {
+      new_sprite.texs = this.texs;
+      new_sprite.uvs = this.uvs;
+      new_sprite.uidata = this.uidata;
+    };
+    this.onReInit(doInit);
+    doInit();
   }
   return this.origin_cache[cache_v];
 };

@@ -530,7 +530,8 @@ class CmdParseImpl {
       help: param.help || ((param.get && param.set) ?
         `Set or display *${label}* value` :
         param.set ? `Set *${label}* value` : `Display *${label}* value`),
-      usage: param.usage || ((param.get ? `Display *${label}* value\n  Usage: **/${cmd}**\n` : '') +
+      usage: param.usage || ((param.get ? `${param.is_toggle ? 'Toggle' : 'Display'} *${label}* value\n` +
+        `  Usage: **/${cmd}**\n` : '') +
         (param.set ? `Set *${label}* value\n  Usage: **/${cmd} ${param_label}**` : '')),
       prefix_usage_with_help: param.prefix_usage_with_help,
       access_show: param.access_show,

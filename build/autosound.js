@@ -5,15 +5,20 @@ const gb = require('glov-build');
 
 const { max, min } = Math;
 
-// eslint-disable-next-line no-undef
-assert(typeof globalThis.Blob === 'undefined');
-// Needed for `vorbis-encoder-js`
-function Blob(buffers, metadata) {
+function BlobMock(buffers, metadata) {
   this.my_buf = Buffer.concat(buffers);
   this.metadata = metadata;
 }
 // eslint-disable-next-line no-undef
-globalThis.Blob = Blob;
+let blob_saved = globalThis.Blob;
+function wrapBlob() {
+  // eslint-disable-next-line no-undef
+  globalThis.Blob = BlobMock;
+}
+function unwrapBlob() {
+  // eslint-disable-next-line no-undef
+  globalThis.Blob = blob_saved;
+}
 
 function convertF32toS16(buf) {
   let ret = new Int16Array(buf.length);
@@ -171,9 +176,11 @@ module.exports = function (options) {
         let audio_buffer = new AudioBufferF32(channels, sample_rate);
 
         if (options.outputs.includes('ogg') && !ext_exists.ogg) {
+          wrapBlob();
           let encoder = new VorbisEncoder(sample_rate, nch, options.ogg_quality, {});
           encoder.encodeFrom(audio_buffer);
           let blob = encoder.finish();
+          unwrapBlob();
           assert(blob.my_buf);
           job.out({
             relative: `${base_name}.ogg`,

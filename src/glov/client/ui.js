@@ -1649,7 +1649,7 @@ export function modalTextEntry(param) {
       params.y += params.font_height * (param.multiline || 1) + modal_pad;
     }
     let ret;
-    if (eb_ret === eb.SUBMIT) {
+    if (eb_ret === eb.SUBMIT && !param.multiline) {
       ret = KEYS.O; // Do OK, Yes
     } else if (eb_ret === eb.CANCEL) {
       ret = KEYS.ESC; // Do Cancel, No

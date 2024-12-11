@@ -759,7 +759,7 @@ class ChatUIImpl {
   handle_cmd_parse: ChatUIImpl['handleCmdParse'];
   handle_cmd_parse_error: ChatUIImpl['handleCmdParseError'];
   private z_override: number | null = null; // 1-frame Z override
-  private renderables: TSMap<MarkdownRenderable> = {}; // by default, no renderables in chat (e.g. images)
+  renderables: TSMap<MarkdownRenderable> = {}; // by default, no renderables in chat (e.g. images)
 
   user_id_mouseover: string | null = null; // internal, for MDChatSource
   did_user_id_mouseover = false; // internal, for MDChatSource
@@ -1097,11 +1097,8 @@ class ChatUIImpl {
   }
 
   onMsgChat(data: ChatMessageDataBroadcast | ChatMessageDataSaved): void {
-    if (this.on_chat_cb) {
-      this.on_chat_cb(data);
-    }
     let { msg, style, id, display_name, flags } = data;
-    let { client_id, ts, quiet, err_echo } = data as Partial<ChatMessageDataBroadcast & ChatMessageDataSaved>;
+    let { client_id, ent_id, ts, quiet, err_echo } = data as Partial<ChatMessageDataBroadcast & ChatMessageDataSaved>;
     if (!quiet && client_id !== netClientId()) {
       if (this.volume_in) {
         playUISound('msg_in', this.volume_in);
@@ -1109,7 +1106,9 @@ class ChatUIImpl {
     }
     display_name = display_name || id;
     flags = (flags || 0) | CHAT_FLAG_USERCHAT;
-    this.addChatFiltered({
+    let data_filtered = {
+      client_id,
+      ent_id,
       id,
       display_name,
       msg,
@@ -1118,7 +1117,11 @@ class ChatUIImpl {
       timestamp: ts,
       quiet,
       err_echo,
-    });
+    };
+    this.addChatFiltered(data_filtered);
+    if (this.on_chat_cb) {
+      this.on_chat_cb(data_filtered);
+    }
   }
   onChatBroadcast(data: {
     src: string;
@@ -1154,7 +1157,7 @@ class ChatUIImpl {
     this.addChat(`[error] ${toStr(err)}`, 'error');
   }
 
-  handleCmdParseError(err: unknown, resp: unknown): void {
+  handleCmdParseError(err: unknown, resp?: unknown): void {
     if (err) {
       this.addChatError(err);
     }

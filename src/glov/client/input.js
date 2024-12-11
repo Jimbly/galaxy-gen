@@ -1382,7 +1382,9 @@ export function keyDownEdge(keycode, opts) {
     return 0;
   }
   let r = ks.down_edge;
-  ks.down_edge = 0;
+  if (!opts || !opts.peek) {
+    ks.down_edge = 0;
+  }
   return r;
 }
 export function keyUpEdge(keycode, opts) {
@@ -1399,7 +1401,9 @@ export function keyUpEdge(keycode, opts) {
     return 0;
   }
   let r = ks.up_edge;
-  ks.up_edge = 0;
+  if (!opts || !opts.peek) {
+    ks.up_edge = 0;
+  }
   return r;
 }
 
@@ -1674,7 +1678,9 @@ export function longPress(param) {
 
   for (let touch_id in touches) {
     let touch_data = touches[touch_id];
-    if (!(button === ANY || button === touch_data.button) || touch_data.long_press_dispatched) {
+    if (!(button === ANY || button === touch_data.button) || touch_data.long_press_dispatched ||
+      touch_data.button === POINTERLOCK
+    ) {
       continue;
     }
     if (checkPos(touch_data.start_pos, pos_param)) {

@@ -149,6 +149,10 @@ export class DefaultUserWorker extends ChannelWorker {
         this.setChannelData('private.password_deleted', undefined);
         this.setChannelData('private.password', password_deleted);
       }
+
+      if (this.getChannelData(`private.friends.${this.user_id}`)) {
+        this.setChannelData(`private.friends.${this.user_id}`, undefined);
+      }
     }
   }
 
@@ -405,6 +409,9 @@ export class DefaultUserWorker extends ChannelWorker {
     }
     if (!validUserId(user_id)) {
       return void resp_func('Invalid User ID');
+    }
+    if (user_id === this.user_id) {
+      return void resp_func('Cannot block yourself');
     }
     let friends = this.getFriendsList();
     let friend = friends[user_id];

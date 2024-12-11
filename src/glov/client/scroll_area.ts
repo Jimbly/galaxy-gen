@@ -535,11 +535,17 @@ class ScrollAreaInternal implements ScrollArea {
         uvs: [scrollbar_trough.uvs[0], trough_v0, scrollbar_trough.uvs[2], trough_v1],
         color: trough_color,
       });
-    } else {
+    } else if (scrollbar_trough.uidata.heights.length === 3) {
       ui.drawVBox({
         x: bar_x0, y: this.y + trough_draw_pad, z: this.z+0.1,
         w: bar_w, h: trough_draw_height,
       }, scrollbar_trough, trough_color);
+    } else {
+      scrollbar_trough.draw({
+        x: bar_x0, y: this.y + trough_draw_pad, z: this.z+0.1,
+        w: bar_w, h: trough_draw_height,
+        color: trough_color,
+      });
     }
 
     ui.drawVBox({

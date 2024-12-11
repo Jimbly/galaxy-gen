@@ -143,6 +143,7 @@ class AutoAtlasImp {
         total_w,
         total_h,
       };
+      sprite.doReInit();
     }
 
     root_sprite.uidata = {

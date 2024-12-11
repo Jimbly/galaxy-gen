@@ -14,6 +14,7 @@ exports.require = require; // For browser console debugging
 
 const assert = require('assert');
 const {
+  is_android,
   is_ios,
   is_ios_chrome,
   is_ios_safari,
@@ -560,10 +561,6 @@ function isKeyboardUp(view_w, view_h) {
   if (!view_w) {
     return kb_up_ret;
   }
-  if (!is_ios) {
-    // probably logic is still valid, but not currently needed in other browsers?
-    return false;
-  }
   if (!nearSame(view_w, kb_up_last_w, 5)) {
     // init, or just rotated, assume not up
     kb_up_ret = false;
@@ -625,6 +622,12 @@ function getSafeAreaFromDOM(out, safearea, view_w, view_h) {
   }
 }
 
+let edit_box_near_bottom_frame = -1;
+let edit_box_near_bottom_pad = 0;
+export function setEditBoxNearBottom(required_padding_dom_coords) {
+  edit_box_near_bottom_frame = frame_index;
+  edit_box_near_bottom_pad = required_padding_dom_coords;
+}
 let last_canvas_width;
 let last_canvas_height;
 let last_body_height;
@@ -666,6 +669,11 @@ function checkResize() {
     safearea_dom[3] = 0;
   }
   safearea_dom[3] = max(safearea_dom[3], safariBottomSafeArea(view_w, view_h));
+
+  if (edit_box_near_bottom_frame === frame_index - 1 && is_android && isKeyboardUp()) {
+    // on Android, need extra "safe area" to get at the grabbers for selecting text
+    safearea_dom[3] = max(safearea_dom[3], edit_box_near_bottom_pad);
+  }
 
   let rect = canvas.getBoundingClientRect();
   let new_width = round(rect.width * dom_to_canvas_ratio) || 1;

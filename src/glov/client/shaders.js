@@ -373,6 +373,8 @@ function link(vp, fp, on_error) {
     return prog;
   }
 
+  // Note: on FireFox, this gl.useProgram() may terminate execution (later lines
+  //   are not executed, no catchable exception thrown, but program continues)
   gl.useProgram(prog.handle);
   bound_prog = prog;
 

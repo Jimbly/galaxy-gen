@@ -30,7 +30,10 @@ class MockDocument {
 }
 
 class MockNavigator {
-  userAgent = 'glov/test/mock';
+  userAgent = 'Node.js/test';
+  language = 'en-US';
+  languages = ['en-US'];
+  platform = process.platform;
 }
 let glob = global as DataObject;
 
@@ -39,7 +42,9 @@ glob.addEventListener = function () {
   // ignore
 };
 glob.conf_platform = 'web';
-glob.navigator = new MockNavigator();
+if (!glob.navigator) {
+  glob.navigator = new MockNavigator();
+} // else uses Node 22's built-in one
 glob.BUILD_TIMESTAMP = String(Date.now());
 
 assert(!glob.document);

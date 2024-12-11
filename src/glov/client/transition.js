@@ -86,7 +86,7 @@ function transitionCaptureFramebuffer(trans) {
   }
 }
 
-export function queue(z, fn) {
+export function queue(z, fn, ignore_duplicate) {
   assert(!glov_engine.had_3d_this_frame); // Cannot queue a transition after we've already started 3d rendering/cleared
   let immediate = false;
   if (z === IMMEDIATE) {
@@ -98,8 +98,11 @@ export function queue(z, fn) {
     let trans = transitions[ii];
     if (trans.z === z) {
       // same Z
-      if (!verify(trans.capture)) {
+      if (!trans.capture) {
         // two transitions at the same Z on one frame!  ignore second
+        if (!ignore_duplicate) {
+          verify(trans.capture);
+        }
         return false;
       }
     }

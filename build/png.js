@@ -89,12 +89,13 @@ function pngRead(file_contents) {
   let { width, height, data } = img;
   assert.equal(width * height * 4, data.length);
   // For some reason `img` doesn't have `.bitblt` - copy to a new png
+  let colorType = img.bpp === 3 ? PNG_RGB : PNG_RGBA;
   let ret = new PNG({
-    width: img.width,
-    height: img.height,
-    colorType: img.colorType,
+    width: width,
+    height: height,
+    colorType,
   });
-  ret.data = img.data;
+  ret.data = data;
   return { img: ret };
 }
 exports.pngRead = pngRead;
