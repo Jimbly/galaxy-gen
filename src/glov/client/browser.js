@@ -9,6 +9,7 @@ let m = ua.match(/OS (\d+)(_\d+)?(_\d+)?\s/);
 // Note: also set on Chrome on iOS
 export let safari_version_major = (is_ios && m) ? Number(m[1] || '0') : 0;
 export let safari_version_minor = (is_ios && m) ? Number(m[2] && m[2].slice(1) || '0') : 0;
+export let is_mac_osx_safari = window.safari !== undefined;
 export let is_windows_phone = ua.match(/windows phone/i);
 export let is_android = !is_windows_phone && ua.match(/android/i);
 export let is_firefox = ua.match(/Firefox/i);

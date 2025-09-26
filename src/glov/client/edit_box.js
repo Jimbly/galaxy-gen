@@ -13,24 +13,24 @@ import { v2same } from 'glov/common/vmath';
 import * as camera2d from './camera2d';
 import * as engine from './engine';
 import {
-  KEYS,
   eatAllKeyboardInput,
   inputClick,
   inputTouchMode,
   keyDownEdge,
+  KEYS,
   keyUpEdge,
   mouseConsumeClicks,
+  pointerLocked,
   pointerLockEnter,
   pointerLockExit,
-  pointerLocked,
 } from './input';
 import { getStringIfLocalizable } from './localization';
 import {
   spotFocusCheck,
   spotFocusSteal,
+  spotlog,
   spotSuppressKBNav,
   spotUnfocus,
-  spotlog,
 } from './spot';
 import {
   drawLine,
@@ -43,7 +43,7 @@ import {
   uiTextHeight,
 } from './ui';
 
-const { round } = Math;
+const { floor, round } = Math;
 
 let form_hook_registered = false;
 let active_edit_box;
@@ -156,6 +156,7 @@ class GlovUIEditBox {
     this.max_visual_size = null;
     this.zindex = null;
     this.uppercase = false;
+    this.resize = true; // only applies to multi-line
     this.initial_focus = false;
     this.onetime_focus = false;
     this.auto_unfocus = true;
@@ -604,7 +605,11 @@ class GlovUIEditBox {
           }
         }
         if (multiline) {
-          input.setAttribute('rows', multiline);
+          if (enforce_multiline) {
+            input.setAttribute('rows', multiline);
+          } else {
+            input.style.height = '100%';
+          }
         }
         elem.appendChild(input);
         let span = document.createElement('span');
@@ -613,6 +618,9 @@ class GlovUIEditBox {
         input.value = this.text;
         if (this.uppercase) {
           input.style['text-transform'] = 'uppercase';
+        }
+        if (!this.resize) {
+          input.style.resize = 'none';
         }
         this.input = input;
         if (this.initial_focus || this.onetime_focus) {
@@ -650,15 +658,9 @@ class GlovUIEditBox {
       }
     }
     if (elem) {
-      let pos = camera2d.htmlPos(x, y);
       if (!this.spellcheck) {
         elem.spellcheck = false;
       }
-      elem.style.left = `${pos[0]}%`;
-      elem.style.top = `${pos[1]}%`;
-      let size = camera2d.htmlSize(w, h);
-      elem.style.width = `${size[0]}%`;
-      elem.style.height = `${size[1]}%`;
 
       let clip_path = '';
       if (clipped_rect.x !== x ||
@@ -680,21 +682,28 @@ class GlovUIEditBox {
       }
 
       let new_fontsize = `${camera2d.virtualToFontSize(font_height).toFixed(8)}px`;
+      // Try slightly better smooth scaling from https://medium.com/autodesk-tlv/smooth-text-scaling-in-javascript-css-a817ae8cc4c9
+      const preciseFontSize = camera2d.virtualToFontSize(font_height);  // Desired font size
+      const roundedSize = floor(preciseFontSize);
+      const extra_scale = preciseFontSize / roundedSize; // Remaining scale
       if (new_fontsize !== this.last_font_size) {
         this.last_font_size = new_fontsize;
         // elem.style.fontSize = new_fontsize;
-        // Try slightly better smooth scaling from https://medium.com/autodesk-tlv/smooth-text-scaling-in-javascript-css-a817ae8cc4c9
-        const preciseFontSize = camera2d.virtualToFontSize(font_height);  // Desired font size
-        const roundedSize = Math.floor(preciseFontSize);
-        const s = preciseFontSize / roundedSize; // Remaining scale
         elem.style.fontSize = `${roundedSize}px`;
         //const translate = `translate(${pos.x}px, ${pos.y}px)`;
         const scale = `translate(-50%, -50%)
-                       scale(${s})
+                       scale(${extra_scale})
                        translate(50%, 50%)`;
-        this.input.style.width = `${(1/s*100).toFixed(8)}%`;
+        // this.input.style.width = `${(1/extra_scale*100).toFixed(8)}%`; - handled below, now
         elem.style.transform = scale;
       }
+
+      let pos = camera2d.htmlPos(x, y);
+      elem.style.left = `${pos[0]}%`;
+      elem.style.top = `${pos[1]}%`;
+      let size = camera2d.htmlSize(w, h);
+      elem.style.width = `${size[0]/extra_scale}%`;
+      elem.style.height = `${size[1]/extra_scale}%`;
 
 
       if (this.zindex) {
@@ -736,13 +745,18 @@ class GlovUIEditBox {
       eatAllKeyboardInput();
     }
     // Eat mouse events going to the edit box
-    mouseConsumeClicks({ x, y, w, h });
+    if (allow_focus) {
+      mouseConsumeClicks(clipped_rect);
+    }
 
     if (canvas_render) {
       const { center } = this;
       const { char_width, char_height, color_selection, color_caret, style_text } = canvas_render;
       let font = uiGetFont();
       let lines = text.split('\n');
+      if (this.input && this.input.scrollTop !== 0) {
+        this.input.scrollTop = 0;
+      }
       // draw text
       // TODO: maybe apply clipper here?  caller necessarily needs to set max_len and multiline appropriately, though.
       let line_width = [];
@@ -814,6 +828,9 @@ export function editBoxCreate(params) {
 export function editBox(params, current) {
   params.glov_initial_text = current;
   let edit_box = getUIElemData('edit_box', params, editBoxCreate);
+  if (edit_box.last_set_text !== current) {
+    edit_box.setText(current);
+  }
   let result = edit_box.run(params);
 
   return {

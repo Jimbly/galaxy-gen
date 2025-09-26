@@ -1,4 +1,3 @@
-/* eslint-env browser */
 declare module 'glov/client/global' {
   global {
     interface Window {

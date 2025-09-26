@@ -7,8 +7,9 @@ export const FADE_IN = 2;
 export const FADE = FADE_OUT + FADE_IN;
 
 import assert from 'assert';
-import { ErrorCallback, TSMap } from 'glov/common/types';
-import { callEach, defaults, ridx } from 'glov/common/util';
+import type { ErrorCallback, TSMap } from 'glov/common/types';
+import { callEach, defaults, empty, merge, ridx } from 'glov/common/util';
+import type { ROVec3 } from 'glov/common/vmath';
 import { is_firefox, is_itch_app } from './browser';
 import { cmd_parse } from './cmds';
 import { onEnterBackground, onExitBackground } from './engine';
@@ -19,7 +20,10 @@ import { settingsRegister } from './settings';
 import { textureCname } from './textures';
 import * as urlhash from './urlhash';
 
-const { Howl, Howler } = require('@jimbly/howler/src/howler.core.js');
+const mod_howler = require('@jimbly/howler/src/howler.core.js');
+const Howl = mod_howler.Howl;
+const Howler: HowlerGlobal = mod_howler.Howler;
+require('@jimbly/howler/src/plugins/howler.spatial.js');
 const { abs, floor, max, min, random } = Math;
 
 const DEFAULT_FADE_RATE = 0.001;
@@ -36,27 +40,68 @@ export interface SoundLoadOpts {
   loop?: boolean;
 }
 
-// Workaround to have interface to Howl object available (alongside glov_load_opts).
+// @see https://developer.mozilla.org/en-US/docs/Web/API/PannerNode
+type PannerAttr = {
+  coneInnerAngle: number; // 360
+  coneOuterAngle: number; // 360
+  coneOuterGain: number; // 0
+  distanceModel: 'inverse' | 'linear' | 'exponential'; // inverse
+  maxDistance: number; // 10000
+  refDistance: number; // 1
+  rolloffFactor: number; // 1
+  panningModel: 'HRTF' | 'equalpower'; // HRTF
+};
+type JimblyHowlerPlayOpts = { // Note: this parameter does not exist in the base Howler
+  volume?: number;
+  stereo?: number;
+  pos?: ROVec3;
+  orientation?: ROVec3;
+};
 interface HowlSound {
   glov_load_opts: SoundLoadOpts;
-  play(sprite?: string | number, volume?: number): number;
+  play(sprite?: string | number, opts?: JimblyHowlerPlayOpts): number;
   stop(id?: number): HowlSound;
   volume(vol?: number, id?: number): void;
   seek(seek?: number, id?: number): HowlSound | number;
   playing(id?: number): boolean;
   duration(id?: number): number;
+
+  // If spatial plugin is loaded:
+  stereo(pan: number, id: number): void;
+  pos(x: number, y: number, z: number, id: number): void;
+  orientation(x: number, y: number, z: number, id: number): void;
+  pannerAttr(o: PannerAttr, id: number): void;
+}
+
+interface HowlerGlobal {
+  usingWebAudio: boolean;
+  manualUnlock(): void;
+  noAudio: boolean;
+  safeToPlay: boolean;
+
+  // If spatial plugin is loaded:
+  pos(x: number, y: number, z: number): void;
+  orientation(x: number, y: number, z: number, xUp: number, yUp: number, zUp: number): void;
 }
 
 // Sound wrapper returned by soundPlay to external code
 export interface GlovSoundSetUp {
   name: string;
-  stop(): HowlSound;
+  stop(): void;
   volume(vol: number): void;
   playing(): boolean;
   duration(): number;
   location(time?: number): number;
   fade(target_volume: number, time: number): void;
+
+  stereo(pan: number): void;
+  pos(pos: ROVec3): void;
+  orientation(forward: ROVec3): void;
 }
+
+type GlovSoundSetUpInternal = GlovSoundSetUp & {
+  volume_current: number;
+};
 
 // Placeholder to track reference to sound whenever it's played
 export interface GlovSoundStreamedPlaceholder {
@@ -95,6 +140,16 @@ let active_sfx_as_music: {
   set_volume_when_played: number;
 }[] = [];
 let num_loading = 0;
+
+
+let default_panner_opts: Partial<PannerAttr> = {
+  panningModel: 'equalpower',
+};
+export function sound3DSetDefaultPanner(opts: Partial<PannerAttr>): void {
+  assert(empty(sounds));
+  assert(!num_loading);
+  merge(default_panner_opts, opts);
+}
 
 // Howler.usingWebAudio = false; // Disable WebAudio for testing HTML5 fallbacks
 
@@ -160,6 +215,18 @@ export function soundOnLoadFail(cb: (base: string) => void): void {
   on_load_fail = cb;
 }
 
+export function sound3DListener(param: {
+  pos: ROVec3;
+  forward?: ROVec3;
+  up?: ROVec3;
+}): void {
+  const { pos, forward, up } = param;
+  Howler.pos(pos[0], pos[1], pos[2]);
+  if (forward && up) {
+    Howler.orientation(forward[0], forward[1], forward[2], up[0], up[1], up[2]);
+  }
+}
+
 export type SoundID = string | { file: string; volume: number };
 
 export function soundFindForReplacement(filename: string): string | null {
@@ -179,7 +246,8 @@ export function soundReplaceFromDataURL(key: string, dataurl: string): void {
   assert(existing);
   let opts = existing.glov_load_opts;
   const { loop } = opts;
-  let sound = new Howl({
+  let sound: HowlSound = new Howl({
+    ...default_panner_opts,
     src: dataurl,
     html5: false,
     loop: Boolean(loop),
@@ -250,7 +318,7 @@ export function soundLoad(soundid: SoundID | SoundID[], opts?: SoundLoadOpts, cb
   }
 
   srcs = srcs.map((filename) => {
-    if (opts!.for_reload) { // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+    if (opts.for_reload) {
       filename = `${filename}?rl=${Date.now()}`;
     } else {
       filename = locateAsset(filename);
@@ -276,7 +344,8 @@ export function soundLoad(soundid: SoundID | SoundID[], opts?: SoundLoadOpts, cb
       ++num_loading;
     }
     let once = false;
-    let sound = new Howl({
+    let sound: HowlSound = new Howl({
+      ...default_panner_opts,
       src: srcs.slice(idx),
       html5: Boolean(streaming),
       loop: Boolean(loop),
@@ -287,7 +356,7 @@ export function soundLoad(soundid: SoundID | SoundID[], opts?: SoundLoadOpts, cb
             --num_loading;
           }
           once = true;
-          sound.glov_load_opts = opts;
+          sound.glov_load_opts = opts!;
           sounds[key] = sound;
           callEach(cbs, delete sounds_loading[key], null);
         }
@@ -443,11 +512,11 @@ export function soundTick(dt: number): void {
     return;
   }
   for (let i = 0; i < active_sfx_as_music.length; ++i) {
-    let { sound, play_volume, set_volume_when_played } = active_sfx_as_music[i];
+    let { sound, set_volume_when_played } = active_sfx_as_music[i];
     if (!sound.playing()) {
       ridx(active_sfx_as_music, i);
     } else if (set_volume_when_played !== musicVolume()) {
-      sound.volume(play_volume);
+      sound.volume((sound as GlovSoundSetUp & { volume_current: number }).volume_current);
       active_sfx_as_music[i].set_volume_when_played = musicVolume();
     }
   }
@@ -479,8 +548,8 @@ export function soundTick(dt: number): void {
     if (mus.sound) {
       let sys_volume = mus.current_volume * musicVolume() * volume_override * volume_music_override;
       if (mus.need_play) {
-        mus.need_play= false;
-        mus.id = mus.sound.play();
+        mus.need_play = false;
+        mus.id = mus.sound.play(undefined, { volume: sys_volume });
         mus.sys_volume = -1;
       }
       if (mus.sys_volume !== sys_volume) {
@@ -509,8 +578,40 @@ export function soundTick(dt: number): void {
   }
 }
 
-export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean): GlovSoundSetUp | null {
-  volume = volume || 1;
+export type GlovSoundPlayOpts = {
+  volume?: number;
+  as_music?: boolean;
+  pos?: ROVec3;
+  stereo?: number;
+};
+export function soundPlay(soundid: SoundID): GlovSoundSetUp | null;
+export function soundPlay(soundid: SoundID, volume: number): GlovSoundSetUp | null;
+export function soundPlay(soundid: SoundID, opts: GlovSoundPlayOpts): GlovSoundSetUp | null;
+
+export function soundPlay(
+  soundid: SoundID,
+  param?: number | GlovSoundPlayOpts,
+  old_as_music?: unknown,
+): GlovSoundSetUp | null {
+  assert(old_as_music === undefined); // use `soundPlay(soundid, { as_music: true })` instead
+  let volume = 1;
+  let as_music = false;
+  let pos: ROVec3 | undefined;
+  let stereo: number | undefined;
+  if (param !== undefined) {
+    if (typeof param === 'number') {
+      volume = param;
+    } else {
+      if (param.volume !== undefined) {
+        volume = param.volume;
+      }
+      if (param.as_music !== undefined) {
+        as_music = param.as_music;
+      }
+      pos = param.pos;
+      stereo = param.stereo;
+    }
+  }
   if (settings.volume * (as_music ? settings.volume_music : settings.volume_sound) === 0) {
     return null;
   }
@@ -533,10 +634,14 @@ export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean)
     return null;
   }
   let settingsVolume = as_music ? musicVolume : soundVolume;
-  let id = sound.play(undefined, volume * settingsVolume() * volume_override);
+  let id = sound.play(undefined, {
+    volume: volume * settingsVolume() * volume_override,
+    pos,
+    stereo,
+  });
   // sound.volume(volume * settingsVolume() * volume_override, id);
   last_played[soundid] = frame_timestamp;
-  let played_sound = {
+  let played_sound: GlovSoundSetUpInternal = {
     name: soundid,
     volume_current: volume,
     stop: sound.stop.bind(sound, id),
@@ -544,9 +649,9 @@ export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean)
     location: (time?: number) => { // get current location
       let v;
       if (time !== undefined) {
-        v = sound!.seek(time, id); // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+        v = sound.seek(time, id);
       } else {
-        v = sound!.seek(time, id); // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+        v = sound.seek(time, id);
       }
       if (typeof v !== 'number') {
         // Howler sometimes returns `self` from `seek()`
@@ -557,8 +662,7 @@ export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean)
     duration: sound.duration.bind(sound, id),
     volume: (vol: number) => {
       played_sound.volume_current = vol;
-      // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
-      sound!.volume(vol * settingsVolume() * volume_override, id);
+      sound.volume(vol * settingsVolume() * volume_override, id);
     },
     fade: (target_volume: number, time: number) => {
       let new_fade = {
@@ -577,6 +681,15 @@ export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean)
       }
       fades.push(new_fade);
     },
+    stereo(pan: number): void {
+      sound.stereo(pan, id);
+    },
+    pos(new_pos: ROVec3): void {
+      sound.pos(new_pos[0], new_pos[1], new_pos[2], id);
+    },
+    orientation(forward: ROVec3): void {
+      sound.orientation(forward[0], forward[1], forward[2], id);
+    },
   };
   if (as_music) {
     active_sfx_as_music.push({
@@ -590,11 +703,10 @@ export function soundPlay(soundid: SoundID, volume?: number, as_music?: boolean)
 
 export function soundPlayStreaming(
   soundname: string,
-  volume: number,
-  as_music: boolean,
+  param: GlovSoundPlayOpts,
   on_played_sound?: (sound: GlovSoundSetUp | null) => void
 ): GlovSound | null {
-  if (settings.volume * (as_music ? settings.volume_music : settings.volume_sound) === 0) {
+  if (settings.volume * (param.as_music ? settings.volume_music : settings.volume_sound) === 0) {
     return null;
   }
   if (Array.isArray(soundname)) {
@@ -603,7 +715,7 @@ export function soundPlayStreaming(
   let played_sound: GlovSound | null = { name: soundname, is_placeholder: true };
   soundLoad(soundname, { streaming: true, loop: false }, (err) => {
     if (!err) {
-      played_sound = soundPlay(soundname, volume, as_music);
+      played_sound = soundPlay(soundname, param);
       if (on_played_sound) {
         on_played_sound(played_sound);
       }
@@ -629,7 +741,7 @@ export function soundPlayMusic(soundname: string, volume?: number, transition?: 
       assert(sound);
       if (music[0].sound === sound) {
         // Same sound, just adjust volume, if required
-        music[0].target_volume = volume!; // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+        music[0].target_volume = volume;
         if (!transition) {
           if (!volume) {
             sound.stop(music[0].id);
@@ -638,7 +750,7 @@ export function soundPlayMusic(soundname: string, volume?: number, transition?: 
             let sys_volume = music[0].sys_volume = volume * musicVolume() * volume_override * volume_music_override;
             sound.volume(sys_volume, music[0].id);
             if (!sound.playing()) {
-              sound.play(undefined, sys_volume);
+              sound.play(undefined, { volume: sys_volume });
             }
           }
         }
@@ -647,7 +759,7 @@ export function soundPlayMusic(soundname: string, volume?: number, transition?: 
     }
     // fade out previous music, if any
     if (music[0].current_volume) {
-      if (transition! & FADE_OUT) { // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+      if (transition & FADE_OUT) {
         // swap to position 1, start fadeout
         let temp = music[1];
         music[1] = music[0];
@@ -660,12 +772,12 @@ export function soundPlayMusic(soundname: string, volume?: number, transition?: 
     }
     music[0].sound = sound;
     if (sound) {
-      music[0].target_volume = volume!; // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
-      let start_vol = (transition! & FADE_IN) ? 0 : volume!; // !s are workaround TypeScript bug fixed in v5.4.0
+      music[0].target_volume = volume;
+      let start_vol = (transition & FADE_IN) ? 0 : volume;
       music[0].current_volume = start_vol;
       if (soundResumed()) {
         let sys_volume = start_vol * musicVolume() * volume_override * volume_music_override;
-        music[0].id = sound.play(undefined, sys_volume);
+        music[0].id = sound.play(undefined, { volume: sys_volume });
         // sound.volume(sys_volume, music[0].id);
         music[0].sys_volume = sys_volume;
         music[0].need_play = false;

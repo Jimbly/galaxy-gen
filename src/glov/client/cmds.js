@@ -9,28 +9,6 @@ import * as urlhash from './urlhash';
 export let cmd_parse = cmdParseCreate({ storage: local_storage });
 export let safearea = [-1,-1,-1,-1];
 
-function cmdDesc(cmd_data) {
-  return `**/${cmd_data.cmd}** - ${cmd_data.help}`;
-}
-
-cmd_parse.register({
-  cmd: 'help',
-  help: 'Searches commands',
-  func: function (str, resp_func) {
-    let list = cmd_parse.autoComplete('', this && this.access);
-    if (str) {
-      let str_cname = cmd_parse.canonical(str);
-      let str_lc = str.toLowerCase();
-      list = list.filter((cmd_data) => cmd_data.cname.indexOf(str_cname) !== -1 ||
-          cmd_data.help.toLowerCase().indexOf(str_lc) !== -1);
-    }
-    if (!list.length) {
-      return void resp_func(null, `No commands found matching "${str}"`);
-    }
-    resp_func(null, list.map(cmdDesc).join('\n'));
-  }
-});
-
 cmd_parse.registerValue('safe_area', {
   label: 'Safe Area',
   type: cmd_parse.TYPE_STRING,

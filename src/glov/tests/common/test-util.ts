@@ -1,5 +1,4 @@
 import assert from 'assert';
-import { asyncSeries } from 'glov-async';
 import { DataObject } from 'glov/common/types';
 import {
   cmpNumericSmart,
@@ -10,9 +9,11 @@ import {
   nearSameAngle,
   once,
   randomNot,
+  refclone,
   trimEnd,
 } from 'glov/common/util';
 import 'glov/server/test';
+import { asyncSeries } from 'glov-async';
 
 const { PI } = Math;
 
@@ -133,6 +134,49 @@ asyncSeries([
     assert.deepEqual(defaultsDeep({ a: [2] }, { a: { b: 1 } }), { a: [2] });
     next();
   },
+  function testRefclone(next) {
+    {
+      let A = { list: [1, 2, 3] };
+      let B = { list: [1, 2, 3] } as DataObject;
+
+      let C = refclone(A, B);
+      assert(C === A);
+      B.foo = 'bar';
+      C = refclone(A, B);
+      assert(C !== A);
+      assert(C !== B);
+      assert(C.list !== B.list);
+      assert(C.list === A.list);
+    }
+
+    {
+      let A = { list: [1, 2, 3] };
+      let B = { list: [1, 2, 3, 4] };
+
+      let C = refclone(A, B);
+      assert(C.list !== A.list);
+      assert(C.list !== B.list);
+    }
+
+    {
+      let A = { foo: { list: [1, 2, { bar: 'baz' }] } };
+      let B = { foo: { list: [1, 2, { bar: 'baz' }] } };
+
+      let C = refclone(A, B);
+      assert(C === A);
+      (B as DataObject).bar = 'baz';
+      C = refclone(A, B);
+      assert(C !== A);
+      assert(C.foo === A.foo);
+      B.foo.list[0] = 2;
+      C = refclone(A, B);
+      assert(C !== A);
+      assert(C.foo.list !== A.foo.list);
+      assert(C.foo.list !== B.foo.list);
+      assert(C.foo.list[2] === A.foo.list[2]);
+    }
+    next();
+  }
 ], function (err) {
   if (err) {
     throw err;

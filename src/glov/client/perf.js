@@ -61,6 +61,7 @@ settings.register({
       MSPF: 2,
       CPU: 3,
       GC: 4,
+      MEM: 5,
     }
   },
   fps_graph: {

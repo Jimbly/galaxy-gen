@@ -207,6 +207,7 @@ const { abs, max } = Math;
 import verify from 'glov/common/verify';
 import { Vec2, Vec4 } from 'glov/common/vmath.js';
 import * as camera2d from './camera2d.js';
+import { platformGetID, platformParameterGet } from './client_config';
 import * as engine from './engine.js';
 import {
   FontStyle,
@@ -214,8 +215,6 @@ import {
 } from './font.js';
 import { Box, Point2D } from './geom_types';
 import {
-  KEYS,
-  PAD,
   dragDrop,
   dragOver,
   inputClick,
@@ -223,6 +222,7 @@ import {
   inputTouchMode,
   keyDown,
   keyDownEdge,
+  KEYS,
   longPress,
   mouseButtonHadEdge,
   mouseDomPos,
@@ -232,20 +232,24 @@ import {
   mouseMoved,
   mouseOver,
   mousePosIsTouch,
+  PAD,
   padButtonDownEdge,
 } from './input.js';
-import { link } from './link';
+import {
+  link,
+  linkActivate,
+} from './link';
 import * as settings from './settings.js';
 import * as ui from './ui.js';
 import {
-  EventCallback,
-  HookList,
-  TooltipBoxParam,
-  TooltipValue,
   drawLine,
   drawRect,
   drawTooltipBox,
+  EventCallback,
+  HookList,
   playUISound,
+  TooltipBoxParam,
+  TooltipValue,
 } from './ui.js';
 const { checkHooks } = ui.internal;
 
@@ -284,7 +288,7 @@ export function spotSetPadMode(new_mode: boolean): void {
 }
 
 export function spotlog(...args: unknown[]): void {
-  // const { getFrameIndex } = require('./engine.js'); // eslint-disable-line global-require
+  // const { getFrameIndex } = require('./engine.js'); // eslint-disable-line n/global-require
   // console.log(`spotlog(${getFrameIndex()}): `, ...args);
 }
 
@@ -430,7 +434,8 @@ const spot_nav_keys_extended: SpotNavKeys = {
   [SPOT_NAV_NEXT]: spot_nav_keys_base[SPOT_NAV_NEXT],
 };
 function keyDownShifted(key: number): boolean {
-  return keyDown(KEYS.SHIFT) && keyDownEdge(key);
+  // Use Ctrl+Tab on Electron since the Steam overlay will intercept shift+tab
+  return (keyDown(KEYS.SHIFT) || platformGetID() === 'electron' && keyDown(KEYS.CTRL)) && keyDownEdge(key);
 }
 function keyDownUnshifted(key: number): boolean {
   return !keyDown(KEYS.SHIFT) && keyDownEdge(key);
@@ -1256,7 +1261,7 @@ function spotSignalRet(param: SpotInternal): void {
   out.double_click = key === last_signal.key &&
     engine.frame_timestamp - last_signal.timestamp <
     // TODO: After input.js and settings.js are converted to TypeScript, remove type casts
-    (settings as unknown as { double_click_time:number }).double_click_time;
+    (settings as unknown as { double_click_time: number }).double_click_time;
   last_signal.key = key;
   last_signal.timestamp = engine.frame_timestamp;
   out.ret++;
@@ -1455,8 +1460,13 @@ export function spot(param: SpotParam): SpotRet {
     if (param.internal === undefined) {
       param.internal = true;
     }
+    let was_activated = button_activate;
     if (link(param)) {
       button_activate = true;
+    }
+    if (param.internal === false && was_activated) {
+      // button was activated (via keyboard/gamepad/hotkeys), need to activate the link
+      linkActivate(param.key_computed);
     }
   }
   if (button_activate) {
@@ -1471,6 +1481,9 @@ export function spot(param: SpotParam): SpotRet {
     const sound_button = param.sound_button === undefined ? def.sound_button : param.sound_button;
     if (sound_button) {
       playUISound(sound_button);
+    }
+    if (param.url) {
+      platformParameterGet('linkHandler')?.(param.url);
     }
   }
   if (out.focused && param.tooltip) {

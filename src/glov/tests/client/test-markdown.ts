@@ -24,7 +24,7 @@ function treeToText(tree: MDASTNode[]): string {
   return ret;
 }
 
-let tree: Array<MDASTNode> = mdParse('FOO_BAR Here is [img=foo] [gt=ACCESS_AREA text="Access Areas"]' +
+let tree: MDASTNode[] = mdParse('FOO_BAR Here is [img=foo] [gt=ACCESS_AREA text="Access Areas"]' +
   ' [p=1] [img=foo scale=3 nostretch] [world=1234/info] [emoji=smile] and an *em**b**tag*.');
 // console.log(JSON.stringify(tree, undefined, 2));
 assert(Array.isArray(tree));

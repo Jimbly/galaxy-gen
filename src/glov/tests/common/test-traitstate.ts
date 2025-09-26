@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { TypeDef, traitFactoryCreate } from 'glov/common/trait_factory';
+import { traitFactoryCreate, TypeDef } from 'glov/common/trait_factory';
 import { clone } from 'glov/common/util';
 import 'glov/server/test';
 import { DummyFS } from './dummyfs';

@@ -15,18 +15,22 @@ import {
 } from './input';
 import { linkText } from './link';
 import {
+  localStorageGet,
+  localStorageSet,
+} from './local_storage';
+import {
+  markdownAuto,
   MDDrawBlock,
   MDDrawParam,
   MDLayoutBlock,
   MDLayoutCalcParam,
-  markdownAuto,
 } from './markdown';
 import { RenderableContent } from './markdown_parse';
 import { markdownImageRegister, markdownLayoutFit } from './markdown_renderables';
 import { ScrollArea, scrollAreaCreate } from './scroll_area';
 import {
-  SelectionBox,
   dropDownCreate,
+  SelectionBox,
   selectionBoxCreate,
 } from './selection_box';
 import { SimpleMenu, simpleMenuCreate } from './simple_menu';
@@ -71,6 +75,7 @@ function init(x: number, y: number, column_width: number): void {
     x: x + column_width,
     y: y,
     w: column_width - 8,
+    text: localStorageGet('uitest.editbox1') || '',
   });
   edit_box2 = editBoxCreate({
     x: x + column_width + column_width,
@@ -218,6 +223,7 @@ export function run(x: number, y: number, z: number): void {
       },
     });
   }
+  localStorageSet('uitest.editbox1', edit_box1.getText());
   if (edit_box2.run() === edit_box2.SUBMIT) {
     edit_box2.setText('');
   }
@@ -404,13 +410,12 @@ export function run(x: number, y: number, z: number): void {
               h: layout_param.line_height,
             };
             assert(markdownLayoutFit(layout_param, dims));
-            let dims2 = dims; // workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
             return [{
               dims,
               draw: (draw_param: MDDrawParam): void => {
                 let rect = {
-                  x: draw_param.x + dims2.x,
-                  y: draw_param.y + dims2.y,
+                  x: draw_param.x + dims.x,
+                  y: draw_param.y + dims.y,
                   w: dims.w,
                   h: dims.h,
                 };
@@ -537,6 +542,26 @@ nec arborei timentem, ut crimina vidit.
   ui.buttonText({ x: 2, y: internal_y, z: z + 1, text: 'Fullscreen',
     in_event_cb: fscreenActive() ? fscreenExit : fscreenEnter });
   internal_y += button_height + pad;
+
+  let long_msg = 'Lots of long text that needs to be wrapped on this button label that really' +
+      ' needs to be wrapped or otherwise dealt with in a reasonable way.';
+  ui.buttonText({ x: 2, y: internal_y, z: z + 1,
+    align: ALIGN.HVCENTERFIT,
+    text: `HVCENTERFIT: ${long_msg}` });
+  internal_y += button_height + pad;
+  ui.buttonText({ x: 2, y: internal_y, z: z + 1,
+    align: ALIGN.HWRAP | ALIGN.HVCENTERFIT,
+    text: `HWRAP|HVCENTERFIT: ${long_msg}` });
+  internal_y += button_height + pad;
+  ui.buttonText({ x: 2, y: internal_y, z: z + 1,
+    align: ALIGN.HWRAP | ALIGN.HVCENTERFIT,
+    text: 'HWRAP|HVCENTERFIT\nWith\nCarriage\nReturns' });
+  internal_y += button_height + pad;
+  ui.buttonText({ x: 2, y: internal_y, z: z + 1,
+    align: ALIGN.HWRAP | ALIGN.HVCENTERFIT,
+    text: 'HWRAP|HVCENTERFIT and also very long text eh what ya gonna do? lorem ipsum omgwtfbarbq\nWith\nCR' });
+  internal_y += button_height + pad;
+
   collapsagoriesStop();
   test_scroll_area.end(internal_y);
   ui.panel({ x: test_scroll_area.x - pad, y: test_scroll_area.y - pad, z: z - 1,

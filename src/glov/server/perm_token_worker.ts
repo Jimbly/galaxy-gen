@@ -61,7 +61,7 @@ export function permTokenWorkerInit(channel_server: ChannelServer, app: Express)
       return next();
     }
 
-    function getArray(key: string): (string)[] {
+    function getArray(key: string): string[] {
       let v = req.query[key];
       if (typeof v === 'string') {
         return [v];

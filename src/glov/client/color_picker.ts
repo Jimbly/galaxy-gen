@@ -1,25 +1,60 @@
-// Portions Copyright 2021 Jimb Esser (https://github.com/Jimbly/)
+// Portions Copyright 2025 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
-/* eslint-disable import/order */
-const camera2d = require('./camera2d.js');
-const { hsvToRGB, rgbToHSV } = require('./hsv.js');
-const input = require('./input.js');
-const { min } = Math;
-const ui = require('./ui.js');
-const {
-  LINE_CAP_SQUARE,
-  uiButtonHeight,
+import { WithRequired } from 'glov/common/types';
+import { clamp } from 'glov/common/util';
+import {
+  rovec4,
+  v3copy,
+  Vec2,
+  Vec3,
+  vec3,
+  Vec4,
+  vec4,
+} from 'glov/common/vmath';
+import * as camera2d from './camera2d';
+import { hsvToRGB, rgbToHSV } from './hsv';
+import {
+  inputClick,
+  inputDrag,
+  mouseDownAnywhere,
+  mouseOver,
+} from './input';
+import {
+  Sprite,
+  spriteClipPause,
+  spriteClipped,
+  spriteClipResume,
+  spriteCreate,
+} from './sprites';
+import { TEXTURE_FORMAT } from './textures';
+import {
+  buttonImage,
   buttonWasFocused,
-} = ui;
-const { spriteClipped, spriteClipPause, spriteClipResume, spriteCreate } = require('./sprites.js');
-const { TEXTURE_FORMAT } = require('./textures.js');
-const { clamp } = require('glov/common/util.js');
-const { vec3, v3copy, vec4 } = require('glov/common/vmath.js');
+  drawLine,
+  getUIElemData,
+  LINE_CAP_SQUARE,
+  panel,
+  sprites as ui_sprites,
+  UIBox,
+  uiButtonHeight,
+} from './ui';
 
-let color_black = vec4(0,0,0,1);
+const { min } = Math;
 
-function colorPickerOpen(state) {
+const color_black = rovec4(0,0,0,1);
+
+type ColorPickerState = {
+  open: boolean;
+  rgba: Vec4;
+  color_hs?: Vec4;
+  color_v?: Vec4;
+  hsv?: Vec3;
+};
+
+type ColorPickerStateOpen = WithRequired<ColorPickerState, 'hsv' | 'color_hs' | 'color_v'>;
+
+function colorPickerOpen(state: ColorPickerState): asserts state is ColorPickerStateOpen {
   state.open = true;
   if (!state.color_hs) {
     state.color_hs = vec4(0,0,0,1);
@@ -30,8 +65,12 @@ function colorPickerOpen(state) {
   rgbToHSV(state.hsv, state.rgba);
 }
 
-function colorPickerAlloc(param) {
-  let state ={
+function colorPickerIsOpen(state: ColorPickerState): state is ColorPickerStateOpen {
+  return state.open;
+}
+
+function colorPickerAlloc(param: ColorPickerParam): ColorPickerState {
+  let state: ColorPickerState = {
     open: false,
     rgba: vec4(0,0,0,1),
   };
@@ -39,9 +78,9 @@ function colorPickerAlloc(param) {
   return state;
 }
 
-let picker_sprite_hue_sat;
-let picker_sprite_val;
-function initTextures() {
+let picker_sprite_hue_sat: Sprite;
+let picker_sprite_val: Sprite;
+function initTextures(): void {
   const HS_SIZE = 32;
   let data = new Uint8Array(HS_SIZE * HS_SIZE * 3);
   let rgb = vec3();
@@ -83,8 +122,28 @@ function initTextures() {
   });
 }
 
-export function colorPicker(param) {
-  let state = ui.getUIElemData('colorpicker', param, colorPickerAlloc);
+export type ColorPickerParam = {
+  color: Vec3;
+  x: number;
+  y: number;
+  z: number;
+  icon_w?: number;
+  icon_h?: number;
+  picker_h?: number;
+  pad?: number;
+};
+
+function dragOrClickPos(box: UIBox): null | Vec2 {
+  let drag = inputDrag(box) || inputClick(box);
+  if (!drag) {
+    return null;
+  }
+  return (drag as ReturnType<typeof inputDrag>)!.cur_pos ||
+    (drag as ReturnType<typeof inputClick>)!.pos;
+}
+
+export function colorPicker(param: ColorPickerParam): void {
+  let state = getUIElemData('colorpicker', param, colorPickerAlloc);
   let icon_h = param.icon_h || uiButtonHeight();
   let icon_w = param.icon_w || icon_h;
   let picker_h = param.picker_h || uiButtonHeight() * 4;
@@ -95,10 +154,10 @@ export function colorPicker(param) {
     v3copy(state.rgba, param.color);
   }
 
-  if (ui.buttonImage({
+  if (buttonImage({
     x, y, z,
     w: icon_w, h: icon_h,
-    img: ui.sprites.white,
+    img: ui_sprites.white,
     color: state.rgba,
   })) {
     if (!state.open) {
@@ -109,7 +168,7 @@ export function colorPicker(param) {
   }
   let handled = buttonWasFocused();
 
-  if (state.open) {
+  if (colorPickerIsOpen(state)) {
     let clip_pause = spriteClipped();
     if (clip_pause) {
       spriteClipPause();
@@ -136,17 +195,16 @@ export function colorPicker(param) {
       max_dist: Infinity,
     };
     picker_sprite_hue_sat.draw(hue_sat_param);
-    let drag = input.drag(hue_sat_param) || input.click(hue_sat_param);
-    if (drag) {
+    let drag_pos = dragOrClickPos(hue_sat_param);
+    if (drag_pos) {
       handled = true;
-      let pos = drag.cur_pos || drag.pos;
-      hsv[0] = clamp((pos[0] - x) / hue_sat_param.w * 360, 0, 360);
-      hsv[1] = clamp(1 - (pos[1] - y) / hue_sat_param.h, 0, 1);
+      hsv[0] = clamp((drag_pos[0] - x) / hue_sat_param.w * 360, 0, 360);
+      hsv[1] = clamp(1 - (drag_pos[1] - y) / hue_sat_param.h, 0, 1);
     }
     let hs_x = x + hsv[0]*hue_sat_w/360;
     let hs_y = y + (1-hsv[1])*picker_h;
-    ui.drawLine(hs_x - pad, hs_y, hs_x + pad, hs_y, z + 1, 1, 1, color_black, LINE_CAP_SQUARE);
-    ui.drawLine(hs_x, hs_y - pad, hs_x, hs_y + pad, z + 1, 1, 1, color_black, LINE_CAP_SQUARE);
+    drawLine(hs_x - pad, hs_y, hs_x + pad, hs_y, z + 1, 1, 1, color_black, LINE_CAP_SQUARE);
+    drawLine(hs_x, hs_y - pad, hs_x, hs_y + pad, z + 1, 1, 1, color_black, LINE_CAP_SQUARE);
     x += hue_sat_w + pad;
 
     hsvToRGB(state.color_hs, hsv[0], hsv[1], 1);
@@ -157,31 +215,30 @@ export function colorPicker(param) {
       max_dist: Infinity,
     };
     picker_sprite_val.draw(val_param);
-    drag = input.drag(val_param) || input.click(val_param);
-    if (drag) {
+    drag_pos = dragOrClickPos(val_param);
+    if (drag_pos) {
       handled = true;
-      let pos = drag.cur_pos || drag.pos;
-      hsv[2] = clamp(1 - (pos[1] - y) / val_param.h, 0, 1);
+      hsv[2] = clamp(1 - (drag_pos[1] - y) / val_param.h, 0, 1);
     }
     let v_y = y + (1-hsv[2])*picker_h;
-    ui.drawLine(x, v_y, x + val_w, v_y, z + 1, 1, 1, color_black, LINE_CAP_SQUARE);
+    drawLine(x, v_y, x + val_w, v_y, z + 1, 1, 1, color_black, LINE_CAP_SQUARE);
     x += val_w;
 
     hsvToRGB(state.rgba, state.hsv[0], state.hsv[1], state.hsv[2]);
 
     // eat mouseover/clicks/drags
     let panel_param = { x: x0 - pad, y: y0 - pad, w: x - x0 + pad * 2, h: picker_h + pad * 2, z: z-1 };
-    if (input.mouseOver(panel_param)) {
+    if (mouseOver(panel_param)) {
       handled = true;
     }
-    input.drag(panel_param);
-    ui.panel(panel_param);
+    inputDrag(panel_param);
+    panel(panel_param);
 
     if (clip_pause) {
       spriteClipResume();
     }
 
-    if (input.click({ peek: true }) || !handled && input.mouseDownAnywhere()) {
+    if (inputClick({ peek: true }) || !handled && mouseDownAnywhere()) {
       state.open = false;
     }
   }

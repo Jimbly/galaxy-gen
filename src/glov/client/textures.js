@@ -1,25 +1,33 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
-/* eslint-env browser */
+/* globals navigator */
 
 // constants for use before the WebGL context is created
 export const GL_REPEAT = 0x2901;
 export const GL_CLAMP_TO_EDGE = 0x812f;
 
+export const TEXTURE_FORMAT = {
+  R8: { count: 1 },
+  RGB8: { count: 3 },
+  RGBA8: { count: 4 },
+  DEPTH16: { count: 1 },
+  DEPTH24: { count: 1 },
+};
+
 import * as assert from 'assert';
-import { asyncParallel, asyncSeries } from 'glov-async';
 import {
   FORMAT_PACK,
   FORMAT_PNG,
   TEXPACK_MAGIC,
 } from 'glov/common/texpack_common';
 import {
-  callEach,
   callbackify,
+  callEach,
   isPowerOfTwo,
   nextHighestPowerOfTwo,
   ridx,
 } from 'glov/common/util';
+import { asyncParallel, asyncSeries } from 'glov-async';
 import * as engine from './engine';
 import { fetch } from './fetch';
 import { filewatchOn } from './filewatch';
@@ -57,14 +65,6 @@ const cube_faces = [
   { target: 'TEXTURE_CUBE_MAP_NEGATIVE_Z', pos: [2,0] },
   { target: 'TEXTURE_CUBE_MAP_POSITIVE_Z', pos: [2,1] },
 ];
-
-export const TEXTURE_FORMAT = {
-  R8: { count: 1 },
-  RGB8: { count: 3 },
-  RGBA8: { count: 4 },
-  DEPTH16: { count: 1 },
-  DEPTH24: { count: 1 },
-};
 
 export function textureDefaultFilters(min, mag) {
   default_filter_min = min;
@@ -269,7 +269,10 @@ function bindForced(tex) {
 export function textureFilterKey(params) {
   let filter_min = params.filter_min || default_filter_min;
   let filter_mag = params.filter_mag || default_filter_mag;
-  return filter_min + filter_mag * 10000;
+  let wrap_s = params.wrap_s || gl.REPEAT;
+  let wrap_t = params.wrap_t || gl.REPEAT;
+  let force_mipmaps = params.force_mipmaps ? 1 : 0;
+  return (((filter_min * 77 + filter_mag) * 77 + wrap_s) * 77 + wrap_t) * 77 + force_mipmaps;
 }
 
 Texture.prototype.setSamplerState = function (params) {

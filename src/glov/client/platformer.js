@@ -144,7 +144,6 @@ class Platformer {
     });
   }
 
-  // eslint-disable-next-line complexity
   doCharacterMotion(character, dt, dx, dy) {
     if (dt > 30) {
       // timeslice

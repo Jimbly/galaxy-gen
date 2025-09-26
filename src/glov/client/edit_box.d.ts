@@ -1,8 +1,8 @@
-import type { FontStyle } from './font';
-import type { FocusableElement } from './scroll_area';
 import type { EventCallback } from 'glov/client/ui';
 import type { TextVisualLimit } from 'glov/common/types';
 import type { ROVec4 } from 'glov/common/vmath';
+import type { FontStyle } from './font';
+import type { FocusableElement } from './scroll_area';
 
 export type EditBoxResult = null | 'submit' | 'cancel';
 
@@ -21,6 +21,7 @@ export interface EditBoxOptsAll {
   zindex: null | number;
   uppercase: boolean;
   initial_focus: boolean;
+  resize: boolean; // only applies to multi-line edit boxes
   // internal state: onetime_focus: boolean;
   focus_steal: boolean;
   auto_unfocus: boolean;

@@ -1,23 +1,29 @@
 // Portions Copyright 2020 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
-/* eslint-env browser */
-
 import assert from 'assert';
 import * as settings from 'glov/client/settings';
 import { settingsRegister, settingsSet } from 'glov/client/settings';
+import type { CmdRespFunc } from 'glov/common/cmd_parse';
 import {
   PRESENCE_ACTIVE,
   PRESENCE_INACTIVE,
   PRESENCE_OFFLINE,
   PRESENCE_OFFLINE_INACTIVE,
 } from 'glov/common/enums';
-import { FriendData, FriendStatus, FriendsData } from 'glov/common/friends_data';
+import { FriendData, FriendsData, FriendStatus } from 'glov/common/friends_data';
+import type {
+  ErrorCallback,
+  FriendCmdResponse,
+  NetErrorCallback,
+  PresenceEntry,
+  TSMap,
+} from 'glov/common/types';
 import { deepEqual } from 'glov/common/util';
-import { ROVec4 } from 'glov/common/vmath';
+import type { ROVec4 } from 'glov/common/vmath';
 import { abTestGetMetricsAndPlatform } from './abtest';
 import { cmd_parse } from './cmds';
-import { ExternalUserInfo } from './external_user_info';
+import type { ExternalUserInfo } from './external_user_info';
 import * as input from './input';
 import {
   ClientChannelWorker,
@@ -28,18 +34,11 @@ import {
 import { Sprite, spriteCreate } from './sprites';
 import { textureLoad } from './textures';
 
-import type { CmdRespFunc } from 'glov/common/cmd_parse';
-import type {
-  ErrorCallback,
-  FriendCmdResponse,
-  NetErrorCallback,
-  PresenceEntry,
-  TSMap,
-} from 'glov/common/types';
-
 declare let gl: WebGLRenderingContext | WebGL2RenderingContext;
 
 const IDLE_TIME = 60000;
+
+let did_social_init = false;
 
 let friend_list: FriendsData | null = null;
 
@@ -115,7 +114,9 @@ export function socialPresenceStatusGet(): SocialPresenceStatus {
   return settings.social_presence;
 }
 export function socialPresenceStatusSet(value: SocialPresenceStatus): void {
-  settingsSet('social_presence', value);
+  if (did_social_init) {
+    settingsSet('social_presence', value);
+  }
 }
 
 function onPresence(this: ClientUserChannel, data: TSMap<PresenceEntry>): void {
@@ -415,6 +416,7 @@ export function registerExternalUserInfoProvider(
 
 // Init
 export function socialInit(): void {
+  did_social_init = true;
   netSubs().on('login', function () {
     let user_channel = netSubs().getMyUserChannel();
     let user_id = netUserId();

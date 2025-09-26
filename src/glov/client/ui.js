@@ -118,6 +118,10 @@ const menu_fade_params_default = {
   z: Z.MODAL,
 };
 
+export function menuFadeParamsSetDefault(fade_params) {
+  merge(menu_fade_params_default, fade_params);
+}
+
 let color_set_shades = vec4(1, 0.8, 1, 1);
 
 let color_sets = [];
@@ -150,6 +154,10 @@ export function colorSetMakeCustom(regular, rollover, down, disabled) {
     down,
     disabled,
   };
+}
+
+export function colorSetGetField(color_set, field) {
+  return color_set[field];
 }
 
 let hooks = [];
@@ -550,7 +558,21 @@ export function uiGetDOMElem(last_elem, allow_modal) {
     //   handles this), but links still rely on this
     return null;
   }
-  if (dom_elems_issued >= dom_elems.length || !last_elem) {
+  if (last_elem && dom_elems[dom_elems_issued] !== last_elem) {
+    let found = false;
+    for (let ii = dom_elems_issued + 1; ii < dom_elems.length; ++ii) {
+      if (dom_elems[ii] === last_elem) {
+        dom_elems[ii] = dom_elems[dom_elems_issued];
+        dom_elems[dom_elems_issued] = last_elem;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      last_elem = null;
+    }
+  }
+  if (!last_elem) {
     let elem = document.createElement('div');
     uiElemAllocCheck();
     elem.setAttribute('class', 'glovui_dynamic');
@@ -558,18 +580,15 @@ export function uiGetDOMElem(last_elem, allow_modal) {
       dynamic_text_elem = document.getElementById('dynamic_text');
     }
     dynamic_text_elem.appendChild(elem);
-    dom_elems.push(elem);
+    let old = dom_elems[dom_elems_issued];
+    dom_elems[dom_elems_issued] = elem;
+    if (old) {
+      dom_elems.push(old);
+    }
     last_elem = elem;
   }
-  if (dom_elems[dom_elems_issued] !== last_elem) {
-    for (let ii = dom_elems_issued + 1; ii < dom_elems.length; ++ii) {
-      if (dom_elems[ii] === last_elem) {
-        dom_elems[ii] = dom_elems[dom_elems_issued];
-        dom_elems[dom_elems_issued] = last_elem;
-      }
-    }
-  }
   let elem = dom_elems[dom_elems_issued];
+  assert(!last_elem || elem === last_elem);
   dom_elems_issued++;
   return elem;
 }
@@ -595,7 +614,99 @@ export function uiBindSounds(_sounds) {
 let draw_box_param = {
   nozoom: true, // nozoom since different parts of the box get zoomed differently
 };
+
+function scale9PatchDims(pixel_scale, target_width, widths) {
+  // TODO: move this top part into uidata/atlas pre-calculations?
+  let fixed_ws = 0;
+  let stretch_ws = 0;
+  for (let ii = 0; ii < widths.length; ++ii) {
+    let w = widths[ii];
+    if (ii % 2) {
+      stretch_ws += w;
+    } else {
+      fixed_ws += w;
+    }
+  }
+  let fixedscale;
+  let stretchscale;
+  if (fixed_ws * pixel_scale > target_width) {
+    // too large even with stretchable sections, shrink (non-uniformly)
+    fixedscale = target_width / fixed_ws;
+  } else {
+    fixedscale = pixel_scale;
+  }
+  stretchscale = stretch_ws ? // avoid divide by 0 (result probably unused though)
+    (target_width - fixed_ws * fixedscale) / stretch_ws :
+    fixedscale;
+  return [fixedscale, stretchscale];
+}
+
+// Draws an arbitrary 9-patch (assumes upper left patch is not stretched)
+// pixel_scale is ignored if there's no stretchable portions in some dimension
+// Returns the padded bounds (or the whole rect, if they don't exist)
+// eslint-disable-next-line consistent-return
+export function draw9Patch(coords, s, pixel_scale, color) {
+  spriteChainedStart();
+  let uidata = s.uidata;
+  let { widths, heights } = uidata;
+  // non-stretchable in one dimension?  Use that scale uniformly
+  if (uidata.heights.length === 1 && widths.length > 1) {
+    pixel_scale = coords.h / heights[0];
+  } else if (widths.length === 1 && heights.length > 1) {
+    pixel_scale = coords.w / widths[0];
+  }
+  let hscales = scale9PatchDims(pixel_scale, coords.w, widths);
+  let vscales = scale9PatchDims(pixel_scale, coords.h, heights);
+  let x = coords.x;
+  draw_box_param.z = coords.z;
+  draw_box_param.color = color;
+  draw_box_param.shader = null;
+  draw_box_param.color1 = coords.color1 || null;
+  for (let ii = 0; ii < widths.length; ++ii) {
+    let my_w = widths[ii] * hscales[ii % 2];
+    if (my_w) {
+      draw_box_param.x = x;
+      draw_box_param.w = my_w;
+      let y = coords.y;
+      for (let jj = 0; jj < heights.length; ++jj) {
+        let my_h = heights[jj] * vscales[jj % 2];
+        if (my_h) {
+          draw_box_param.y = y;
+          draw_box_param.h = my_h;
+          draw_box_param.uvs = uidata.rects[jj * 3 + ii];
+          if (coords.color1) {
+            s.drawDualTint(draw_box_param);
+          } else {
+            s.draw(draw_box_param);
+          }
+          y += my_h;
+        }
+      }
+      x += my_w;
+    }
+  }
+  spriteChainedStop();
+
+  if (uidata.padh || uidata.padv) {
+    let ret = {};
+    if (uidata.padh && uidata.padh.length >= 2) {
+      let padhscales = scale9PatchDims(hscales[0], coords.w, uidata.padh);
+      ret.x = coords.x + uidata.padh[0] * padhscales[0];
+      ret.w = uidata.padh[1] * padhscales[1];
+    }
+    if (uidata.padv && uidata.padv.length >= 2) {
+      let padvscales = scale9PatchDims(vscales[0], coords.h, uidata.padv);
+      ret.y = coords.y + uidata.padv[0] * padvscales[0];
+      ret.h = uidata.padv[1] * padvscales[1];
+    }
+    return ret;
+  }
+}
+
 export function drawHBox(coords, s, color) {
+  if (1) {
+    return void draw9Patch(coords, s, panel_pixel_scale, color);
+  }
   spriteChainedStart();
   let uidata = s.uidata;
   let x = coords.x;
@@ -656,6 +767,12 @@ export function drawVBox(coords, s, color) {
 }
 
 export function drawBox(coords, s, pixel_scale, color, color1) {
+  if (color1) {
+    coords.color1 = color1; // old API
+  }
+  if (1) {
+    return void draw9Patch(coords, s, pixel_scale, color);
+  }
   spriteChainedStart();
   let uidata = s.uidata;
   let scale = pixel_scale;
@@ -667,9 +784,7 @@ export function drawBox(coords, s, pixel_scale, color, color1) {
   draw_box_param.z = coords.z;
   draw_box_param.color = color;
   draw_box_param.shader = null;
-  if (color1) {
-    draw_box_param.color1 = color1;
-  }
+  draw_box_param.color1 = coords.color1 || null;
   for (let ii = 0; ii < ws.length; ++ii) {
     let my_w = ws[ii];
     if (my_w) {
@@ -682,10 +797,63 @@ export function drawBox(coords, s, pixel_scale, color, color1) {
           draw_box_param.y = y;
           draw_box_param.h = my_h;
           draw_box_param.uvs = uidata.rects[jj * 3 + ii];
-          if (color1) {
+          if (coords.color1) {
             s.drawDualTint(draw_box_param);
           } else {
             s.draw(draw_box_param);
+          }
+          y += my_h;
+        }
+      }
+      x += my_w;
+    }
+  }
+  spriteChainedStop();
+}
+
+// Tiles in the repeating portions
+export function drawBoxTiled(coords, s, pixel_scale, color, color1) {
+  if (color1) {
+    coords.color1 = color1; // old API
+  }
+  spriteChainedStart();
+  let uidata = s.uidata;
+  let scale = pixel_scale;
+  let ws = [uidata.widths[0] * scale, 0, uidata.widths[2] * scale];
+  let tiling_w = uidata.widths[1] * scale;
+  ws[1] = max(0, coords.w - ws[0] - ws[2]);
+  let hs = [uidata.heights[0] * scale, 0, uidata.heights[2] * scale];
+  let tiling_h = uidata.heights[1] * scale;
+  hs[1] = max(0, coords.h - hs[0] - hs[2]);
+  let x = coords.x;
+  draw_box_param.z = coords.z;
+  draw_box_param.color = color;
+  draw_box_param.shader = null;
+  draw_box_param.color1 = coords.color1 || null;
+  for (let ii = 0; ii < ws.length; ++ii) {
+    let my_w = ws[ii];
+    if (my_w) {
+      let tile_x = ii > 0 && ii < ws.length - 1 ?
+        max(1, round(my_w / tiling_w)) : 1;
+      draw_box_param.w = tile_x > 1 ? my_w / tile_x : my_w;
+      for (let xx = 0; xx < tile_x; ++xx) {
+        draw_box_param.x = x + xx * draw_box_param.w;
+        let y = coords.y;
+        for (let jj = 0; jj < hs.length; ++jj) {
+          let my_h = hs[jj];
+          if (my_h) {
+            let tile_y = jj > 0 && jj < hs.length - 1 ?
+              max(1, round(my_h / tiling_h)) : 1;
+            draw_box_param.h = tile_y > 1 ? my_h / tile_y : my_h;
+            draw_box_param.uvs = uidata.rects[jj * 3 + ii];
+            for (let yy = 0; yy < tile_y; ++yy) {
+              draw_box_param.y = y + yy * draw_box_param.h;
+              if (coords.color1) {
+                s.drawDualTint(draw_box_param);
+              } else {
+                s.draw(draw_box_param);
+              }
+            }
           }
           y += my_h;
         }
@@ -763,13 +931,13 @@ export function drawMultiPartBox(coords, scaleable_data, s, pixel_scale, color) 
   spriteChainedStop();
 }
 
-export function playUISound(name, volume) {
+export function playUISound(name, volume_or_opts) {
   profilerStartFunc();
   if (name === 'select') {
     name = 'button_click';
   }
   if (sounds[name]) {
-    soundPlay(sounds[name], volume);
+    soundPlay(sounds[name], volume_or_opts);
   }
   profilerStopFunc();
 }
@@ -849,9 +1017,9 @@ export function drawTooltip(param) {
   let eff_tooltip_w = dims.w + eff_tooltip_pad_left + eff_tooltip_pad_right;
   let right = param.tooltip_right;
   let center = param.tooltip_center;
-  if (right && param.tooltip_auto_right_offset) {
+  if (right) {
     // TODO: just use markdown align right instead
-    x += param.tooltip_auto_right_offset - eff_tooltip_w;
+    x += (param.tooltip_auto_right_offset || 0) - eff_tooltip_w;
   } else if (center && param.tooltip_auto_right_offset) {
     // TODO: just use markdown align center instead
     x += (param.tooltip_auto_right_offset - eff_tooltip_w) / 2;
@@ -919,11 +1087,11 @@ export function drawTooltipBox(param) {
   }
   drawTooltip({
     x: param.x,
-    y: param.y + param.h + 2,
+    y: param.y + (param.tooltip_left ? 0 : param.h + 2),
     tooltip_auto_above_offset: param.h + 4,
     tooltip_above: param.tooltip_above,
-    tooltip_auto_right_offset: param.w,
-    tooltip_right: param.tooltip_right,
+    tooltip_auto_right_offset: param.tooltip_left ? 0 : param.tooltip_auto_right_offset || param.w,
+    tooltip_right: param.tooltip_right || param.tooltip_left,
     tooltip_center: param.tooltip_center,
     tooltip,
     tooltip_width: param.tooltip_width,
@@ -1022,23 +1190,29 @@ export function buttonBackgroundDraw(param, state) {
   profilerStartFunc();
   let colors = param.colors || color_button;
   let color = button_last_color = param.color || colors[state];
+  let ret;
   if (!param.no_bg) {
     let base_name = param.base_name || ((param.w/param.h < 1.5 && sprites.squarebutton) ? 'squarebutton' : 'button');
     let sprite_name = `${base_name}_${state}`;
     let sprite = sprites[sprite_name];
     if (sprite) {
-      color = colors.regular;
+      if (!param.color) {
+        color = colors.regular;
+      }
     } else {
       sprite = sprites[base_name];
     }
 
-    if (sprite.uidata.rects.length === 9) {
-      drawBox(param, sprite, param.pixel_scale || 1, color);
-    } else {
-      drawHBox(param, sprite, color);
-    }
+    // if (sprite.uidata.rects.length === 1 || sprite.uidata.rects.length === 3) {
+    //   drawHBox(param, sprite, color);
+    // } else if (sprite.uidata.rects.length === 9) {
+    //   drawBox(param, sprite, param.pixel_scale || 1, color);
+    // } else {
+    ret = draw9Patch(param, sprite, param.pixel_scale || 1, color);
+    // }
   }
   profilerStopFunc();
+  return ret;
 }
 
 export function buttonSpotBackgroundDraw(param, spot_state) {
@@ -1049,8 +1223,9 @@ export function buttonSpotBackgroundDraw(param, spot_state) {
 
 export function buttonTextDraw(param, state, focused) {
   profilerStartFunc();
-  buttonBackgroundDraw(param, state);
+  let patch_pad = buttonBackgroundDraw(param, state);
   let hpad = min(param.font_height * 0.25, param.w * 0.1);
+  let vpad = min(param.font_height * 0.17, param.h * 0.1);
   let yoffs = (param.yoffs && param.yoffs[state] !== undefined) ? param.yoffs[state] : button_y_offs[state];
   let disabled = state === 'disabled';
   let font_use = (param.font || font);
@@ -1058,9 +1233,18 @@ export function buttonTextDraw(param, state, focused) {
     focused ? param.font_style_focused || font_style_focused :
     param.font_style_normal || font_style_normal;
   let x = param.x + hpad;
-  let y = param.y + yoffs;
+  let y = param.y + yoffs + vpad;
   let z = param.z + 0.1;
   let w = param.w - hpad * 2;
+  let h = param.h - vpad * 2;
+  if (patch_pad) {
+    if (patch_pad.x !== undefined) {
+      ({ x, w } = patch_pad);
+    }
+    if (patch_pad.y !== undefined) {
+      ({ y, h } = patch_pad);
+    }
+  }
   let align = param.align || glov_font.ALIGN.HVCENTERFIT;
   let text_height = param.font_height;
   if (param.markdown) {
@@ -1068,7 +1252,7 @@ export function buttonTextDraw(param, state, focused) {
       font: font_use,
       font_style,
       x, y, z,
-      w, h: param.h,
+      w, h,
       align,
       text_height,
       text: param.text
@@ -1077,7 +1261,7 @@ export function buttonTextDraw(param, state, focused) {
     font_use.drawSizedAligned(
       font_style,
       x, y, z,
-      text_height, align, w, param.h, param.text);
+      text_height, align, w, h, param.text);
   }
   profilerStopFunc();
 }
@@ -1103,6 +1287,10 @@ export function buttonText(param) {
   return ret ? spot_ret : null;
 }
 
+// Default `shrink` parameter to pad images within buttons, if the button
+//   does *not* have a 9-patch padding built in (shrink=1 in that case)
+const DEFAULT_SHRINK = 0.75;
+
 function buttonImageDraw(param, state, focused) {
   profilerStartFunc();
   let uvs = param.img_rect;
@@ -1110,7 +1298,7 @@ function buttonImageDraw(param, state, focused) {
   if (typeof param.frame === 'number') {
     uvs = img.uidata.rects[param.frame];
   }
-  buttonBackgroundDraw(param, state);
+  let patch_pad = buttonBackgroundDraw(param, state);
   let color = button_last_color;
   let img_origin = img.origin;
   let img_w = img.size[0];
@@ -1119,28 +1307,73 @@ function buttonImageDraw(param, state, focused) {
   if (typeof param.frame === 'number') {
     aspect = img.uidata.aspect ? img.uidata.aspect[param.frame] : 1;
   }
-  let largest_w_horiz = param.w * param.shrink;
-  let largest_w_vert = param.h * param.shrink * aspect;
-  img_w = min(largest_w_horiz, largest_w_vert);
-  img_h = img_w / aspect;
   let yoffs = (param.yoffs && param.yoffs[state] !== undefined) ? param.yoffs[state] : button_y_offs[state];
-  let pad_top = (param.h - img_h) / 2;
+
+  // old logic before patch_pad:
+  // let largest_w_horiz = param.w * (param.shrink || DEFAULT_SHRINK);
+  // let largest_w_vert = param.h * (param.shrink || DEFAULT_SHRINK) * aspect;
+  // let w = min(largest_w_horiz, largest_w_vert);
+  // let h = w / aspect;
+  // let pad_top = (param.h - h) / 2;
+  // let x = param.x + (param.left_align ? pad_top : (param.w - w) / 2);
+  // let y = param.y + pad_top;
+
+  // Calculate bounds in which the image should be contained
+  let bounds_x = param.x;
+  let bounds_w = param.w;
+  let shrink_x = param.shrink || DEFAULT_SHRINK;
+  if (patch_pad && patch_pad.x !== undefined) {
+    bounds_x = patch_pad.x;
+    bounds_w = patch_pad.w;
+    shrink_x = param.shrink || 1;
+  }
+  let bounds_y = param.y;
+  let bounds_h = param.h;
+  let shrink_y = param.shrink || DEFAULT_SHRINK;
+  if (patch_pad && patch_pad.y !== undefined) {
+    bounds_y = patch_pad.y;
+    bounds_h = patch_pad.h;
+    shrink_y = param.shrink || 1;
+  }
+  let bounds_dim = min(bounds_w, bounds_h);
+
+  if (shrink_x !== 1) {
+    let pad_left = bounds_dim * (1 - shrink_x) / 2;
+    bounds_x += pad_left;
+    bounds_w -= pad_left * 2;
+  }
+  if (shrink_y !== 1) {
+    let pad_top = bounds_dim * (1 - shrink_y) / 2;
+    bounds_y += pad_top;
+    bounds_h -= pad_top * 2;
+  }
+
+  let w = min(bounds_w, bounds_h * aspect);
+  let h = w / aspect;
+  let pad_top = (bounds_h - h) / 2;
+  let x = bounds_x + (param.left_align ? pad_top : (bounds_w - w) / 2);
+  let y = bounds_y + pad_top;
+
+  // adjust for sprite origin and custom offset
+  x += img_origin[0] * w;
+  y += img_origin[1] * h + yoffs;
+
   let draw_param = {
-    x: param.x + (param.left_align ? pad_top : (param.w - img_w) / 2) + img_origin[0] * img_w,
-    y: param.y + pad_top + img_origin[1] * img_h + yoffs,
+    x,
+    y,
     z: param.z + (param.z_inc || Z_MIN_INC),
     // use img_color if provided, use explicit tint if doing dual-tinting, otherwise button color
     color: param.img_color || param.color1 && param.color || color,
     color1: param.color1,
-    w: img_w / img.size[0],
-    h: img_h / img.size[1],
+    w: w / img.size[0],
+    h: h / img.size[1],
     uvs,
     rot: param.rotation,
   };
   if (param.flip) {
-    let { x, w } = draw_param;
-    draw_param.x = x + w;
-    draw_param.w = -w;
+    // TODO: doesn't handle non-standard origin correctly
+    draw_param.x += w;
+    draw_param.w *= -1;
   }
   if (param.color1) {
     img.drawDualTint(draw_param);
@@ -1160,7 +1393,6 @@ export function buttonImage(param) {
   param.z = param.z || Z.UI;
   param.w = param.w || ui_style_current.button_height;
   param.h = param.h || param.w || ui_style_current.button_height;
-  param.shrink = param.shrink || 0.75;
   //param.img_rect; null -> full image
 
   let spot_ret = buttonShared(param);
@@ -1187,7 +1419,6 @@ export function button(param) {
   // w/h initialize differently than either buttonText or buttonImage
   param.h = param.h || ui_style_current.button_height;
   param.w = param.w || ui_style_current.button_width;
-  param.shrink = param.shrink || 0.75;
   //param.img_rect; null -> full image
   param.left_align = true; // always left-align images
   param.font_height = param.font_height || (param.style || ui_style_current).text_height;
@@ -1200,8 +1431,8 @@ export function button(param) {
   let saved_w = param.w;
   let saved_x = param.x;
   param.no_bg = true;
-  let img_size = param.h * param.shrink;
-  let img_pad = param.h * (1 - param.shrink) / 2;
+  let img_size = param.h * (param.shrink || DEFAULT_SHRINK);
+  let img_pad = param.h * (1 - (param.shrink || DEFAULT_SHRINK)) / 2;
   param.x += img_pad + img_size;
   param.w -= img_pad + img_size;
   buttonTextDraw(param, state, focused);
@@ -1782,6 +2013,7 @@ function cleanupDOMElems() {
     let elem = dom_elems.pop();
     dynamic_text_elem.removeChild(elem);
   }
+  dom_elems_issued = 0;
 }
 
 export function menuUp(param) {

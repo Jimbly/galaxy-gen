@@ -1,9 +1,8 @@
 import assert from 'assert';
-import { DataObject, ErrorCallback, HandlerSource } from 'glov/common/types';
+import type { DataObject, ErrorCallback, HandlerSource } from 'glov/common/types';
+import type { ChannelServer } from './channel_server';
 import { ChannelWorker } from './channel_worker';
 import { randNumericId } from './server_util';
-
-import type { ChannelServer } from './channel_server';
 
 // RFC 4648: base64 (standard) to base64url (URL and filename safe standard)
 export function base64ToBase64Url(str: string): string {

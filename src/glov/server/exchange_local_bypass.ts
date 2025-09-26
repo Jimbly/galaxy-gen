@@ -3,17 +3,16 @@
 
 import assert from 'assert';
 import {
-  Packet,
   isPacket,
+  Packet,
   packetFromBuffer,
 } from 'glov/common/packet';
-
+import type { TSMap } from 'glov/common/types';
 import type {
   Mexchange,
   MexchangeCompletionCB,
   MexchangeHandler,
 } from './exchange';
-import type { TSMap } from 'glov/common/types';
 
 class ExchangeLocalBypass implements Mexchange {
   queues: TSMap<MexchangeHandler> = {};

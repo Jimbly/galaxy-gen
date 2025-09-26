@@ -1,14 +1,14 @@
 import assert from 'assert';
+import type { CmdDef } from 'glov/common/cmd_parse';
 import { dotPropDelete, dotPropGet, dotPropSet } from 'glov/common/dot-prop';
-import { ChannelServerWorker } from './channel_server_worker';
-import { ClientHandlerFunction } from './channel_worker';
+import type { TSMap } from 'glov/common/types';
+import type { ChannelServerWorker } from './channel_server_worker';
+import type { ClientHandlerFunction } from './channel_worker';
 import {
   globalWorkerAddCmd,
   globalWorkerRegisterClientHandler,
 } from './global_worker';
 
-import type { CmdDef } from 'glov/common/cmd_parse';
-import type { TSMap } from 'glov/common/types';
 
 let global_data: Partial<Record<string, unknown>>;
 

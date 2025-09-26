@@ -1,7 +1,7 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
-require('./must_import.js')('channel_server.js', __filename); // eslint-disable-line import/order
+require('./must_import.js')('channel_server.js', __filename);
 
 export let cwstats = { msgs: 0, bytes: 0, inflight_set: 0 };
 export let ERR_QUIET = 'ERR_QUIET';
@@ -23,14 +23,18 @@ import {
   ackInitReceiver,
   ackReadHeader,
 } from 'glov/common/ack';
+import type {
+  CmdDef,
+  CmdParse,
+} from 'glov/common/cmd_parse';
 import {
   dotPropDelete,
   dotPropGet,
   dotPropSet,
 } from 'glov/common/dot-prop';
 import {
-  Packet,
   isPacket,
+  Packet,
 } from 'glov/common/packet';
 import {
   ChannelDataClients,
@@ -40,6 +44,9 @@ import {
   ErrorCallback,
   HandlerCallback,
   HandlerSource,
+  isClientHandlerSource,
+  isDataObject,
+  LoggedInClientHandlerSource,
   NetErrorCallback,
   NetResponseCallback,
   NetResponseCallbackCalledBySystem,
@@ -47,8 +54,6 @@ import {
   Roles,
   TSMap,
   VoidFunc,
-  isClientHandlerSource,
-  isDataObject,
 } from 'glov/common/types';
 import {
   callEach,
@@ -57,10 +62,10 @@ import {
 } from 'glov/common/util';
 import {
   ChannelServer,
-  PAK_HINT_NEWSEQ,
-  PAK_ID_MASK,
   channelServerPak,
   channelServerSend,
+  PAK_HINT_NEWSEQ,
+  PAK_ID_MASK,
   quietMessage,
 } from './channel_server';
 import { ERR_NOT_FOUND } from './exchange';
@@ -70,10 +75,6 @@ import {
   packetLogInit,
 } from './packet_log';
 
-import type {
-  CmdDef,
-  CmdParse,
-} from 'glov/common/cmd_parse';
 
 // Quiet flag or category string
 export type QCat = 1 | string;
@@ -245,8 +246,8 @@ export type HandlerFunction<P=never, R=never> = (
   data: P,
   resp_func: NetResponseCallback<R>
 ) => void;
-export type ClientHandlerFunction<P=never, R=never> = (
-  source: ClientHandlerSource,
+export type ClientHandlerFunction<P=never, R=never, S=ClientHandlerSource> = (
+  source: S,
   data: P,
   resp_func: NetResponseCallback<R>
 ) => void;
@@ -1923,6 +1924,16 @@ export class ChannelWorker {
     });
   }
   static registerClientHandler<P=never, R=never>(message: string, handler: ClientHandlerFunction<P, R>): void {
+    this.workerExtend({
+      client_handlers: {
+        [message]: handler,
+      },
+    });
+  }
+  // If require_login is used, this is safe
+  static registerLoggedInClientHandler<P=never, R=never>(
+    message: string, handler: ClientHandlerFunction<P, R, LoggedInClientHandlerSource>
+  ): void {
     this.workerExtend({
       client_handlers: {
         [message]: handler,

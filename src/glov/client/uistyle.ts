@@ -1,10 +1,10 @@
 import assert from 'assert';
+import type { DataObject, TSMap } from 'glov/common/types';
 import { tail } from 'glov/common/util';
 import verify from 'glov/common/verify';
 import { internal as ui_internal } from './ui';
 const { uiApplyStyle } = ui_internal;
 
-import type { DataObject, TSMap } from 'glov/common/types';
 
 export type UIStyleDef = {
   text_height?: number | string;
@@ -187,8 +187,7 @@ export function uiStyleSetCurrent(style: UIStyle): void {
   uiApplyStyle(ui_style_current);
 }
 
-ui_style_default = uiStyleAlloc();
-uiStyleSetCurrent(ui_style_default);
+ui_style_current = ui_style_default = uiStyleAlloc();
 
 let style_stack: UIStyle[] = [];
 export function uiStylePush(style: UIStyle): void {
@@ -211,4 +210,5 @@ export function uiStyleTopOfFrame(): void {
     }
     style_stack.length = 0;
   }
+  uiStyleSetCurrent(ui_style_current);
 }

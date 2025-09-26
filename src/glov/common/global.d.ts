@@ -6,7 +6,7 @@ declare module 'glov/common/global' {
      * A constructor for a type which extends T
      * Note: `typeof T` is usually a better choice (doesn't lose static methods)
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/ban-types
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
     type Constructor<T = {}> = new (...args: any[]) => T;
 
   }

@@ -131,7 +131,7 @@ export type EntityID = number;
 export interface ChatMessageDataShared {
   id?: string; // user_id or client_id (or undefined if not from a user)
   msg: string;
-  flags?: number;
+  flags: number;
   display_name?: string;
   style?: string; // If added by the worker
 }
@@ -212,7 +212,7 @@ export type ChannelDataClients = TSMap<ChannelDataClient>;
 export type UnimplementedData = DataObject;
 
 export type DeepPartial<T> = T extends DataObject ? {
-    [P in keyof T]?: DeepPartial<T[P]>;
+  [P in keyof T]?: DeepPartial<T[P]>;
 } : T;
 
 export type NumberBoolean = 0 | 1;

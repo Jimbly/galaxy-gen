@@ -1,4 +1,5 @@
 import assert from 'assert';
+import type { TSMap } from './types';
 
 export type PlatformID = string;
 
@@ -11,6 +12,13 @@ export interface PlatformDef {
   reload_updates: boolean;
   // random_creation_name: new users get a randomly generated name by default
   random_creation_name: boolean;
+  // exit: can exit the app / need an exit button
+  exit: boolean;
+  // linkHandler: for platforms where web links will not work
+  linkHandler?(url: string): void;
+  // setRichPresence: for platforms that support it
+  //   note: due to startup ordering, probably needs to be set via platformOverrideParameter()
+  setRichPresence?(status: string | null, others: TSMap<string> | null): void;
 }
 /*
 Extend this like so:
@@ -64,4 +72,5 @@ platformRegister('web', {
   reload: true,
   reload_updates: true,
   random_creation_name: false,
+  exit: false,
 } as PlatformDef);

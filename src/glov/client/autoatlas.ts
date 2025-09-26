@@ -1,32 +1,27 @@
 import assert from 'assert';
 import { dataError } from 'glov/common/data_error';
+import type { TSMap } from 'glov/common/types';
 import {
-  Vec4,
   v4set,
+  Vec4,
   vec4,
 } from 'glov/common/vmath';
 import { engineStartupFunc } from './engine';
 import { filewatchOn } from './filewatch';
 import {
   Sprite,
+  spriteCreate,
   SpriteUIData,
   Texture,
   TextureOptions,
-  spriteCreate,
 } from './sprites';
 import { textureError, textureLoad } from './textures';
 import { webFSGetFile, webFSOnReady } from './webfs';
-
-import type { TSMap } from 'glov/common/types';
 
 type AutoAtlasBuildData = [string, number, number, number[], number[], number[] | undefined, number[] | undefined];
 
 let load_opts: TSMap<TextureOptions> = {};
 let hit_startup = false;
-export function autoAtlasTextureOpts(name: string, opts: TextureOptions): void {
-  assert(!hit_startup);
-  load_opts[name] = opts;
-}
 
 const uidata_error: SpriteUIData = {
   rects: [[0,0,1,1]],
@@ -83,6 +78,7 @@ class AutoAtlasImp {
     let { tiles, w, h } = atlas_data;
     let seen: TSMap<true> = {};
     for (let tile_id = 0; tile_id < tiles.length; ++tile_id) {
+      let is_new = false;
       let [tile_name, x, y, ws, hs, padh, padv] = tiles[tile_id] as AutoAtlasBuildData;
       seen[tile_name] = true;
       let total_w = 0;
@@ -97,6 +93,7 @@ class AutoAtlasImp {
       let sprite = sprites[tile_name];
       if (!sprite) {
         sprite = sprites[tile_name] = this.prealloc();
+        is_new = true;
       }
       sprite.texs = texs;
       let tile_uvs = sprite.uvs as Vec4;
@@ -144,6 +141,9 @@ class AutoAtlasImp {
         total_h,
       };
       sprite.doReInit();
+      if (is_new && this.on_image) {
+        this.on_image(tile_name);
+      }
     }
 
     root_sprite.uidata = {
@@ -193,6 +193,13 @@ class AutoAtlasImp {
     });
   }
 
+  setSamplerState(opts: TextureOptions): void {
+    for (let ii = 0; ii < this.texs.length; ++ii) {
+      let tex = this.texs[ii];
+      tex.setSamplerState(opts);
+    }
+  }
+
   constructor(public atlas_name: string) {
     webFSOnReady(this.doInit.bind(this));
   }
@@ -209,6 +216,13 @@ class AutoAtlasImp {
     ret.autoatlas_used = true;
     return ret;
   }
+
+  on_image: ((img_name: string) => void) | null = null;
+  onImage(cb: (img_name: string) => void): void {
+    assert(!this.on_image);
+    this.on_image = cb;
+    Object.keys(this.sprites).forEach(cb);
+  }
 }
 
 let atlases: TSMap<AutoAtlasImp>;
@@ -223,6 +237,16 @@ function autoAtlasReload(filename: string): void {
   atlas.doInit();
 }
 
+export function autoAtlasTextureOpts(atlas_name: string, opts: TextureOptions): void {
+  load_opts[atlas_name] = opts;
+  if (atlases) {
+    let atlas = atlases[atlas_name];
+    if (atlas) {
+      atlas.setSamplerState(opts);
+    }
+  }
+}
+
 function autoAtlasGet(atlas_name: string): AutoAtlasImp {
   if (!atlases) {
     atlases = {};
@@ -233,6 +257,10 @@ function autoAtlasGet(atlas_name: string): AutoAtlasImp {
     atlas = atlases[atlas_name] = new AutoAtlasImp(atlas_name);
   }
   return atlas;
+}
+
+export function autoAtlasOnImage(atlas_name: string, cb: (img_name: string) => void): void {
+  autoAtlasGet(atlas_name).onImage(cb);
 }
 
 export function autoAtlas(atlas_name: string, img_name: string): Sprite {

@@ -96,8 +96,7 @@ function walk(diff: Diff, path_pre: string, data_old: unknown, data_new: unknown
 export type DifferOpts = {
   history_size?: number;
 };
-export type Differ = DifferImpl;
-class DifferImpl {
+class Differ {
   data_last: unknown;
   history_size: number;
   history: unknown[] = [];
@@ -156,9 +155,10 @@ class DifferImpl {
     return [diff, clone(ret)];
   }
 }
+export type { Differ };
 
 export function differCreate(data: DataObject, opts: DifferOpts): Differ {
-  return new DifferImpl(data, opts);
+  return new Differ(data, opts);
 }
 
 export function diffApply(data: DataObject, diff: Diff): void {

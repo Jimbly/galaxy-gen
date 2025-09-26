@@ -1,4 +1,10 @@
 import assert from 'assert';
+import type {
+  DataObject,
+  HandlerCallback,
+  HandlerSource,
+} from 'glov/common/types';
+import type { ChannelServer } from './channel_server';
 import {
   ApplyChannelDataParam,
   ChannelData,
@@ -8,13 +14,6 @@ import {
   serverGlobalsHandleChannelData,
   serverGlobalsInit,
 } from './server_globals';
-
-import type { ChannelServer } from './channel_server';
-import type {
-  DataObject,
-  HandlerCallback,
-  HandlerSource,
-} from 'glov/common/types';
 
 export class ChannelServerWorker extends ChannelWorker {
   constructor(channel_server: ChannelServer, channel_id: string, channel_data: Partial<ChannelData>) {

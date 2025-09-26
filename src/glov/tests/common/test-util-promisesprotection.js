@@ -1,12 +1,12 @@
 /* eslint no-throw-literal:off */
 
 import assert from 'assert';
-import { asyncSeries } from 'glov-async';
 import {
   callbackify,
   unpromisify,
 } from 'glov/common/util';
 import 'glov/server/test';
+import { asyncSeries } from 'glov-async';
 
 function promiseFactory(async, fail) {
   return new Promise(function (resolve, reject) {

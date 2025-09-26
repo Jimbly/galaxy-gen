@@ -803,6 +803,21 @@ class GlovTerminal {
     return ret;
   }
 
+  isAnimating() {
+    return Boolean(this.mod_head);
+  }
+  finishAnimating() {
+    while (this.mod_head) {
+      let mod = this.mod_head;
+      this.mod_head = mod.next;
+      if (!mod.next) {
+        this.mod_tail = null;
+      }
+      this.domod(this.buffer, mod);
+    }
+    this.mod_countdown = 0;
+  }
+
   render() {
     let dt = engine.getFrameDt();
     this.frame++;
@@ -871,7 +886,7 @@ class GlovTerminal {
       if (cursor_blink) {
         ui.drawRect(cx, cy + char_height - draw_cursor[1] - 1,
           cx + char_width, cy + char_height - draw_cursor[0],
-          z + 0.75, palette[playback.fg]);
+          z + 0.75, palette[this.mod_head ? playback.fg : this.fg]);
       }
     }
     // Draw background rects
@@ -915,106 +930,4 @@ class GlovTerminal {
 
 export function terminalCreate(params) {
   return new GlovTerminal(params);
-}
-
-// Convenience functions for generating ANSI strings from named colors
-export const ansi = { bg: {} };
-[
-  'black',
-  'red',
-  'green',
-  'yellow',
-  'blue',
-  'magenta',
-  'cyan',
-  'white',
-].forEach(function (color, idx) {
-  ansi[color] = function (str) {
-    return `${ESC}[${30 + idx}m${str}${ESC}[0m`;
-  };
-  ansi[color].bright = function (str) {
-    return `${ESC}[${30 + idx};1m${str}${ESC}[0m`;
-  };
-  ansi.bg[color] = function (str) {
-    return `${ESC}[${40 + idx}m${str}${ESC}[0m`;
-  };
-});
-ansi.normal = function (str) {
-  return `${ESC}[0m${str}`;
-};
-ansi.blink = function (str) {
-  return `${ESC}[5m${str}${ESC}[0m`;
-};
-
-// eslint-disable-next-line no-control-regex
-const strip_ansi = /\u001b\[(?:[0-9;]*)[0-9A-ORZcf-nqry=><]/g;
-export function padRight(str, width) {
-  let len = str.replace(strip_ansi, '').length;
-  if (len < width) {
-    str += new Array(width - len + 1).join(' ');
-  }
-  return str;
-}
-
-export function padLeft(str, width) {
-  let len = str.replace(strip_ansi, '').length;
-  if (len < width) {
-    str = new Array(width - len + 1).join(' ') + str;
-  }
-  return str;
-}
-
-// eslint-disable-next-line no-control-regex
-const match_ansi = /^\u001b\[(?:[0-9;]*)[0-9A-ORZcf-nqry=><]/;
-// Word wrapping assuming `auto_crlf` and `ignore_newline_after_wrap`
-export function wordWrap(text, w) {
-  let ret = [];
-  let idx = 0;
-  let line_len = 0;
-  let in_control = false;
-  let control_ends = 0;
-  let line_start = 0;
-  let last_word_end = line_start;
-  let last_word_end_len = line_len;
-  for (; idx < text.length; ++idx) {
-    let c = text[idx];
-    if (c === '\u001b') {
-      let code = text.slice(idx).match(match_ansi);
-      if (code) {
-        in_control = true;
-        control_ends = idx + code[0].length;
-      }
-    } else if (in_control && idx === control_ends) {
-      in_control = false;
-    }
-    if (!in_control) {
-      if (c === '\n') {
-        ret.push(text.slice(line_start, idx));
-        line_start = idx + 1;
-        line_len = 0;
-        last_word_end = line_start;
-        last_word_end_len = line_len;
-      } else {
-        if (c === ' ') {
-          last_word_end = idx;
-          last_word_end_len = line_len;
-        }
-        ++line_len;
-        if (line_len > w) {
-          ret.push(text.slice(line_start, last_word_end));
-          line_start = last_word_end;
-          while (text[line_start] === ' ') {
-            ++line_start;
-          }
-          line_len = line_len - last_word_end_len + 1;
-          last_word_end = line_start;
-          last_word_end_len = line_len;
-        }
-      }
-    }
-  }
-  if (text.length !== line_start) {
-    ret.push(text.slice(line_start));
-  }
-  return ret.join('\n');
 }

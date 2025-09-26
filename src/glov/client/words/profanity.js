@@ -3,10 +3,10 @@
 
 import { fontSetReplacementChars } from 'glov/client/font';
 import { locateAsset } from 'glov/client/locate_asset';
-import { randFastCreate } from 'glov/client/rand_fast';
 import { getURLBase } from 'glov/client/urlhash';
 import { webFSGetFile } from 'glov/client/webfs';
 import { mashString } from 'glov/common/rand_alea';
+import { randFastCreate } from 'glov/common/rand_fast';
 import {
   profanityCommonStartup,
   profanityFilterCommon,

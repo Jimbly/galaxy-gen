@@ -4,17 +4,17 @@ import { clamp } from 'glov/common/util.js';
 import { vec4 } from 'glov/common/vmath.js';
 import * as input from './input.js';
 import {
+  spot,
   SPOT_DEFAULT_BUTTON,
   SPOT_NAV_LEFT,
   SPOT_NAV_RIGHT,
-  spot,
 } from './spot.js';
 import {
-  Z_MIN_INC,
   drawHBox,
   playUISound,
   uiButtonHeight,
   uiButtonWidth,
+  Z_MIN_INC,
 } from './ui.js';
 import * as ui from './ui.js';
 

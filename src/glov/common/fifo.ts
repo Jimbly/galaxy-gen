@@ -6,7 +6,7 @@ let last_queue_id = 0;
 
 type FIFONode<T> = Partial<Record<string, T>>;
 
-class FIFOImpl<T> {
+class FIFO<T> {
   private head: T | null = null;
   private tail: T | null = null;
   private count = 0;
@@ -76,8 +76,8 @@ class FIFOImpl<T> {
     return head;
   }
 }
-export type FIFO<T> = FIFOImpl<T>;
+export type { FIFO };
 
 export function fifoCreate<T>(): FIFO<T> {
-  return new FIFOImpl();
+  return new FIFO();
 }

@@ -10,6 +10,8 @@ import {
   EALF_HAS_ENT_ID,
   EALF_HAS_PAYLOAD,
   EALF_HAS_PREDICATE,
+  entity_field_decoders,
+  entity_field_encoders,
   EntityBaseDataCommon,
   EntityFieldDefCommon,
   EntityFieldEncoder,
@@ -21,8 +23,6 @@ import {
   EntityManagerEvent,
   EntityManagerSchema,
   EntityUpdateCmd,
-  entity_field_decoders,
-  entity_field_encoders,
 } from 'glov/common/entity_base_common';
 import { Packet } from 'glov/common/packet';
 import { EventEmitter } from 'glov/common/tiny-events';
@@ -87,7 +87,7 @@ export interface ClientEntityManagerInterface<Entity extends EntityBaseClient=an
   deleteEntity(ent_id: EntityID, reason: string) : void;
 
   // EventEmitter:
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   on<T extends any[]>(type: string, fn: (...args: T) => void): void;
 }
 
@@ -646,6 +646,15 @@ class ClientEntityManagerImpl<
     assert(this.channel.numSubscriptions());
     let { action_list, resp_list } = this.action_list_queue;
     this.action_list_queue = null;
+    if (netDisconnected()) {
+      for (let ii = 0; ii < resp_list.length; ++ii) {
+        let cb = resp_list[ii];
+        if (cb) {
+          cb('ERR_DISCONNECTED');
+        }
+      }
+      return;
+    }
     let pak = this.channel.pak('ent_action_list');
     pak.writeInt(action_list.length);
     for (let ii = 0; ii < action_list.length; ++ii) {
@@ -668,6 +677,15 @@ class ClientEntityManagerImpl<
   ): void {
     assert(this.channel?.numSubscriptions());
     assert(action.ent);
+    if (action.data_assignments) {
+      // Ensure valid (will crash when sending later in the frame otherwise)
+      let { field_defs_by_name } = this;
+      assert(field_defs_by_name);
+      for (let key in action.data_assignments) {
+        let field_def = field_defs_by_name[key];
+        assert(field_def);
+      }
+    }
     if (!this.action_list_queue) {
       this.action_list_queue = {
         action_list: [],

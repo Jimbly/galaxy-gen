@@ -182,6 +182,30 @@ export function setAspectFixed(w, h) {
   }
 }
 
+export function wouldDoPixelPerfect(w, h, pixel_perfect_threshold) {
+  if (!pixel_perfect_threshold) {
+    return false;
+  }
+
+  let pa = engine.pixel_aspect;
+  let inv_aspect = h / pa / w;
+  let screen_w = safeScreenWidth();
+  let screen_h = safeScreenHeight();
+  let inv_desired_aspect = screen_h / screen_w;
+  let my_viewport_w = screen_w;
+  if (inv_aspect > inv_desired_aspect) {
+    my_viewport_w = w * pa / h * screen_h;
+  }
+  let scalar = my_viewport_w / w;
+  let int_scalar = floor(scalar);
+  let fpart = scalar - int_scalar;
+  if (scalar > 1 && fpart <= pixel_perfect_threshold) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 export function setAspectFixedRespectPixelPerfect(w, h) {
   if (render_width || !engine.render_pixel_perfect) {
     return void setAspectFixed(w, h);

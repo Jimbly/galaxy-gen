@@ -5,7 +5,7 @@ export let LOAD_ESTIMATE = {
 import assert from 'assert';
 const { max } = Math;
 import { callEach, nop, plural } from 'glov/common/util';
-import { LOAD_REPORT_INTERVAL, channelServerSendNoCreate } from './channel_server';
+import { channelServerSendNoCreate, LOAD_REPORT_INTERVAL } from './channel_server';
 import { ChannelWorker } from './channel_worker';
 import { loadBiasMap } from './load_bias_map';
 import { logCategoryEnabled } from './log';
@@ -140,12 +140,17 @@ class MasterWorker extends ChannelWorker {
       over.push('host_cpu');
     }
     // process memory usage:
-    //  if under 400MB, no effect
-    //  if 400MB - 1.2GB: impact as 0-25% CPU usage
-    //  if over 1.2GB, critical
-    cs.load_value += max(0, 250 * (load_mem - 400) / 800);
-    if (load_mem > 1200) {
-      cs.load_value += 10000 + (load_mem - 1200) * 10;
+    //  thresholds:
+    //    was: A=400MB, B=1.2GB, but on Node v22 there seems to be a leak or much more consumed
+    //    now: A=500MB, B=2.5GB
+    //  if under A, no effect
+    //  if A - B: impact as 0-25% CPU usage
+    //  if over B, critical
+    const MEMA = 500;
+    const MEMB = 2500;
+    cs.load_value += max(0, 250 * (load_mem - MEMA) / (MEMB - MEMA));
+    if (load_mem > MEMB) {
+      cs.load_value += 10000 + (load_mem - MEMB) * 10;
       over.push('load_mem');
     }
     // msgs_per_s: current ignored, let's see how this compares

@@ -1,10 +1,10 @@
 import assert from 'assert';
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import path from 'path';
-import { serverFilewatchOn } from './server_filewatch';
-
 import type { FSAPI } from 'glov/common/fsapi';
 import type { DataObject } from 'glov/common/types';
+import { serverFilewatchOn } from './server_filewatch';
+
 
 const FS_BASEPATH1 = '../../server/';
 const FS_BASEPATH2 = '../../client/';

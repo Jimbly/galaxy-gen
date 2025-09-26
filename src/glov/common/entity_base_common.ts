@@ -6,8 +6,8 @@ export let entity_field_decoders: Partial<Record<EntityFieldEncodingType, Entity
 
 import assert from 'assert';
 import { Packet } from 'glov/common/packet';
-import { Vec2, Vec3 } from 'glov/common/vmath';
 import type { DataObject, EntityID } from 'glov/common/types';
+import { Vec2, Vec3 } from 'glov/common/vmath';
 
 export type { EntityID };
 
@@ -124,6 +124,7 @@ export interface EntityManager<Entity extends EntityBaseCommon = EntityBaseCommo
   entitiesReload(predicate?: (ent: Entity) => boolean): Entity[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export type EntityBaseDataCommon = {
   // Nothing anymore (previously had `pos: number[]`)
 };

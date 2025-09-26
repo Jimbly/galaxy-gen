@@ -1,4 +1,3 @@
-/* eslint indent:off, no-multi-spaces:off */
 const { floor, random } = Math;
 
 // From Crockford's Base32, no confusing letters/numbers

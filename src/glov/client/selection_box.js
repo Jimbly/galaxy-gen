@@ -1,6 +1,5 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
-/* eslint complexity:off */
 
 // eslint-disable-next-line @typescript-eslint/no-use-before-define
 exports.create = selectionBoxCreate;
@@ -16,11 +15,11 @@ import {
   fontStyle,
 } from './font';
 import {
-  KEYS,
-  PAD,
   drag,
   keyDownEdge,
+  KEYS,
   mouseButtonHadUpEdge,
+  PAD,
   padButtonDown,
   padButtonDownEdge,
 } from './input.js';
@@ -28,6 +27,7 @@ import { link } from './link.js';
 import { markdownAuto } from './markdown';
 import { scrollAreaCreate } from './scroll_area.js';
 import {
+  spot,
   SPOT_DEFAULT_BUTTON,
   SPOT_NAV_DOWN,
   SPOT_NAV_LEFT,
@@ -37,7 +37,6 @@ import {
   SPOT_STATE_DOWN,
   SPOT_STATE_FOCUSED,
   SPOT_STATE_REGULAR,
-  spot,
   spotFocusSteal,
   spotPadMode,
   spotSubBegin,
@@ -45,7 +44,11 @@ import {
   spotSubPop,
   spotSubPush,
 } from './spot.js';
-import { spriteClipPause, spriteClipResume, spriteClipped } from './sprites.js';
+import {
+  spriteClipPause,
+  spriteClipped,
+  spriteClipResume,
+} from './sprites.js';
 import {
   drawHBox,
   getUIElemData,
@@ -279,10 +282,12 @@ class SelectionBoxBase {
     this.font_height = uiTextHeight();
     this.line_height = null;
     this.entry_height = uiButtonHeight();
+    this.entry_width = null;
     this.auto_reset = true;
     this.reset_selection = false;
     this.initial_selection = 0;
     this.show_as_focused = -1;
+    this.touch_focuses = false;
     this.applyParams(params);
 
     // Run-time inter-frame state
@@ -294,7 +299,7 @@ class SelectionBoxBase {
     // Run-time intra-frame state
     this.ctx = {};
     if (this.is_dropdown || this.scroll_height) {
-      this.sa = scrollAreaCreate({
+      this.sa = scrollAreaCreate(params.scroll_area_opts || {
         //focusable_elem: this,
         //background_color: null,
       });
@@ -480,6 +485,10 @@ class SelectionBoxBase {
     }
   }
 
+  isFocused() {
+    return this.ctx.any_focused;
+  }
+
   doList(x, y, z, do_scroll, eff_selection) {
     let {
       ctx,
@@ -491,13 +500,17 @@ class SelectionBoxBase {
       key,
       selected: old_sel,
       show_as_focused,
+      entry_width,
       width,
     } = this;
+    if (entry_width === null) {
+      entry_width = width;
+    }
     if (line_height === null) {
       line_height = font_height;
     }
     let { scroll_height } = ctx;
-    let eff_width = width;
+    let eff_entry_width = entry_width;
     const y_save = y;
     if (do_scroll) {
       this.sa.begin({
@@ -507,7 +520,7 @@ class SelectionBoxBase {
       });
       y = 0;
       x = 0;
-      eff_width = width - this.sa.barWidth();
+      eff_entry_width = entry_width - this.sa.barWidth();
     } else if (this.is_dropdown) {
       // Need a spot sub here so that navigation within elements does not target
       //   other elements that happen to be behind the dropdown
@@ -545,6 +558,8 @@ class SelectionBoxBase {
         },
         auto_focus: item.auto_focus,
         in_event_cb: item.in_event_cb,
+        touch_focuses: this.touch_focuses,
+        sound_button: item.no_sound ? null : undefined,
       };
       if (ii === first_non_disabled_selection && this.nav_loop) {
         entry_spot_rect.custom_nav[SPOT_NAV_UP] = `${key}_${last_non_disabled_selection}`;
@@ -652,7 +667,7 @@ class SelectionBoxBase {
       display.draw_item_cb({
         item_idx: ii, item,
         x, y: y + yoffs, z: z + 1,
-        w: eff_width, h: entry_height,
+        w: eff_entry_width, h: entry_height,
         image_set, color,
         image_set_extra, image_set_extra_alpha,
         font_height,
@@ -958,6 +973,10 @@ export function dropDownCreate(params) {
 export function dropDown(param, current, opts) {
   opts = opts || {};
   param.auto_reset = false; // Handled every frame here automatically
+  if (typeof current === 'string' && typeof param.items[0] === 'string') {
+    // string current, and string items, no tags, handle automatically
+    current = param.items.indexOf(current);
+  }
   let { suppress_return_during_dropdown } = opts;
   // let dropdown = getUIElemData<SelectionBox, SelectionBoxOpts>('dropdown', param, dropDownCreate);
   let dropdown = getUIElemData('dropdown', param, dropDownCreate);

@@ -455,7 +455,6 @@ Spine.prototype.draw3D = function (param) {
         vertices = this.vertices = new Float32Array(numFloats);
       }
       mesh.computeWorldVertices(slot, 0, mesh.worldVerticesLength, vertices, 0, clippedVertexSize);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       triangles = mesh.triangles;
       texture = mesh.region.renderObject.page.texture;
       uvs = mesh.uvs;

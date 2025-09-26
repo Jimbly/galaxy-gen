@@ -1,36 +1,60 @@
-/* eslint-disable import/order */
-const camera2d = require('./camera2d.js');
-const engine = require('./engine.js');
-const { renderNeeded } = engine;
-const glov_font = require('./font.js');
-const { min } = Math;
-const { scrollAreaCreate } = require('./scroll_area.js');
-const ui = require('./ui.js');
-const net = require('./net.js');
-const {
+import {
+  DataError,
   dataErrorEx,
   dataErrorQueueClear,
   dataErrorQueueGet,
-} = require('glov/common/data_error.js');
-const { plural } = require('glov/common/util.js');
-const { vec4 } = require('glov/common/vmath.js');
+} from 'glov/common/data_error';
+import { TSMap } from 'glov/common/types';
+import { plural } from 'glov/common/util';
+import { vec4 } from 'glov/common/vmath';
+import * as camera2d from './camera2d';
+import * as engine from './engine';
+import { renderNeeded } from './engine';
+import { fontStyleColored } from './font';
+import {
+  netClient,
+  netSubs,
+} from './net';
+import { ScrollArea, scrollAreaCreate } from './scroll_area';
+import {
+  buttonText,
+  drawLine,
+  panel,
+  uiGetFont,
+  uiGetTitleFont,
+  uiTextHeight,
+} from './ui';
 
-let gbstate;
-let server_error;
+const { min } = Math;
+
+type GBStateTask = {
+  err?: string;
+  jobs?: TSMap<{
+    errors?: string[];
+    warnings?: string[];
+  }>;
+};
+type GBState = {
+  error_count?: number;
+  warning_count?: number;
+  tasks?: TSMap<GBStateTask>;
+};
+let gbstate: GBState | null = null;
+let server_error: string | null = null;
 
 Z.BUILD_ERRORS = Z.BUILD_ERRORS || 9900;
 
-function onGBState(state) {
+function onGBState(state: GBState): void {
   gbstate = state;
   renderNeeded();
 }
 
-function onServerError(err) {
+function onServerError(err: string | null): void {
   server_error = err;
   renderNeeded();
 }
 
-function onDataErrors(err_list) {
+function onDataErrors(err_list: DataError[]): void {
   for (let ii = 0; ii < err_list.length; ++ii) {
     dataErrorEx(err_list[ii]);
   }
@@ -39,15 +63,15 @@ function onDataErrors(err_list) {
 
 const PAD = 4;
 const color_panel = vec4(0,0,0,1);
-const style_title = glov_font.styleColored(null, 0xFF2020ff);
-const style = glov_font.styleColored(null, 0xDDDDDDff);
-const style_task = glov_font.styleColored(null, 0x00DDDDff);
-const style_job = glov_font.styleColored(null, 0x2020FFff);
+const style_title = fontStyleColored(null, 0xFF2020ff);
+const style = fontStyleColored(null, 0xDDDDDDff);
+const style_task = fontStyleColored(null, 0x00DDDDff);
+const style_job = fontStyleColored(null, 0x2020FFff);
 const color_line = vec4(1,1,1,1);
 // eslint-disable-next-line no-control-regex
 const strip_ansi = /\u001b\[(?:[0-9;]*)[0-9A-ORZcf-nqry=><]/g;
-let scroll_area;
-function buildUITick() {
+let scroll_area: ScrollArea;
+function buildUITick(): void {
   let data_errors = dataErrorQueueGet();
   if (!gbstate && !server_error && !data_errors.length) {
     return;
@@ -56,7 +80,9 @@ function buildUITick() {
   const y0 = camera2d.y0() + PAD;
   let z = Z.BUILD_ERRORS;
   const w = camera2d.w() * 0.75;
-  const { font, title_font, font_height } = ui;
+  const font_height = uiTextHeight();
+  const font = uiGetFont();
+  const title_font = uiGetTitleFont();
   let x = x0;
   let y = y0;
 
@@ -66,7 +92,7 @@ function buildUITick() {
     `${error_count} ${plural(error_count, 'error')}, ` +
     `${warning_count} ${plural(warning_count, 'warning')}`);
   y += font_height + 1;
-  ui.drawLine(x0 + w * 0.3, y, x0 + w * 0.7, y, z, 0.5, true, color_line);
+  drawLine(x0 + w * 0.3, y, x0 + w * 0.7, y, z, 0.5, 1, color_line);
   y += PAD;
 
   if (!scroll_area) {
@@ -87,7 +113,7 @@ function buildUITick() {
   z = Z.UI;
   let indent = 0;
 
-  function printLine(type, str) {
+  function printLine(type: string, str: string): void {
     str = str.replace(strip_ansi, '');
     y += font.drawSizedWrapped(style, x + indent, y, z, sub_w - indent, 0, font_height,
       `${type}: ${str}`);
@@ -95,7 +121,7 @@ function buildUITick() {
 
   if (gbstate) {
     for (let task_name in gbstate.tasks) {
-      let task = gbstate.tasks[task_name];
+      let task = gbstate.tasks[task_name]!;
       x = 0;
       indent = 0;
       font.drawSizedAligned(style_task, x, y, z, font_height, font.ALIGN.HLEFT, sub_w, 0,
@@ -104,7 +130,7 @@ function buildUITick() {
       indent += font_height;
       let printed_any = false;
       for (let job_name in task.jobs) {
-        let job = task.jobs[job_name];
+        let job = task.jobs[job_name]!;
         let { warnings, errors } = job;
         if (job_name !== 'all') {
           if (job_name.startsWith('source:')) {
@@ -152,7 +178,7 @@ function buildUITick() {
   y = scroll_y_start + min(max_h, y);
 
   let button_h = font_height * 1.5;
-  if (ui.buttonText({
+  if (buttonText({
     x: x0 + w - button_h,
     y: y0, z: Z.BUILD_ERRORS + 1,
     w: button_h, h: button_h,
@@ -163,7 +189,7 @@ function buildUITick() {
     dataErrorQueueClear();
   }
 
-  ui.panel({
+  panel({
     x: x0 - PAD, y: y0 - PAD, z: Z.BUILD_ERRORS - 1,
     w: w + PAD * 2, h: y - y0 + PAD * 2,
     color: color_panel,
@@ -171,13 +197,13 @@ function buildUITick() {
 
 }
 
-export function buildUIStartup() {
-  if (net.client && engine.DEBUG) {
-    net.client.onMsg('gbstate', onGBState);
-    net.client.onMsg('server_error', onServerError);
-    net.client.onMsg('data_errors', onDataErrors);
-    net.subs.on('connect', function () {
-      let pak = net.client.pak('gbstate_enable');
+export function buildUIStartup(): void {
+  if (netClient() && engine.DEBUG) {
+    netClient().onMsg('gbstate', onGBState);
+    netClient().onMsg('server_error', onServerError);
+    netClient().onMsg('data_errors', onDataErrors);
+    netSubs().on('connect', function () {
+      let pak = netClient().pak('gbstate_enable');
       pak.writeBool(true);
       pak.send();
     });

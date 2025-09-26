@@ -2,19 +2,25 @@ export let markdown_default_renderables: TSMap<MarkdownRenderable> = {};
 export let markdown_default_font_styles: TSMap<FontStyle> = {};
 
 import assert from 'assert';
+import type { Optional, TSMap } from 'glov/common/types';
 import verify from 'glov/common/verify';
 import {
   ROVec4,
-  Vec4,
   unit_vec,
+  Vec4,
   vec4,
 } from 'glov/common/vmath';
+import {
+  autoAtlas,
+  autoAtlasOnImage,
+} from './autoatlas';
 import {
   ALIGN,
   EPSILON,
   FontStyle,
   fontStyleColored,
 } from './font';
+import type { Box } from './geom_types';
 import {
   MDDrawBlock,
   MDDrawParam,
@@ -23,13 +29,10 @@ import {
 } from './markdown';
 import { RenderableContent } from './markdown_parse';
 import { Sprite } from './sprites';
+import type { SpriteSheet } from './spritesheet';
 import {
   sprites as ui_sprites,
 } from './ui';
-
-import type { Box } from './geom_types';
-import type { SpriteSheet } from './spritesheet';
-import type { Optional, TSMap } from 'glov/common/types';
 
 const { floor, max } = Math;
 
@@ -100,6 +103,17 @@ export function markdownImageRegisterSpriteSheet(spritesheet: SpriteSheet): void
       frame: spritesheet.tiles[key],
     });
   }
+}
+
+export function markdownImageRegisterAutoAtlas(atlas_name: string): void {
+  autoAtlasOnImage(atlas_name, function (img_name: string) {
+    if (img_name === 'def') { // exists in every atlas
+      return;
+    }
+    markdownImageRegister(img_name, {
+      sprite: autoAtlas(atlas_name, img_name),
+    });
+  });
 }
 
 function getImageData(key: string): MarkdownImageParam {

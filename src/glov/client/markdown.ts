@@ -1,4 +1,5 @@
 import assert from 'assert';
+import type { TSMap, WithRequired } from 'glov/common/types';
 import { has } from 'glov/common/util';
 import verify from 'glov/common/verify';
 import {
@@ -11,49 +12,48 @@ import {
   EPSILON,
   Font,
   FontStyle,
-  Text,
   fontStyleAlpha,
   fontStyleBold,
   fontStyleHash,
+  Text,
 } from './font';
 import { Box } from './geom_types';
 import { mousePos } from './input';
 import { getStringFromLocalizable } from './localization';
 import {
   MDASTNode,
-  RenderableContent,
   mdParse,
   mdParseSetValidRenderables,
+  RenderableContent,
 } from './markdown_parse';
 import {
-  MarkdownRenderable,
-  markdownLayoutFit,
   markdown_default_font_styles,
   markdown_default_renderables,
+  markdownLayoutFit,
+  MarkdownRenderable,
 } from './markdown_renderables';
 import {
-  SPOT_DEFAULT_LABEL,
   spot,
+  SPOT_DEFAULT_LABEL,
   spotPadMode,
 } from './spot';
 import {
   spriteClipPause,
-  spriteClipResume,
   spriteClipped,
   spriteClippedViewport,
+  spriteClipResume,
 } from './sprites';
 import {
-  LabelBaseOptions,
   drawElipse,
   drawRect2,
   getUIElemData,
+  LabelBaseOptions,
   uiFontStyleNormal,
   uiGetFont,
   uiTextHeight,
 } from './ui';
-import type { TSMap, WithRequired } from 'glov/common/types';
 
-const { ceil, floor, max, min, round } = Math;
+const { ceil, floor, max, min } = Math;
 
 // Exported opaque types
 export type MarkdownCache = Record<string, never>;
@@ -109,6 +109,15 @@ type MDCache = {
 type MDState = {
   cache: MDCache;
 };
+
+export function markdownParseInvalidate(param: MarkdownStateParam): void {
+  if (param.cache) {
+    let state = param as MDState;
+    if (state.cache.parsed) {
+      delete state.cache.parsed;
+    }
+  }
+}
 
 export function markdownLayoutInvalidate(param: MarkdownStateParam): void {
   if (param.cache) {
@@ -262,7 +271,7 @@ class MDBlockText implements MDLayoutBlock {
       let indent = param.indent - inset;
       let yoffs = (line_height - text_height)/2;
       if (param.font.integral) {
-        yoffs = round(yoffs);
+        yoffs = floor(yoffs);
       }
       param.font.wrapLines(
         param.font_style, w, indent, text_height, text, param.align,
@@ -384,8 +393,7 @@ function markdownParse(param: MarkdownStateCached & MarkdownParseParam): void {
   }
   mdParseSetValidRenderables(valid_renderables);
   let tree: MDASTNode[] = mdParse(getStringFromLocalizable(param.text));
-  let blocks = cache.parsed = mdASTToBlock(tree, param);
-  cache.parsed = blocks;
+  cache.parsed = mdASTToBlock(tree, param);
   profilerStopFunc();
 }
 
@@ -510,7 +518,7 @@ function markdownLayout(param: MarkdownStateCached & MarkdownLayoutParam): void 
         if (calc_param.align & ALIGN.HCENTER) {
           xoffs *= 0.5;
           if (calc_param.font.integral) {
-            xoffs = round(xoffs);
+            xoffs = floor(xoffs);
           }
         }
         if (xoffs > 0) {
@@ -544,7 +552,7 @@ function markdownLayout(param: MarkdownStateCached & MarkdownLayoutParam): void 
         yoffs -= miny;
         yoffs *= 0.5;
         if (calc_param.font.integral) {
-          yoffs = round(yoffs);
+          yoffs = floor(yoffs);
         }
       }
       for (let ii = 0; ii < draw_blocks.length; ++ii) {

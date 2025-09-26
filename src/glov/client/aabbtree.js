@@ -1,7 +1,10 @@
 // Copyright (c) 2009-2014 Turbulenz Limited
 // Used under MIT License
 // Modified by Jimb Esser
-/* eslint no-underscore-dangle:off, one-var:off, sort-vars:off, max-len:off, consistent-return:off, no-bitwise:off */
+/* eslint-disable no-underscore-dangle */
+/* eslint-disable one-var */
+/* eslint-disable @stylistic/max-len */
+/* eslint-disable consistent-return */
 
 /**
  * General layout

@@ -9,8 +9,7 @@ export type RoundRobinableItem = {
   roundrobinable_next?: RoundRobinableItem | null; // if null or defined it's in the list; undefined it's not
 };
 
-export type RoundRobinable = RoundRobinableImpl;
-class RoundRobinableImpl {
+class RoundRobinable {
   private head: RoundRobinableItem | null;
   private tail: RoundRobinableItem | null;
   private continuer_this: RoundRobinableItem | null;
@@ -116,7 +115,8 @@ class RoundRobinableImpl {
     this.continuer_next = null;
   }
 }
+export type { RoundRobinable };
 
 export function roundRobinableCreate(): RoundRobinable {
-  return new RoundRobinableImpl();
+  return new RoundRobinable();
 }

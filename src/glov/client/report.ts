@@ -1,4 +1,6 @@
+import type { CmdRespFunc } from 'glov/common/cmd_parse';
 import { executeWithRetry } from 'glov/common/execute_with_retry';
+import type { DataObject, ErrorCallback, TSMap } from 'glov/common/types';
 import { cmd_parse } from './cmds';
 import {
   errorReportSetDetails,
@@ -8,9 +10,6 @@ import {
 import { fetch } from './fetch';
 import { getStoragePrefix } from './local_storage';
 import { scoreWithUserID } from './score';
-
-import type { CmdRespFunc } from 'glov/common/cmd_parse';
-import type { DataObject, ErrorCallback, TSMap } from 'glov/common/types';
 
 let project_id: string = getStoragePrefix();
 export function reportSetProject(project: string): void {

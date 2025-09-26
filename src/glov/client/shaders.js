@@ -491,14 +491,13 @@ export function shadersPrelink(vp, fp, params = {}, on_error) {
 
 const reserved = {
   WEBGL2: 1,
-  GL_FRAGMENT_PRECISION_HIGH: 1,
 };
 export function addReservedDefine(key) {
   reserved[key] = 1;
 }
 let internal_defines = {};
 function applyDefines() {
-  global_defines = Object.keys(engine.defines).filter((v) => !reserved[v])
+  global_defines = Object.keys(engine.defines).filter((v) => !reserved[v] && !v.startsWith('GL_'))
     .concat(Object.keys(internal_defines))
     .map((v) => `#define ${v}\n`)
     .join('');

@@ -1,9 +1,8 @@
 import assert from 'assert';
+import type { CmdParse, CmdRespFunc } from 'glov/common/cmd_parse';
 import { setAbilityReloadUpdates } from './client_config';
 import { netForceDisconnect } from './net';
 import * as urlhash from './urlhash';
-
-import type { CmdParse, CmdRespFunc } from 'glov/common/cmd_parse';
 
 export interface EnvironmentConfig {
   name: string;

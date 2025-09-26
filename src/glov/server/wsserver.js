@@ -15,12 +15,12 @@ import * as wscommon from 'glov/common/wscommon.js';
 const { netDelayGet, wsHandleMessage, wsPak, wsPakSendDest, wsSetSendCB } = wscommon;
 import * as WebSocket from 'ws';
 
-import { ipBanReady, ipBanned } from './ip_ban';
+import { ipBanned, ipBanReady } from './ip_ban';
 import { keyMetricsAddTagged } from './key_metrics';
 import { logEx } from './log';
 import { packetLog, packetLogInit } from './packet_log';
 import { ipFromRequest, isLocalHost, requestGetQuery } from './request_utils';
-import { VersionSupport, getVersionSupport, isValidVersion } from './version_management';
+import { getVersionSupport, isValidVersion, VersionSupport } from './version_management';
 
 const DO_PER_MESSAGE_DEFLATE = true;
 
@@ -261,7 +261,7 @@ WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
       // disable this for testing
       client.onClose();
     });
-    socket.on('message', function (data) {
+    socket.on('message', function (data, is_binary) {
       if (ws_debug_log) {
         ws_debug_log.write(`["R","${data.toString('base64')}"],\n`);
       }
@@ -277,11 +277,26 @@ WSServer.prototype.init = function (server, server_https, no_timeout, dev) {
           // This doesn't actually work for the packets we were receiving in
           //   production, they contain 0xFFFD characters, which means data has
           //   been lost, we cannot possibly make the data work.
+          // Also, `ws@8.0+` passes a Buffer + `is_binary=false` instead of a String.
           // if (typeof data === 'string') {
           //   client.logCtx('debug', `Received incorrect WebSocket data type (${typeof data}), auto-fixing...`);
           //   log_data = data;
           //   data = Buffer.from(data, 'binary');
           // }
+          if (!is_binary) {
+            let source = `client ${client.id}`;
+            client.log(`Received incorrect WebSocket data type from ${source} (${typeof data})`);
+            client.log(`Invalid WebSocket data: ${JSON.stringify(data.slice(0, 120).toString('utf8'))}` +
+              ` ${data.slice(0,120)}`);
+            if (!client.has_warned_about_text) {
+              // Send an generic error (still as binary, since if they got this far, they
+              //   must have received the binary `cack` successfully.
+              client.has_warned_about_text = true;
+              client.send('error', 'Server received non-binary WebSocket data.  ' +
+                'Likely cause is a proxy, VPN or something else intercepting and modifying network traffic.');
+            }
+            return;
+          }
           wsHandleMessage(client, data, ws_server.restarting && ws_server.restart_filter || logBigFilter);
         } catch (e) {
           e.source = client.ctx();

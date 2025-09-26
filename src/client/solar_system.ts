@@ -4,7 +4,6 @@ export const BIT_DETAIL_IDX_SHIFT = 3; // 5 bits
 
 import assert from 'assert';
 import { getFrameIndex } from 'glov/client/engine';
-import { randSimpleSpatial } from 'glov/client/rand_fast';
 import { Texture } from 'glov/client/sprites';
 import {
   TEXTURE_FORMAT,
@@ -14,6 +13,7 @@ import {
   mashString,
   randCreate,
 } from 'glov/common/rand_alea';
+import { randSimpleSpatial } from 'glov/common/rand_fast';
 import { KeysMatching, TSMap } from 'glov/common/types';
 import {
   clamp,
@@ -29,9 +29,9 @@ import {
 } from 'glov/common/vmath';
 import SimplexNoise from 'simplex-noise';
 import {
+  Biome,
   BIOMES,
   BIOMES_SAME_LOOSE,
-  Biome,
 } from './biomes';
 import { Star } from './galaxy';
 import {

@@ -12,6 +12,14 @@ declare module 'gl-mat4/copy' {
   import type { Mat4 } from 'glov/common/vmath';
   export default function copy(out: Mat4, a: Readonly<Mat4>): Mat4;
 }
+declare module 'gl-mat4/fromQuat' {
+  import type { Mat4, Vec4 } from 'glov/common/vmath';
+  export default function fromQuat(out: Mat4, a: Readonly<Vec4>): Mat4;
+}
+declare module 'gl-mat4/identity' {
+  import type { Mat4 } from 'glov/common/vmath';
+  export default function identity(out: Mat4): Mat4;
+}
 declare module 'gl-mat4/invert' {
   import type { Mat4 } from 'glov/common/vmath';
   export default function invert(out: Mat4, a: Readonly<Mat4>): Mat4;

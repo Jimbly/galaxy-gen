@@ -6,9 +6,9 @@
 // Do not require anything significant from this file, so it loads super quickly
 // Maybe need to add a separate bootstrap if we need to require much.
 import assert from 'assert';
+import type { TSMap } from 'glov/common/types';
 import { locateAsset } from './locate_asset';
 import { webFSGetData, webFSSetToWorkerCB } from './webfs';
-import type { TSMap } from 'glov/common/types';
 
 let workers: Worker[] = [];
 

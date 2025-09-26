@@ -7,6 +7,7 @@ import { fetchDelaySet } from './fetch';
 import { netClient, netDisconnected } from './net';
 import { SEMANTIC } from './shaders';
 import { textureGetAll } from './textures';
+import { modalDialog } from './ui';
 
 window.cmd = function (str) {
   cmd_parse.handle(null, str, cmd_parse_mod.defaultHandler);
@@ -154,6 +155,18 @@ cmd_parse.register({
   cmd: 'reset_settings',
   help: 'Resets all settings and options to their defaults (Note: requires an app restart)',
   func: function (str, resp_func) {
-    resp_func(null, resetSettings() || 'No stored settings to reset');
+    modalDialog({
+      title: 'Reset Settings',
+      text: 'This will reset all settings and options to their default values.' +
+        '  Some settings may not take effect until you reload the page or restart the app.  Really continue?',
+      buttons: {
+        yes: function () {
+          resp_func(null, resetSettings() || 'No stored settings to reset');
+        },
+        no: function () {
+          resp_func(null, 'Settings NOT reset');
+        }
+      },
+    });
   },
 });

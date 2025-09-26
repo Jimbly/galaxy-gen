@@ -4,27 +4,29 @@
 import assert from 'assert';
 import net from 'net';
 import {
-  ExecuteWithRetryOptions,
   executeWithRetry,
+  ExecuteWithRetryOptions,
 } from 'glov/common/execute_with_retry';
 import {
-  Packet,
   isPacket,
+  Packet,
   packetCreate,
   packetFromBuffer,
   packetReadIntFromBuffer,
   packetSizeAnsiString,
   packetSizeInt,
 } from 'glov/common/packet';
+import type { DataObject, TSMap, VoidFunc } from 'glov/common/types';
 import { callEach, errorString } from 'glov/common/util';
 import {
   ERR_NOT_FOUND,
+  exchangeProviderRegister,
   Mexchange,
   MexchangeCompletionCB,
   MexchangeHandler,
-  exchangeProviderRegister,
 } from './exchange';
 import {
+  createGMXDataHandler,
   GMX_CMD_ACK,
   GMX_CMD_PUBLISH,
   GMX_CMD_REGISTER,
@@ -33,11 +35,8 @@ import {
   GMX_ERR_ALREADY_EXISTS,
   GMX_ERR_NOT_FOUND,
   GMX_HEADER,
-  createGMXDataHandler,
 } from './exchange_gmx_common';
 import { panic } from './server';
-
-import type { DataObject, TSMap, VoidFunc } from 'glov/common/types';
 
 const GMX_ERR_STRINGS: Record<number, string> = {
   [GMX_ERR_ALREADY_EXISTS]: 'ERR_ALREADY_EXISTS',

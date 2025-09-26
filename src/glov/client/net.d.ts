@@ -5,6 +5,7 @@ import type {
   DataObject,
   ErrorCallback,
   NetErrorCallback,
+  NetResponseCallback,
   NetResponseCallbackCalledBySystem,
   PresenceEntry,
   TSMap,
@@ -47,6 +48,8 @@ export type SubscriptionManager = {
   readonly logging_in: boolean;
   readonly logging_out: boolean;
   readonly auto_login_error?: string;
+  readonly restarting: boolean;
+  readonly was_logged_in: boolean;
   loggedIn(): string | null;
   getUserId(): string | null;
   getDisplayName(): string | null;
@@ -72,12 +75,12 @@ export type SubscriptionManager = {
   getChannelImmediate(channel_id: string, timeout?: number): ClientChannelWorker;
   getMyUserChannel(): ClientChannelWorker | null;
   unsubscribe(channel_id: string): void;
-  sendCmdParse(cmd: string, resp_func: NetResponseCallbackCalledBySystem): void;
+  sendCmdParse<T=never>(cmd: string, resp_func: NetResponseCallbackCalledBySystem<T>): void;
   serverLog(type: string, data: string | DataObject): void;
   serverLogSetExtraData(data: null | DataObject): void;
 
   onChannelMsg<T=unknown>(channel_type: string | null,
-    msg: string, cb: (data: T, resp_func: ErrorCallback) => void): void;
+    msg: string, cb: (data: T, resp_func: NetResponseCallback) => void): void;
   // TODO: more specific channel event handler types (also for `ClientChannelWorker::on` below)
   onChannelEvent<T=unknown>(channel_type: string | null, msg: string, cb: (data: T) => void): void;
 
@@ -112,6 +115,10 @@ export type WSClient = {
   pak(msg: string): Packet;
   readonly connected: boolean;
   readonly disconnected: boolean;
+  readonly connect_error: string | null;
+  readonly update_available: boolean;
+  timeSinceDisconnect(): number;
+  onMsg<T=unknown, R=never>(msg: string, cb: (data: T, resp_func: NetResponseCallback<R>) => void): void;
 };
 
 export type NetInitParam = Partial<{

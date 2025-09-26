@@ -109,15 +109,19 @@ function snapshotSetupMats(param) {
   let max_dim = max(param.size[0], param.size[2]);
   let dist = max_dim * DIST_SCALE + param.size[1] / 2;
   engine.setupProjection(FOV, param.w, param.h, 0.1, dist * 2);
-  v3addScale(target_pos, param.pos, param.size, 0.5);
-  if (param.rot) {
-    qRotateZ(quat_rot, unit_quat, param.rot);
-    qTransformVec3(camera_offset_rot, camera_offset, quat_rot);
+  if (param.mat) {
+    mat4Copy(view_mat, param.mat);
   } else {
-    v3copy(camera_offset_rot, camera_offset);
+    v3addScale(target_pos, param.pos, param.size, 0.5);
+    if (param.rot) {
+      qRotateZ(quat_rot, unit_quat, param.rot);
+      qTransformVec3(camera_offset_rot, camera_offset, quat_rot);
+    } else {
+      v3copy(camera_offset_rot, camera_offset);
+    }
+    v3addScale(camera_pos, target_pos, camera_offset_rot, dist);
+    mat4LookAt(view_mat, camera_pos, target_pos, zaxis);
   }
-  v3addScale(camera_pos, target_pos, camera_offset_rot, dist);
-  mat4LookAt(view_mat, camera_pos, target_pos, zaxis);
   engine.setGlobalMatrices(view_mat);
 }
 

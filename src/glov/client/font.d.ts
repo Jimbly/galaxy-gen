@@ -70,6 +70,11 @@ interface FontDrawOpts {
 type FontLineWrapCallback = (x0: number, linenum: number, line: string, x1: number) => void;
 type Text = string | LocalizableString;
 
+type StripOpts = { // default all to true if no `opts` option passed
+  tab: boolean;
+  newline: boolean;
+};
+
 export interface Font {
   // General draw functions return width
   // Pass null for style to use default style
@@ -136,6 +141,8 @@ export interface Font {
   getCharacterWidth(style: FontStyle | null, x_size: number, c: number): number;
 
   getStringWidth(style: FontStyle | null, x_size: number, text: Text): number;
+  truncateToWidth(style: FontStyle | null, x_size: number, max_width: number, text: Text): string;
+  stripUnprintable(text: Text, opts?: StripOpts): string;
 
   readonly integral: boolean;
 

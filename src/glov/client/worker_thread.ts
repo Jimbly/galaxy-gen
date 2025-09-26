@@ -1,8 +1,7 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 
-/* eslint-env browser */
-/* globals Console, Transferable */
+/* globals Console, Transferable, self, postMessage */
 
 require('./polyfill.js');
 
@@ -13,13 +12,12 @@ if (!self.profilerStart) {
 }
 
 import assert from 'assert';
+import type { TSMap } from 'glov/common/types';
 import {
   webFSApplyReload,
   webFSGetData,
   webFSStartup,
 } from './webfs';
-
-import type { TSMap } from 'glov/common/types';
 
 export function sendmsg<T=unknown>(id: string, data: T, transfer?: Transferable[]): void {
   (postMessage as (message: unknown, transfer?: Transferable[]) => void)({ id, data }, transfer);

@@ -1,7 +1,7 @@
 import assert from 'assert';
 
-import type { MetricFreq } from './metrics';
 import type { TSMap } from 'glov/common/types';
+import type { MetricFreq } from './metrics';
 
 const { floor } = Math;
 

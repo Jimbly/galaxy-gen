@@ -21,8 +21,7 @@
 */
 
 type AnimationFunc = (progress: number) => void;
-export type AnimationSequencer = AnimationSequencerImpl;
-class AnimationSequencerImpl {
+class AnimationSequencer {
   time = 0;
   fns: {
     done: boolean;
@@ -66,9 +65,10 @@ class AnimationSequencerImpl {
     return any_left;
   }
 }
+export type { AnimationSequencer };
 
 export function animationSequencerCreate(): AnimationSequencer {
-  return new AnimationSequencerImpl();
+  return new AnimationSequencer();
 }
 
 exports.createAnimationSequencer = animationSequencerCreate;

@@ -23,10 +23,12 @@ export const BlendMode = {
   BLEND_ALPHA: 0,
   BLEND_ADDITIVE: 1,
   BLEND_PREMULALPHA: 2,
+  BLEND_MULTIPLY: 3,
 };
 export const BLEND_ALPHA = 0;
 export const BLEND_ADDITIVE = 1;
 export const BLEND_PREMULALPHA = 2;
+export const BLEND_MULTIPLY = 3;
 
 /* eslint-disable import/order */
 const assert = require('assert');
@@ -52,6 +54,7 @@ const {
   deprecate,
   nextHighestPowerOfTwo,
 } = require('glov/common/util.js');
+const verify = require('glov/common/verify');
 const {
   vec2,
   vec4,
@@ -518,7 +521,14 @@ function scissorSet(scissor) {
   if (!active_scissor) {
     gl.enable(gl.SCISSOR_TEST);
   }
-  gl.scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+  let [x, y, w, h] = scissor;
+  if (!verify(w >= 0)) {
+    w = 0;
+  }
+  if (!verify(h >= 0)) {
+    h = 0;
+  }
+  gl.scissor(x, y, w, h);
   active_scissor = scissor;
 }
 function scisssorClear() {
@@ -599,6 +609,8 @@ export function spriteClippedViewport() {
 
 export function spriteClipPush(z, x, y, w, h) {
   assert(clip_stack.length < 10); // probably leaking
+  verify(w >= 0);
+  verify(h >= 0);
   let scissor = clipCoordsScissor(x, y, w, h);
   let dom_clip = clipCoordsDom(x, y, w, h);
   camera2d.setInputClipping(dom_clip);
@@ -685,6 +697,8 @@ export function blendModeSet(blend) {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     } else if (last_blend_mode === BLEND_PREMULALPHA) {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    } else if (last_blend_mode === BLEND_MULTIPLY) {
+      gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
     } else {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     }
@@ -961,8 +975,10 @@ export function spriteFlippedUVsRestore(spr) {
   }
 }
 
+let last_sprite_uid = 0;
 function Sprite(params) {
   this.lazy_load = null;
+  this.uid = ++last_sprite_uid;
 
   if (params.texs) {
     this.texs = params.texs;
@@ -983,6 +999,7 @@ function Sprite(params) {
           filter_mag: params.filter_mag,
           wrap_s: params.wrap_s,
           wrap_t: params.wrap_t,
+          force_mipmaps: params.force_mipmaps,
           load_filter: params.load_filter,
         }));
       }
@@ -995,6 +1012,7 @@ function Sprite(params) {
           filter_mag: params.filter_mag,
           wrap_s: params.wrap_s,
           wrap_t: params.wrap_t,
+          force_mipmaps: params.force_mipmaps,
           soft_error: params.soft_error,
           load_filter: params.load_filter,
         };
@@ -1073,11 +1091,48 @@ Sprite.prototype.withOrigin = function (new_origin) {
       new_sprite.texs = this.texs;
       new_sprite.uvs = this.uvs;
       new_sprite.uidata = this.uidata;
+      new_sprite.doReInit(); // Allow chaining
     };
     this.onReInit(doInit);
     doInit();
   }
   return this.origin_cache[cache_v];
+};
+
+Sprite.prototype.withSamplerState = function (opts) {
+  let cache_v = textureFilterKey(opts);
+  if (!this.sampler_cache) {
+    this.sampler_cache = {};
+  }
+  if (!this.sampler_cache[cache_v]) {
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    let new_sprite = this.sampler_cache[cache_v] = spriteCreate({
+      texs: [],
+      origin: this.origin,
+      size: this.size,
+      color: this.color,
+      uvs: this.uvs,
+    });
+    let doInit = () => {
+      new_sprite.texs = this.texs.map((tex) => {
+        assert(tex.url);
+        return textureLoad({
+          url: `${tex.url.split('#')[0]}#${cache_v}`,
+          filter_min: opts.filter_min,
+          filter_mag: opts.filter_mag,
+          wrap_s: opts.wrap_s,
+          wrap_t: opts.wrap_t,
+          force_mipmaps: opts.force_mipmaps,
+        });
+      });
+      new_sprite.uvs = this.uvs;
+      new_sprite.uidata = this.uidata;
+      new_sprite.doReInit(); // Allow chaining
+    };
+    this.onReInit(doInit);
+    doInit();
+  }
+  return this.sampler_cache[cache_v];
 };
 
 Sprite.prototype.lazyLoadInit = function () {

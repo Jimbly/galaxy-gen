@@ -11,16 +11,16 @@ import { getFrameIndex } from './engine';
 import {
   ALIGN,
   FontStyle,
-  Text,
   fontStyleColored,
+  Text,
 } from './font';
 import { ScrollArea } from './scroll_area';
 import {
+  spot,
   SPOT_DEFAULT_BUTTON,
+  spotKey,
   SpotKeyable,
   SpotRet,
-  spot,
-  spotKey,
 } from './spot';
 import {
   spriteClipPop,
@@ -107,8 +107,7 @@ export function collapsagoriesDrawDefault(param: CollapsagoriesHeaderDrawParam<C
 
 let temp_color_fade = vec4(1,1,1,1);
 
-export type Collapsagories = CollapsagoriesImpl;
-class CollapsagoriesImpl {
+class Collapsagories {
   // constructor() {
   // }
   headers_done!: number;
@@ -258,13 +257,14 @@ class CollapsagoriesImpl {
     }
   }
 }
+export type { Collapsagories };
 
 export function collapsagoriesCreate(): Collapsagories {
-  return new CollapsagoriesImpl();
+  return new Collapsagories();
 }
 
 let active_elem_frame_index: number;
-let active_elem: CollapsagoriesImpl | null = null;
+let active_elem: Collapsagories | null = null;
 export function collapsagoriesStart(param: CollapsagoriesStartParam): void {
   let frame_index = getFrameIndex();
   assert(!active_elem || active_elem_frame_index !== frame_index); // possibly left over from a previous frame

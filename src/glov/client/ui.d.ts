@@ -1,16 +1,15 @@
-// eslint-disable-next-line @typescript-eslint/no-redeclare
 /* globals HTMLElement, Event */
 
 import {
-  TSMap,
   TextVisualLimit,
+  TSMap,
   VoidFunc,
 } from 'glov/common/types';
 import { ROVec4 } from 'glov/common/vmath';
 import { EditBoxOptsAll } from './edit_box';
 import { ALIGN, Font, FontStyle, Text } from './font';
 import { Box } from './geom_types';
-import { SoundID, SoundLoadOpts } from './sound';
+import { GlovSoundPlayOpts, SoundID, SoundLoadOpts } from './sound';
 import { SpotKeyable, SpotParam, SpotRet, SpotStateEnum } from './spot';
 import { Sprite, UISprite } from './sprites';
 import { UIStyle } from './uistyle';
@@ -24,6 +23,7 @@ export const LINE_CAP_ROUND: number;
 export const LINE_NO_AA: number;
 export function makeColorSet(color: ROVec4): ColorSet;
 export function colorSetMakeCustom(regular: ROVec4, rollover: ROVec4, down: ROVec4, disabled: ROVec4): ColorSet;
+export function colorSetGetField(color_set: ColorSet, field: ButtonStateString): ROVec4;
 export interface UIBox extends Box {
   z?: number;
 }
@@ -101,17 +101,19 @@ type ButtonLabels = BaseButtonLabels & ExtraButtonLabels;
 export function setButtonsDefaultLabels(buttons_labels: ButtonLabels): void;
 export function setProvideUserStringDefaultMessages(success_msg: Text, failure_msg: Text): void;
 export function suppressNewDOMElemWarnings(): void;
-export function uiGetDOMElem(last_elem: HTMLElement, allow_modal: boolean): null | HTMLElement;
+export function uiGetDOMElem(last_elem: HTMLElement | null, allow_modal: boolean): null | HTMLElement;
 export function uiGetDOMTabIndex(): number;
 export type BaseSoundKey = 'button_click' | 'rollover';
 export type UISoundID = SoundID & { opts?: SoundLoadOpts };
-export function uiBindSounds(sounds?: Partial<Record<string, UISoundID | UISoundID[] | null>>): void;
+export type UISounds = Partial<Record<string, UISoundID | UISoundID[] | null>>;
+export function uiBindSounds(sounds?: UISounds): void;
 export interface DrawHBoxParam extends UIBox {
   no_min_width?: boolean;
 }
 export function drawHBox(coords: DrawHBoxParam, s: Sprite, color?: ROVec4): void;
 export function drawVBox(coords: UIBox, s: Sprite, color?: ROVec4): void;
-export function drawBox(coords: UIBox, s: Sprite, pixel_scale: number, color?: ROVec4, color1?: ROVec4): void;
+export function drawBox(coords: UIBox, s: Sprite, pixel_scale: number, color?: ROVec4): void;
+export function drawBoxTiled(coords: UIBox, s: Sprite, pixel_scale: number, color?: ROVec4): void;
 export function drawMultiPartBox(
   coords: UIBox,
   scaleable_data: {
@@ -121,7 +123,7 @@ export function drawMultiPartBox(
   pixel_scale: number,
   color?: ROVec4,
 ): void;
-export function playUISound(name: string, volume?: number): void;
+export function playUISound(name: string, volume_or_opts?: number | GlovSoundPlayOpts): void;
 export function focusCanvas(): void;
 export function uiHandlingNav(): boolean;
 
@@ -157,6 +159,7 @@ export interface TooltipBoxParam {
   tooltip_width?: number;
   tooltip_above?: boolean;
   tooltip_right?: boolean;
+  tooltip_left?: boolean;
   tooltip_center?: boolean;
   tooltip_markdown?: boolean; // defaults true
   tooltip: TooltipValue;
@@ -194,6 +197,7 @@ export interface ButtonParam extends Partial<TooltipParam>, Partial<SpotParam> {
   base_name?: string;
   no_bg?: boolean;
   style?: UIStyle;
+  tooltip_left?: boolean;
 }
 export interface ButtonTextParam extends ButtonParam {
   text: Text;
@@ -215,6 +219,7 @@ export interface ButtonImageParamBase extends ButtonParam {
   color1?: ROVec4;
   rotation?: number;
   flip?: boolean;
+  yoffs?: YOffs;
 }
 export interface ButtonImageParam1 extends ButtonImageParamBase {
   imgs: Sprite[];
@@ -231,7 +236,8 @@ export function buttonText(param: ButtonTextParam): ButtonRet | null;
 export function buttonImage(param: ButtonImageParam): ButtonRet | null;
 export type ButtonGenericParam = ButtonTextParam | ButtonImageParam;
 export function button(param: ButtonGenericParam): ButtonRet | null;
-export function buttonSetDefaultYOffs(y_offs: Partial<Record<ButtonStateString, number>>): void;
+export type YOffs = Partial<Record<ButtonStateString, number>>;
+export function buttonSetDefaultYOffs(y_offs: YOffs): void;
 
 
 type CheckboxParam = ButtonTextParam & {
@@ -290,7 +296,8 @@ export type ModalDialogTickCallbackParams = {
   readonly font_height: number;
   readonly fullscreen_mode: boolean;
 };
-export type ModalDialogTickCallback = (param: ModalDialogTickCallbackParams) => string | void;
+// Returns a hotkey, e.g. KEYS.Y, to activate one of the buttons
+export type ModalDialogTickCallback = (param: ModalDialogTickCallbackParams) => number | void;
 export type ModalDialogButtons<CB=VoidFunc> = TSMap<ModalDialogButton<CB>>;
 export interface ModalDialogParamBase<CB> {
   title?: Text;
@@ -327,6 +334,7 @@ export interface MenuFadeParams {
   fallback_darken?: ROVec4;
   z?: number;
 }
+export function menuFadeParamsSetDefault(fade_params: MenuFadeParams): void;
 export function menuUp(param?: MenuFadeParams): void;
 export function copyTextToClipboard(text: string): boolean;
 export function provideUserString(title: Text, str: string, alt_buttons?: ModalDialogButtons): void;

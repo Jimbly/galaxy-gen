@@ -256,7 +256,7 @@ class ParticleSystem {
     // this.tick(0);
   }
 
-  tickParticle(part, dt) { // eslint-disable-line class-methods-use-this
+  tickParticle(part, dt) {
     let def = part.def;
     part.age += dt;
     let age_norm = part.age / part.lifespan;

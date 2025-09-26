@@ -74,8 +74,7 @@ export class PerEntData {
   }
 }
 
-export type EntityPositionManager = EntityPositionManagerImpl;
-class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
+class EntityPositionManager implements Required<EntityPositionManagerOpts> {
   per_ent_data!: Partial<Record<EntityID, PerEntData>>;
   entity_manager: ClientEntityManagerInterface;
 
@@ -365,6 +364,17 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
     }
   }
 
+  otherEntitySnapPos(ent_id: EntityID): void {
+    let ent = this.entity_manager.getEnt(ent_id);
+    assert(ent);
+    let ent_pos = ent.getData('pos') as Vector;
+    // Relevant fields on ent_data: pos, anything referenced by anim_state_defs
+    let ped = this.per_ent_data[ent_id];
+    if (ped) {
+      this.vcopy(ped.pos, ent_pos);
+    }
+  }
+
   otherEntityChanged(ent_id: EntityID): void {
     let { anim_state_defs } = this;
     let ent = this.entity_manager.getEnt(ent_id);
@@ -495,9 +505,10 @@ class EntityPositionManagerImpl implements Required<EntityPositionManagerOpts> {
   }
 
 }
+export type { EntityPositionManager };
 
 export function entityPositionManagerCreate(options: EntityPositionManagerOpts): EntityPositionManager {
-  let ret = new EntityPositionManagerImpl(options);
+  let ret = new EntityPositionManager(options);
   registerPingProvider(ret.getPing.bind(ret));
   return ret;
 }

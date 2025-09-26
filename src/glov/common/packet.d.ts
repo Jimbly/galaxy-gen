@@ -1,6 +1,8 @@
 import type { NetResponseCallbackCalledBySystem } from './types';
 
 export const PACKET_DEBUG = 1;
+export const MAX_JS_INT64 = 18446744073709550000;
+export const MAX_JS_INT53 = 9007199254740992;
 
 type PacketFlags = 0 | typeof PACKET_DEBUG;
 

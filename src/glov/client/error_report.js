@@ -4,9 +4,10 @@ export let session_uid = `${String(Date.now()).slice(-8)}${String(Math.random())
 let error_report_details = {};
 let error_report_dynamic_details = {};
 
-import { getAPIPath } from 'glov/client/environments';
-import { platformGetID } from './client_config';
+import { MODE_DEVELOPMENT, platformGetID } from './client_config';
+import { getAPIPath } from './environments';
 import { fetch } from './fetch';
+import { isbot } from './isbot';
 import { getStoragePrefix } from './local_storage';
 import { unlocatePaths } from './locate_asset';
 
@@ -21,9 +22,13 @@ export function errorReportIgnoreUncaughtPromises() {
   ignore_promises = true;
 }
 
+function escape2(str) {
+  return escape(str).replace(/\+/, '%2B');
+}
+
 export function errorReportSetDetails(key, value) {
   if (value) {
-    error_report_details[key] = escape(String(value));
+    error_report_details[key] = escape2(String(value));
   } else {
     delete error_report_details[key];
   }
@@ -39,7 +44,7 @@ errorReportSetDynamicDetails('platform', platformGetID);
 const time_start = Date.now();
 errorReportSetDetails('time_start', time_start);
 errorReportSetDynamicDetails('url', function () {
-  return escape(location.href);
+  return location.href;
 });
 errorReportSetDynamicDetails('time_up', function () {
   return Date.now() - time_start;
@@ -57,7 +62,7 @@ function getDynamicDetail(key) {
   if (!value && value !== 0) {
     return '';
   }
-  return `&${key}=${value}`;
+  return `&${key}=${escape2(value)}`;
 }
 export function errorReportDetailsString() {
   return `&${Object.keys(error_report_details)
@@ -77,7 +82,7 @@ export function errorReportClear() {
   window.debugmsg('', true);
 }
 
-let submit_errors = true;
+let submit_errors = !isbot();
 export function glovErrorReportDisableSubmit() {
   submit_errors = false;
 }
@@ -87,9 +92,20 @@ export function glovErrorReportSetCrashCB(cb) {
   on_crash_cb = cb;
 }
 
+let filter_cb = null;
+// cb(msg) => boolean (true means don't handle as an error)
+export function glovErrorReportTemporaryFilterSet(cb) {
+  filter_cb = cb;
+}
+export function glovErrorReportTemporaryFilterClear(cb) {
+  if (!cb || cb === filter_cb) {
+    filter_cb = null;
+  }
+}
+
 // base like http://foo.com/bar/ (without index.html)
 let reporting_api_path = 'http://www.dashingstrike.com/reports/api/';
-if (window.location.host.indexOf('localhost') !== -1 ||
+if (MODE_DEVELOPMENT ||
   window.location.host.indexOf('staging') !== -1/* ||
   window.location.host.indexOf('pink') !== -1*/
 ) {
@@ -157,6 +173,7 @@ let filtered_errors = new RegExp([
   't\\.gvl', // OneTrust
   'pubads_20', // Some third-party ad provider
   'ima3\\.js', // Google ads
+  'fcKernelManager', // Google ads?
   'window\\.setDgResult', // likely from ad provider
   'TranslateService',
   'bdTransJSBridge',
@@ -167,6 +184,7 @@ let filtered_errors = new RegExp([
   'closeModal',
   'WeixinJSBridge',
   '/prebid', // Some third-party ad provider
+  'loadGPT', // FRVR ads
   'property: websredir', // unknown source, happens often for a couple users on Opera and Chrome
   'property: googletag', // unknown source, Opera ad blocker?
   'ResizeObserver loop', // unknown source, but isn't used by us
@@ -178,7 +196,11 @@ let filtered_errors = new RegExp([
   'CookieDeprecationLabel', // gtag
   'googletagmanager', // gtag
   '__firefox__',
-  'ucbrowser_script'
+  'ucbrowser_script',
+  'kernel_loader', // Chromium OS
+  'operation not permitted, watch', // Electron watch() API
+  'play\\(\\) request was interrupted by a call to pause\\(\\)', // likely from video ad provider
+  'MutationObserver\\.observe\\.childList', // specific crash from youdaodict
 ].join('|'));
 
 export function glovErrorReport(is_fatal, msg, file, line, col) {
@@ -186,6 +208,9 @@ export function glovErrorReport(is_fatal, msg, file, line, col) {
   console.error(msg);
   if (on_crash_cb) {
     on_crash_cb();
+  }
+  if (filter_cb && filter_cb(msg)) {
+    return false;
   }
   if (is_fatal) {
     // Only doing filtering and such on fatal errors, as non-fatal errors are
@@ -210,9 +235,9 @@ export function glovErrorReport(is_fatal, msg, file, line, col) {
   }
   // Post to an error reporting endpoint that (probably) doesn't exist - it'll get in the logs anyway!
   let url = reportingAPIPath(); // base like http://foo.com/bar/ (without index.html)
-  url += `${is_fatal ? 'errorReport' : 'errorLog'}?cidx=${crash_idx}&file=${escape(unlocatePaths(file))}` +
+  url += `${is_fatal ? 'errorReport' : 'errorLog'}?cidx=${crash_idx}&file=${escape2(unlocatePaths(file))}` +
     `&line=${line||0}&col=${col||0}` +
-    `&msg=${escape(msg)}${errorReportDetailsString()}`;
+    `&msg=${escape2(msg)}${errorReportDetailsString()}`;
   if (submit_errors) {
     fetch({ method: 'POST', url }, () => { /* nop */ });
 

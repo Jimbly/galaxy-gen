@@ -36,6 +36,7 @@ export let default_config_options = {
       clientlist: false,
       entverbose: false,
       load: false,
+      lifecycle: false,
       quiet: false, // do not show 'quiet' category messages by default
     },
   },

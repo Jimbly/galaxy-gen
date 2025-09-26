@@ -5,11 +5,10 @@ export const ERR_NOT_FOUND = 'ERR_NOT_FOUND';
 
 import assert from 'assert';
 import {
-  Packet,
   isPacket,
+  Packet,
   packetFromBuffer,
 } from 'glov/common/packet';
-
 import type {
   DataObject,
   TSMap,

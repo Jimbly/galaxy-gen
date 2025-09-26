@@ -4,6 +4,8 @@ import { ErrorCallback } from 'glov/common/types';
 export interface ValidLoginData {
   provider: string;
   external_id: string;
+  email?: string;
+  display_name?: string;
   extra?: {
     identifier: string;
     platform: string;

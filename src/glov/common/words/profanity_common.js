@@ -1,7 +1,7 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
 // Originally from Splody, used with permission
-/* eslint no-multi-spaces:off, array-bracket-spacing:off */
+/* eslint @stylistic/no-multi-spaces:off, @stylistic/array-bracket-spacing:off */
 
 const assert = require('assert');
 const { max } = Math;

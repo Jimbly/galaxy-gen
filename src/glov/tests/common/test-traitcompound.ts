@@ -1,10 +1,10 @@
 import assert from 'assert';
-import { TypeDef, traitFactoryCreate } from 'glov/common/trait_factory';
+import { traitFactoryCreate, TypeDef } from 'glov/common/trait_factory';
+import type { DataObject } from 'glov/common/types';
 import { has } from 'glov/common/util';
 import 'glov/server/test';
 import { DummyFS } from './dummyfs';
 
-import type { DataObject } from 'glov/common/types';
 
 class BaseClass {
   declare type_id: string;

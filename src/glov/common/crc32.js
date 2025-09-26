@@ -40,3 +40,31 @@ function crc32(buf, len) {
 }
 module.exports = crc32;
 module.exports.crc32 = crc32;
+
+function stringUtf8Encode(str) {
+  let c;
+  let n;
+  let utfbytes = [];
+  // str = str.replace(/\r\n/g, '\n');
+  for (n = 0; n < str.length; ++n) {
+    c = str.charCodeAt(n);
+    if (c < 128) {
+      utfbytes.push(c);
+    } else if ((c > 127) && (c < 2048)) {
+      utfbytes.push((c >> 6) | 192);
+      utfbytes.push((c & 63) | 128);
+    } else {
+      utfbytes.push((c >> 12) | 224);
+      utfbytes.push(((c >> 6) & 63) | 128);
+      utfbytes.push((c & 63) | 128);
+    }
+  }
+  return utfbytes;
+}
+
+// Note: not particularly efficient
+function crc32string(str) {
+  let arr = stringUtf8Encode(str);
+  return crc32(arr, arr.length);
+}
+module.exports.crc32string = crc32string;

@@ -16,11 +16,11 @@ import {
   DISPLAY_NAME_MAX_VISUAL_SIZE,
 } from 'glov/common/net_common';
 import {
-  EMAIL_REGEX,
-  VALID_USER_ID_REGEX,
   deprecate,
+  EMAIL_REGEX,
   empty,
   sanitize,
+  VALID_USER_ID_REGEX,
 } from 'glov/common/util.js';
 import { isProfane, isReserved } from 'glov/common/words/profanity_common.js';
 
@@ -264,7 +264,8 @@ export class DefaultUserWorker extends ChannelWorker {
     if (new_name === old_name) {
       return resp_func('Name unchanged');
     }
-    let unimportant = new_name.toLowerCase() === old_name.toLowerCase();
+    let unimportant = new_name.toLowerCase() === old_name.toLowerCase() ||
+      old_name.match(/^anon\d+$/); // auto-generated anonymous guest user name
     let now = Date.now();
     let last_change = this.getChannelData('private.display_name_change');
     if (last_change && now - last_change < DISPLAY_NAME_WAITING_PERIOD && !unimportant &&
@@ -922,6 +923,8 @@ export class DefaultUserWorker extends ChannelWorker {
   }
 
   handleSetEmail(src, email, resp_func) {
+    // Note: intentionally allowing this even if !this.exists() - this message
+    //  may be sent _before_ the login_external message
     if (!email) {
       return resp_func('Missing email');
     }

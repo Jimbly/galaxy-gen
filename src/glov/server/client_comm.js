@@ -5,18 +5,21 @@ import assert from 'assert';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import {
-  MAX_CLIENT_UPLOAD_SIZE,
   chunkedReceiverCleanup,
   chunkedReceiverFinish,
   chunkedReceiverInit,
   chunkedReceiverOnChunk,
   chunkedReceiverStart,
+  MAX_CLIENT_UPLOAD_SIZE,
 } from 'glov/common/chunked_send';
 import { ERR_NO_USER_ID, ERR_UNAUTHORIZED } from 'glov/common/external_users_common';
 import { isPacket } from 'glov/common/packet';
 import { perfCounterAdd, perfCounterAddValue } from 'glov/common/perfcounters';
 import { unicode_replacement_chars } from 'glov/common/replacement_chars';
-import { logdata } from 'glov/common/util';
+import {
+  EMAIL_REGEX,
+  logdata,
+} from 'glov/common/util';
 import {
   isProfane,
   profanityCommonStartup,
@@ -43,6 +46,14 @@ function defaultUserIdMappingHandler(client_channel, valid_login_data, resp_func
   client_channel.sendChannelMessage(
     'idmapper.idmapper',
     'id_map_get_id',
+    { provider: valid_login_data.provider, provider_id: valid_login_data.external_id },
+    (err, result) => resp_func(err, result?.user_id));
+}
+
+export function defaultUserIdMappingAutoCreateHandler(client_channel, valid_login_data, resp_func) {
+  client_channel.sendChannelMessage(
+    'idmapper.idmapper',
+    'id_map_get_create_id',
     { provider: valid_login_data.provider, provider_id: valid_login_data.external_id },
     (err, result) => resp_func(err, result?.user_id));
 }
@@ -381,7 +392,7 @@ function onLogin(client, data, resp_func) {
   }, handleLoginResponse.bind(null, 'login', client, user_id, resp_func));
 }
 
-function onLoginExternal(client, data, cb) {
+export function onLoginExternal(client, data, cb) {
   let client_channel = client.client_channel;
   assert(client_channel);
 
@@ -408,6 +419,10 @@ function onLoginExternal(client, data, cb) {
     assert(valid_login_data);
     let external_user_id = valid_login_data.external_id;
     assert(external_user_id);
+    let { email, display_name: provider_display_name } = valid_login_data;
+    if (provider_display_name) {
+      display_name = provider_display_name;
+    }
 
     let userIdMappingHandler = getExternalUserIdMapper(provider);
     userIdMappingHandler(client_channel, valid_login_data, (err, user_id, providers_ids) => {
@@ -419,6 +434,15 @@ function onLoginExternal(client, data, cb) {
       }
       if (!user_id) {
         return void cb(ERR_NO_USER_ID);
+      }
+
+      if (EMAIL_REGEX.test(email)) {
+        const channel = `user.${user_id}`;
+        client_channel.sendChannelMessage(channel, 'set_email', email, (err_set_email) => {
+          if (err_set_email) {
+            client_channel.logCtx('error', `unable to set email ${email}: ${err_set_email}`);
+          }
+        });
       }
 
       // Handle the case where this function is not called with extra providers' ids

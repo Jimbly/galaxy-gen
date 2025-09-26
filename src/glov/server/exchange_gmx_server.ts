@@ -7,8 +7,14 @@ import {
   packetReadIntFromBuffer,
   packetSizeInt,
 } from 'glov/common/packet';
+import type { TSMap } from 'glov/common/types';
 import { ridx } from 'glov/common/util';
+import type { // eslint-disable-line no-duplicate-imports
+  AddressInfo,
+  Socket,
+} from 'net';
 import {
+  createGMXDataHandler,
   GMX_CMD_ACK,
   GMX_CMD_PUBLISH,
   GMX_CMD_REGISTER,
@@ -18,14 +24,7 @@ import {
   GMX_ERR_NOT_FOUND,
   GMX_HEADER,
   GMX_OK,
-  createGMXDataHandler,
 } from './exchange_gmx_common';
-
-import type { TSMap } from 'glov/common/types';
-import type { // eslint-disable-line no-duplicate-imports
-  AddressInfo,
-  Socket,
-} from 'net';
 
 const argv = require('minimist')(process.argv.slice(2));
 

@@ -1,4 +1,4 @@
-/* eslint-env browser */
+/* globals localStorage */
 import type { DataObject, TSMap } from 'glov/common/types';
 
 let asset_mappings = typeof window === 'undefined' ?

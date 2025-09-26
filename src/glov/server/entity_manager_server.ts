@@ -2,7 +2,6 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 import assert from 'assert';
-import { asyncEach } from 'glov-async';
 import {
   ActionListResponse,
   ActionMessageParam,
@@ -29,9 +28,10 @@ import {
   ClientHandlerSource,
   DataObject,
   ErrorCallback,
+  isDataObject,
   NetErrorCallback,
   NetResponseCallback,
-  isDataObject,
+  VoidFunc,
 } from 'glov/common/types';
 import {
   callEach,
@@ -39,10 +39,11 @@ import {
   nop,
 } from 'glov/common/util';
 import {
-  entityServerDefaultLoadPlayerEntity,
   entity_field_defs,
+  entityServerDefaultLoadPlayerEntity,
   logCatForEntityActionID,
 } from 'glov/server/entity_base_server';
+import { asyncEach } from 'glov-async';
 import { ChannelWorker } from './channel_worker.js';
 import { ChattableWorker } from './chattable_worker.js';
 import {
@@ -312,8 +313,7 @@ export function entityManagerDefaultLoadEnts(
 }
 
 
-export type SEMClient = SEMClientImpl;
-class SEMClientImpl {
+class SEMClient {
   client_id: ClientID;
   player_uid: string | null;
   ent_id: EntityID;
@@ -345,6 +345,7 @@ class SEMClientImpl {
     this.user_data = data;
   }
 }
+export type { SEMClient };
 
 export type EntCreateFunc<
   Entity extends EntityBaseServer,
@@ -417,7 +418,7 @@ class ServerEntityManagerImpl<
 >
   extends EventEmitter
   implements EntityManager<Entity>
-{ // eslint-disable-line brace-style
+{ // eslint-disable-line @stylistic/brace-style
   worker: Worker;
   field_defs_by_id: (EntityFieldDef|null)[];
 
@@ -583,7 +584,7 @@ class ServerEntityManagerImpl<
   ): void {
     let { id: client_id } = src;
     assert(!this.clients[client_id]);
-    let client = this.clients[client_id] = new SEMClientImpl(client_id);
+    let client = this.clients[client_id] = new SEMClient(client_id);
     this.mem_usage.clients.count++;
     let sub_id = this.worker.getSubscriberId(src.channel_id);
     loadPlayerEntity(this, src, join_payload, client, player_uid, (err, ent_id) => {
@@ -667,6 +668,18 @@ class ServerEntityManagerImpl<
     });
   }
 
+  private flagAsNotInDirtyList(ent: Entity): void {
+    ent.in_dirty_list = false;
+    if (ent.upon_undirty) {
+      // also queue callbacks to get called at the end of the current/next tick
+      this.after_update_cbs = this.after_update_cbs || [];
+      for (let ii = 0; ii < ent.upon_undirty.length; ++ii) {
+        this.after_update_cbs.push(ent.upon_undirty[ii]);
+      }
+      ent.upon_undirty = undefined;
+    }
+  }
+
   deleteEntityFinish(va: VARecord<Entity>, ent: Entity): void {
     let { id: ent_id } = ent;
     let { entities: va_entities } = va;
@@ -675,7 +688,7 @@ class ServerEntityManagerImpl<
       let idx = this.dirty_list.indexOf(ent);
       assert(idx !== -1);
       this.dirty_list.splice(idx, 1);
-      ent.in_dirty_list = false;
+      this.flagAsNotInDirtyList(ent);
     }
     delete sem_entities[ent_id];
     delete va_entities[ent_id];
@@ -918,7 +931,7 @@ class ServerEntityManagerImpl<
   // but dirty ents still pending, likely including one's own entity.
   clientSetVisibleAreaSees(client: SEMClient, new_visible_areas: VAID[], resp_func?: NetErrorCallback<never>): void {
     if (deepEqual(client.visible_area_sees, new_visible_areas)) {
-      return;
+      return resp_func?.(null);
     }
     this.clientSetVisibleAreaSeesInternal(client, new_visible_areas);
     this.sendInitialEntsToClient(client, true, resp_func);
@@ -1336,6 +1349,7 @@ class ServerEntityManagerImpl<
   }
 
   update_per_va!: Partial<Record<VAID, PerVAUpdate>>;
+  after_update_cbs?: VoidFunc[];
 
   private prepareUpdate(ent: Entity): void {
     let vaid = ent.current_vaid;
@@ -1372,8 +1386,8 @@ class ServerEntityManagerImpl<
     }
 
     // Clean up per-tick state
-    ent.in_dirty_list = false;
     ent.last_delete_reason = undefined;
+    this.flagAsNotInDirtyList(ent);
   }
 
   private prepareNonEntUpdates(): void {
@@ -1536,6 +1550,9 @@ class ServerEntityManagerImpl<
       this.unloadUnseenVAs();
     }
     this.flushChangesToDataStores();
+    if (this.after_update_cbs) {
+      callEach(this.after_update_cbs, this.after_update_cbs = undefined);
+    }
     this.update_per_va = null!; // only valid/used inside `tick()`, release references so they can be GC'd
   }
 

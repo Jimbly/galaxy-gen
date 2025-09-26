@@ -15,6 +15,7 @@ import {
   effectsQueue,
 } from './effects';
 import * as glov_engine from './engine';
+import { isOutOfTick } from './engine';
 import {
   framebufferCapture,
   framebufferEnd,
@@ -92,6 +93,8 @@ export function queue(z, fn, ignore_duplicate) {
   if (z === IMMEDIATE) {
     immediate = true;
     z = Z.TRANSITION_FINAL;
+  } else {
+    assert(!isOutOfTick());
   }
 
   for (let ii = 0; ii < transitions.length; ++ii) {

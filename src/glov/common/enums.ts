@@ -39,3 +39,6 @@ export function isValidStringEnumValue<K extends string, V extends string>(
 
 export const CHAT_FLAG_EMOTE = 1;
 export const CHAT_FLAG_USERCHAT = 2; // Only used on client, not communicated
+export const CHAT_USER_FLAGS = CHAT_FLAG_EMOTE|CHAT_FLAG_USERCHAT;
+
+export const CHAT_FLAG_DO_ECHO = 1<<31; // Only used on server, not communicated; do ERR_ECHO checks even if system msg

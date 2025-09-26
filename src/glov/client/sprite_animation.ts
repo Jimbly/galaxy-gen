@@ -28,8 +28,7 @@ type SpriteAnimationData = {
   transition_to?: string;
 };
 
-export type SpriteAnimation = SpriteAnimationImpl;
-class SpriteAnimationImpl {
+class SpriteAnimation {
   frame = 0;
   time = 0;
   frame_time = 0;
@@ -38,9 +37,9 @@ class SpriteAnimationImpl {
   anim_idx = 0;
   data: Partial<Record<string, SpriteAnimationData>>;
 
-  constructor(params: SpriteAnimationParam | SpriteAnimationImpl) {
+  constructor(params: SpriteAnimationParam | SpriteAnimation) {
 
-    if (params instanceof SpriteAnimationImpl) {
+    if (params instanceof SpriteAnimation) {
       this.data = params.data; // already initialized
       if (params.state) {
         this.setState(params.state);
@@ -80,8 +79,8 @@ class SpriteAnimationImpl {
     }
   }
 
-  clone(): SpriteAnimationImpl {
-    return new SpriteAnimationImpl(this);
+  clone(): SpriteAnimation {
+    return new SpriteAnimation(this);
   }
 
   setFrameIndex(anim_idx: number): void {
@@ -94,7 +93,7 @@ class SpriteAnimationImpl {
     }
   }
 
-  setState(state: string, force?: boolean): SpriteAnimationImpl {
+  setState(state: string, force?: boolean): SpriteAnimation {
     if (state === this.state && !force) {
       return this;
     }
@@ -161,11 +160,12 @@ class SpriteAnimationImpl {
     return this.frame;
   }
 }
+export type { SpriteAnimation };
 
 export function spriteAnimationCreate(
   params: SpriteAnimationParam | SpriteAnimation
 ): SpriteAnimation {
-  return new SpriteAnimationImpl(params);
+  return new SpriteAnimation(params);
 }
 exports.createSpriteAnimation = spriteAnimationCreate;
 exports.create = spriteAnimationCreate;

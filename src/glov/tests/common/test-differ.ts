@@ -2,9 +2,9 @@ import assert from 'assert';
 import {
   Diff,
   diffApply,
+  differCreate,
   diffPacketRead,
   diffPacketWrite,
-  differCreate,
 } from 'glov/common/differ';
 import { packetCreate } from 'glov/common/packet';
 import { clone, deepEqual } from 'glov/common/util';

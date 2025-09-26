@@ -1,6 +1,7 @@
-/*eslint global-require:off*/
-// Before requiring anything else that might load from this
-require('glov/client/local_storage.js').setStoragePrefix('galaxy-gen'); // eslint-disable-line import/order
+/* eslint n/global-require:off */
+// eslint-disable-next-line import/order
+const local_storage = require('glov/client/local_storage');
+local_storage.setStoragePrefix('galaxy-gen'); // Before requiring anything else that might load from this
 
 import assert from 'assert';
 import { autoAtlas } from 'glov/client/autoatlas';
@@ -13,13 +14,13 @@ import {
 } from 'glov/client/engine';
 import { copyCanvasToClipboard } from 'glov/client/framebuffer';
 import {
-  KEYS,
   eatAllInput,
   inputClick,
   inputDrag,
   inputTouchMode,
   keyDown,
   keyDownEdge,
+  KEYS,
   mouseMoved,
   mousePos,
   mouseWheel,
@@ -42,17 +43,15 @@ import {
   BLEND_ADDITIVE,
   ShaderParams,
   Sprite,
-  Texture,
   spriteCreate,
   spriteQueueRaw,
+  Texture,
 } from 'glov/client/sprites';
 import {
   textureLoad,
   textureWhite,
 } from 'glov/client/textures';
 import {
-  LINE_CAP_ROUND,
-  LINE_NO_AA,
   buttonText,
   drawCircle,
   drawElipse,
@@ -60,6 +59,8 @@ import {
   drawHollowRect2,
   drawLine,
   drawRect,
+  LINE_CAP_ROUND,
+  LINE_NO_AA,
   panel,
   print,
   scaleSizes,
@@ -83,7 +84,6 @@ import {
 import {
   JSVec2,
   ROVec4,
-  Vec2,
   rovec4,
   unit_vec,
   v2add,
@@ -93,20 +93,21 @@ import {
   v2distSq,
   v2floor,
   v2set,
+  Vec2,
   vec2,
   vec4,
 } from 'glov/common/vmath';
 import {
-  BIOMES,
   Biome,
+  BIOMES,
 } from './biomes';
 import {
+  createGalaxy,
+  distSq,
   Galaxy,
   GalaxyCellAlloced,
   GenGalaxyParams,
   LAYER_STEP,
-  createGalaxy,
-  distSq,
 } from './galaxy';
 import { SimpleSoundscape } from './simple_soundscape';
 import {
@@ -115,14 +116,14 @@ import {
   BIT_SAME_LOOSE,
   NoiseOptsNumberField,
   NoiseOptsRangeField,
-  PLANET_TYPE_NAMES,
   Planet,
-  PlanetOverrideParams,
-  SolarSystem,
+  PLANET_TYPE_NAMES,
   planetCreate,
   planetMapFlatTexture,
   planetMapTexture,
   planetNoiseForType,
+  PlanetOverrideParams,
+  SolarSystem,
   solarSystemCreate,
 } from './solar_system';
 

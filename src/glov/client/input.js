@@ -371,29 +371,51 @@ function letWheelEventThrough(event) {
 
 let event_filter = () => false;
 
-// `filter` returns true if the event should be allowed to propgate to the DOM, and not be sent to the engine
+// `filter` returns true if the event should be allowed to propgate to the DOM,
+// and (for mouse up/down events) not be sent to the engine
 export function inputSetEventFilter(filter) {
   event_filter = filter;
 }
 
-function letEventThrough(event) {
+const EVENT_TO_ENGINE = 1<<0; // Note: only mouse-up/down events get filtered, all events otherwise got to-engine
+const EVENT_TO_DOM = 1<<1;
+const EVENT_TO_BOTH = EVENT_TO_ENGINE | EVENT_TO_DOM;
+function letEventThrough(event, no_dom_if_leaving) {
   if (!event.target || allow_all_events || event.glov_do_not_cancel) {
-    return true;
+    return EVENT_TO_DOM;
   }
   // Going to an input or related element
-  return isInputElement(event.target) ||
-    String(event.target.className).includes('noglov') || event_filter(event);
-  /* Not doing this: this causes legitimate clicks (e.g. when an edit box is focused)
-      to be lost, instead, relying on `allow_all_events` when an HTML UI is active.
-    // or, one of those is focused, and going away from it (e.g. input elem focused, clicking on canvas)
-    document.activeElement && event.target !== document.activeElement &&
+  if (isInputElement(event.target) ||
+    String(event.target.className).includes('noglov') || event_filter(event)) {
+    return EVENT_TO_DOM;
+  }
+
+  /* Note: not preventing engine from handling this case, because it would cause
+     legitimate clicks (e.g. when an edit box is focused)
+     to be lost, instead, relying on `allow_all_events` when a full-screen HTML UI is active.
+  */
+  // or, one of those is focused, and going away from it (e.g. input elem focused, clicking on canvas)
+  // this also allows drag events that started in a text area to function (issue on Electron)
+  if (document.activeElement && event.target !== document.activeElement &&
     (isInputElement(document.activeElement) ||
-      String(document.activeElement.className).includes('noglov'));*/
+      String(document.activeElement.className).includes('noglov'))
+  ) {
+    if (no_dom_if_leaving) {
+      // for mouse down events leaving a focused input element, we do _not_ want
+      // them to go to the DOM, because it will unfocus the input element, which,
+      // if it's the Chat UI, will cause the element the user is trying to click
+      // on to disappear before the click (mouse up) even comes through.
+      return EVENT_TO_ENGINE;
+    } else {
+      return EVENT_TO_BOTH;
+    }
+  }
+  return EVENT_TO_ENGINE;
 }
 
 function ignored(event) {
   // eventlog(event);
-  if (!letEventThrough(event)) {
+  if (!(letEventThrough(event) & EVENT_TO_DOM)) {
     event.preventDefault();
     event.stopPropagation();
   }
@@ -401,14 +423,32 @@ function ignored(event) {
 
 let ctrl_checked = false;
 let unload_protected = false;
+let unload_override = null;
+// cb() returns a string to display a message (actual message is ignored), or false
+//   to *not* block unload, or anything else to block the unload with a message
+export function inputOverrideUnload(cb) {
+  assert(!unload_override || !cb);
+  unload_override = cb;
+}
 function beforeUnload(e) {
-  if (unload_protected && ctrl_checked) {
+  let unload_msg;
+  if (unload_override) {
+    unload_msg = unload_override();
+    if (unload_msg === false) {
+      // do *not* block the unload
+    } else if (!unload_msg) {
+      // no prompt, just block the unload
+      e.preventDefault();
+      return;
+    }
+  }
+  if (unload_protected && ctrl_checked || unload_msg) {
     // Exit pointer lock if the browser didn't do that automatically
     pointerLockExit();
     // Cancel the event
     e.preventDefault();
     // Chrome requires returnValue to be set
-    e.returnValue = 'Are you sure you want to quit?';
+    e.returnValue = unload_msg || 'Are you sure you want to quit?';
   } else {
     engine.releaseCanvas();
   }
@@ -440,7 +480,7 @@ function onKeyUp(event) {
   renderNeeded();
   protectUnload(event.ctrlKey);
   let code = event.keyCode;
-  if (!letEventThrough(event)) {
+  if (!(letEventThrough(event) & EVENT_TO_DOM)) {
     event.stopPropagation();
     event.preventDefault();
   }
@@ -466,11 +506,13 @@ function onKeyUp(event) {
 function onKeyDown(event) {
   protectUnload(event.ctrlKey);
   let code = event.keyCode;
-  let no_stop = letEventThrough(event) ||
+  let no_stop = (letEventThrough(event) & EVENT_TO_DOM) ||
     code >= KEYS.F5 && code <= KEYS.F12 || // Chrome debug hotkeys
+    code === KEYS.F4 && (event.altKey || event.metaKey || event.ctrlKey) || // Windows/Electron close window hotkey
     code === KEYS.I && (event.altKey && event.metaKey || event.ctrlKey && event.shiftKey) || // Safari, alternate Chrome
     code === KEYS.R && event.ctrlKey || // Chrome reload hotkey
-    (code === KEYS.LEFT || code === KEYS.RIGHT) && event.altKey; // forward/back navigation
+    (code === KEYS.LEFT || code === KEYS.RIGHT) && event.altKey || // forward/back navigation
+    event.ctrlKey && code >= KEYS['0'] && code <= KEYS['9']; // Chrome tab switch hotkeys
   if (!no_stop) {
     event.stopPropagation();
     event.preventDefault();
@@ -508,11 +550,11 @@ let last_abs_move = 0;
 let last_abs_move_time = 0;
 let last_move_x = 0;
 let last_move_y = 0;
-function onMouseMove(event, no_stop) {
+function onMouseMove(event, no_stop, no_dom_if_leaving) {
   renderNeeded();
   /// eventlog(event);
   // Don't block mouse button 3, that's the Back button
-  if (!letEventThrough(event) && !no_stop && event.button !== 3) {
+  if (!(letEventThrough(event, no_dom_if_leaving) & EVENT_TO_DOM) && !no_stop && event.button !== 3) {
     event.preventDefault();
     event.stopPropagation();
     if (touch_mode) {
@@ -599,9 +641,9 @@ function onMouseDown(event) {
   if (mouse_log) {
     eventlog(event);
   }
-  onMouseMove(event); // update mouse_pos
+  onMouseMove(event, false, true); // update mouse_pos
   onUserInput();
-  let no_click = letEventThrough(event);
+  let no_click = !(letEventThrough(event, true) & EVENT_TO_ENGINE);
 
   let button = event.button;
   mouse_down[button] = true;
@@ -643,7 +685,7 @@ function onMouseUp(event) {
     eventlog(event);
   }
   onMouseMove(event); // update mouse_pos
-  let no_click = letEventThrough(event);
+  let no_click = !(letEventThrough(event) & EVENT_TO_ENGINE);
   let button = event.button;
   if (mouse_down[button]) {
     let touch_id = `m${button}`;
@@ -673,7 +715,8 @@ function onWheel(event) {
   mouse_moved = saved;
   let normalized = normalizeWheel(event);
   wheel_events.push({
-    pos: [event.pageX, event.pageY],
+    // Note: must use `mouse_pos`, not `event.pageX`, if we're pointer locked, the position is updated
+    pos: [mouse_pos[0], mouse_pos[1]],
     delta: -normalized.pixel_y/100,
     dispatched: false,
   });
@@ -693,11 +736,11 @@ function onTouchChange(event) {
   // instead, but this works well enough.
   onUserInput();
   if (!touch_mode) {
-    local_storage.set('touch_mode', true);
+    local_storage.setJSON('touch_mode', true);
     touch_mode = true;
   }
   if (pad_mode) {
-    local_storage.set('pad_mode', false);
+    local_storage.setJSON('pad_mode', false);
     pad_mode = false;
   }
   if (event.cancelable !== false) {
@@ -848,7 +891,9 @@ export function startup(_canvas, params) {
   window.addEventListener('click', ignored, false);
   //window.addEventListener('click', eventlog, false);
   window.addEventListener('contextmenu', ignored, false);
-  window.addEventListener('mousemove', onMouseMove, false);
+  window.addEventListener('mousemove', function (event) {
+    onMouseMove(event);
+  }, false);
   window.addEventListener('mousedown', onMouseDown, false);
   window.addEventListener('mouseup', onMouseUp, false);
   if (window.WheelEvent) {
@@ -893,7 +938,7 @@ function updatePadState(gpd, ps, b, padcode) {
     ps[padcode] = DOWN_EDGE;
     onUserInput();
     if (touch_mode) {
-      local_storage.set('touch_mode', false);
+      local_storage.setJSON('touch_mode', false);
       touch_mode = false;
     }
     if (!pad_mode) {
@@ -1145,6 +1190,30 @@ export function eatAllInput(skip_mouse) {
 
 export function eatAllKeyboardInput() {
   eatAllInput(true);
+}
+
+// Eats all regular keyboard input, leaving special things like alt/tab/esc/F1 alone,
+// but suppressing all hotkeys / in_event_cbs until the actual edit box
+export function inputEatForEditBoxEarly() {
+  for (let code in key_state_new) {
+    code = Number(code);
+    if (code >= KEYS.SPACE && code <= KEYS.NUMPAD_DIVIDE) {
+      let ks = key_state_new[code];
+      if (ks.state === UP) {
+        key_state_new[code] = null;
+        delete key_state_new[code];
+      } else {
+        ks.up_edge = 0;
+        ks.down_edge = 0;
+        ks.down_time = 0;
+      }
+    }
+  }
+  input_eaten_kb = true;
+}
+
+export function inputEatForEditBoxLate() {
+  input_eaten_kb = false;
 }
 
 // returns position mapped to current camera view
@@ -1583,7 +1652,9 @@ export function mouseDownEdge(param) {
 // area - used to catch focus leaving an edit box without wanting to do what
 // a click would normally do.
 export function mouseConsumeClicks(param) {
-  if (no_active_touches) {
+  // skipping when pointerLocked because when we get locked between frames, this will kill the
+  // (persistent) pointer-locked "touch"'s position
+  if (no_active_touches || pointerLocked()) {
     return;
   }
   param = param || {};

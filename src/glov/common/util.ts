@@ -6,7 +6,7 @@ import assert from 'assert';
 import type { DataObject, ErrorCallback } from './types';
 import type { Vec2 } from './vmath';
 
-const { PI, abs, floor, min, max, random, round, pow, sqrt } = Math;
+const { PI, abs, floor, min, max, random, round, pow, sin, sqrt } = Math;
 const TWO_PI = PI * 2;
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,14 +43,59 @@ export function easeInOut(v: number, a: number): number {
   let va = pow(v, a);
   return va / (va + pow(1 - v, a));
 }
-
 export function easeIn(v: number, a: number): number {
   return 2 * easeInOut(0.5 * v, a);
 }
-
 export function easeOut(v: number, a: number): number {
   return 2 * easeInOut(0.5 + 0.5 * v, a) - 1;
 }
+
+// Extra easing types from pixijs-userland/animate - MIT Licensed
+// Exponential ease
+export function tweenExpoIn(v: number): number {
+  return (v === 0 ? 0 : pow(2, 10 * v - 10));
+}
+export function tweenExpoOut(v: number): number {
+  return (v === 1 ? 1 : 1 - pow(2, -10 * v));
+}
+export function tweenExpoInOut(v: number): number {
+  return v === 0 ? 0 : v === 1 ? 1 : v < 0.5 ? 0.5 * pow(2, 20 * v - 10) : 1 - 0.5 * pow(2, -20 * v + 10);
+}
+
+// Elastic ease - elastic back and forth a bit on the eased end
+export function tweenElasticIn(v: number): number {
+  return sin(13 * (PI / 2) * v) * pow(2, 10 * (v - 1));
+}
+export function tweenElasticOut(v: number): number {
+  return sin(-13 * (PI / 2) * (v + 1)) * pow(2, -10 * v) + 1;
+}
+export function tweenElasticInOut(v: number): number {
+  return v < 0.5 ?
+    0.5 * sin(13 * (PI / 2) * (2 * v)) * pow(2, 10 * (2 * v - 1)) :
+    0.5 * (sin(-13 * (PI / 2) * (2 * v - 1 + 1)) * pow(2, -10 * (2 * v - 1)) + 2);
+}
+// Bounce ease - bouncing back and forth a bit on the eased end - only tweanBounceOut feels useful
+export function tweenBounceOut(v: number): number {
+  if (v < 1 / 2.75) {
+    return 7.5625 * v * v;
+  } else if (v < 2 / 2.75) {
+    v -= 1.5 / 2.75;
+    return 7.5625 * v * v + 0.75;
+  } else if (v < 2.5 / 2.75) {
+    v -= 2.25 / 2.75;
+    return 7.5625 * v * v + 0.9375;
+  } else {
+    v -= 2.625 / 2.75;
+    return 7.5625 * v * v + 0.984375;
+  }
+}
+export function tweenBounceIn(v: number): number {
+  return 1 - tweenBounceOut(1 - v);
+}
+export function tweenBounceInOut(v: number): number {
+  return (v < 0.5 ? (1 - tweenBounceOut(1 - 2 * v)) / 2 : (1 + tweenBounceOut(2 * v - 1)) / 2);
+}
+
 
 export function clone<T>(obj: T): T {
   if (!obj) { // handle undefined
@@ -155,6 +200,35 @@ export function deepAdd(dest: DataObject, src: DataObject): void {
       dest[key] = (dest_value || 0) + value;
     }
   }
+}
+
+// Creates a deep clone of B, but attempts to preserve shared references from A
+// wherever structurally identical.
+// Expected usage: A is a previous snapshot of B, B has been modified, makes a
+// new snapshot that takes minimal additional memory.
+export function refclone<T>(a: T, b: T): T {
+  if (typeof b !== 'object' || !b) {
+    // primitive type
+    return b;
+  }
+
+  if (deepEqual(a, b)) {
+    return a;
+  }
+
+  if (Array.isArray(b)) {
+    let result: unknown[] = [];
+    for (let i = 0; i < b.length; i++) {
+      result[i] = refclone(a && (a as unknown[])[i], (b as unknown[])[i]);
+    }
+    return result as T;
+  }
+
+  let result: DataObject = {};
+  for (let key in b) {
+    result[key] = refclone(a && (a as DataObject)[key], (b as DataObject)[key]);
+  }
+  return result as T;
 }
 
 export function clamp(v: number, mn: number, mx: number): number {
@@ -304,7 +378,7 @@ export function lineLineIntersect(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): boole
 //     o.__proto__ = p; // eslint-disable-line no-proto
 //     return o;
 //   };
-// eslint-disable-next-line @typescript-eslint/ban-types
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export function inherits(ctor: Constructor | Function, superCtor: Constructor | Function): void {
   // From Node.js
   assert(typeof superCtor === 'function');
@@ -376,9 +450,9 @@ export function toArray(array_like: Float32Array | Int32Array | Uint8Array): num
   return Array.prototype.slice.call(array_like);
 }
 
-export function arrayToSet(array: number[]): Partial<Record<number, true>>;
-export function arrayToSet(array: string[]): Partial<Record<string, true>>;
-export function arrayToSet<T extends string | number>(array: T[]): Partial<Record<T, true>> {
+export function arrayToSet(array: Readonly<number[]>): Partial<Record<number, true>>;
+export function arrayToSet(array: Readonly<string[]>): Partial<Record<string, true>>;
+export function arrayToSet<T extends string | number>(array: Readonly<T[]>): Partial<Record<T, true>> {
   let ret = Object.create(null);
   for (let ii = 0; ii < array.length; ++ii) {
     ret[array[ii]] = true;
@@ -432,6 +506,10 @@ export function sanitize(str: string): string {
 
 export function plural(number: number, label: string): string {
   return `${label}${number === 1 ? '' : 's'}`;
+}
+
+export function capitalize(s: string): string {
+  return s[0].toUpperCase() + s.slice(1);
 }
 
 export function secondsToFriendlyString(seconds: number, force_include_seconds?: boolean): string {
@@ -623,16 +701,16 @@ export function callbackify(f: (...args: any[]) => Promise<unknown>): (...args: 
     let cb = arguments[arguments.length - 1]; // eslint-disable-line prefer-rest-params
     assert.equal(typeof cb, 'function');
     let args = Array.prototype.slice.call(arguments, 0, -1); // eslint-disable-line prefer-rest-params
-    let p = f.apply(this, args); // eslint-disable-line @typescript-eslint/no-invalid-this
+    let p = f.apply(this, args);
     p.then((result) => {
       if (cb) {
         // escape promise so it doesn't catch and re-throw the error!
-        nextTick(cb.bind(this, null, result)); // eslint-disable-line @typescript-eslint/no-invalid-this
+        nextTick(cb.bind(this, null, result));
         cb = null;
       }
     }).catch((err) => {
       if (cb) {
-        nextTick(cb.bind(this, err)); // eslint-disable-line @typescript-eslint/no-invalid-this
+        nextTick(cb.bind(this, err));
         cb = null;
       }
     });
@@ -644,7 +722,7 @@ export function callbackify(f: (...args: any[]) => Promise<unknown>): (...args: 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function unpromisify<P extends any[], T=never>(f: (this: T, ...args: P) => void): (this: T, ...args: P) => void {
   return function (this: T): void {
-  // eslint-disable-next-line @typescript-eslint/no-invalid-this, prefer-rest-params, @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line prefer-rest-params, @typescript-eslint/no-explicit-any
     nextTick((f as any).apply.bind(f, this, arguments));
   };
 }
@@ -751,7 +829,6 @@ export function asyncDictionaryGet<T>(
     in_flight: [cb],
   };
   get(key, function (value: T) {
-    assert(elem); // assert() is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
     elem.value = value;
     callEach(elem.in_flight, elem.in_flight = undefined, value);
   });

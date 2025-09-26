@@ -157,7 +157,7 @@ export function startup(params) {
 
   if (!exchange) {
     if (server_config.exchange_providers) {
-      // eslint-disable-next-line global-require, import/no-dynamic-require
+      // eslint-disable-next-line import/no-dynamic-require, n/global-require
       server_config.exchange_providers.map((provider) => require(path.join('../..', provider)));
     }
     if (server_config.exchanges) {

@@ -5,8 +5,8 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { inspect } from 'util';
-import { asyncEachSeries } from 'glov-async';
 import { ridx } from 'glov/common/util';
+import { asyncEachSeries } from 'glov-async';
 import * as winston from 'winston';
 import { format } from 'winston';
 import 'winston-daily-rotate-file';
@@ -16,7 +16,7 @@ import { processUID, serverConfig } from './server_config';
 const argv = require('minimist')(process.argv.slice(2));
 let fadvise;
 try {
-  fadvise = require('fadvise'); // eslint-disable-line global-require
+  fadvise = require('fadvise'); // eslint-disable-line n/global-require
 } catch (e) {
   fadvise = null;
 }

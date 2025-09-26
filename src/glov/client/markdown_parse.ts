@@ -2,8 +2,8 @@ import SimpleMarkdown, {
   ParserRule,
   ParserRules,
 } from 'glov/client/simple-markdown';
-import { has } from 'glov/common/util';
 import type { TSMap } from 'glov/common/types';
+import { has } from 'glov/common/util';
 
 // Example from docs
 // let underline_rule = {

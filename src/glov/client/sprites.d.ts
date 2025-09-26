@@ -1,22 +1,24 @@
 /* globals HTMLCanvasElement, HTMLImageElement */
 
 // TODO: move when converted to TypeScript
-import type { BUCKET_ALPHA, BUCKET_DECAL, BUCKET_OPAQUE } from './dyn_geom';
-import type { Box } from './geom_types';
-// TODO: move when converted to TypeScript
 import type { shaderCreate } from 'glov/client/shaders';
 type Shader = ReturnType<typeof shaderCreate>;
 import type { TSMap, UnimplementedData, VoidFunc } from 'glov/common/types';
 import type { ROVec1, ROVec2, ROVec3, ROVec4 } from 'glov/common/vmath';
+// TODO: move when converted to TypeScript
+import type { BUCKET_ALPHA, BUCKET_DECAL, BUCKET_OPAQUE } from './dyn_geom';
+import type { Box } from './geom_types';
 
 export enum BlendMode {
   BLEND_ALPHA = 0,
   BLEND_ADDITIVE = 1,
   BLEND_PREMULALPHA = 2,
+  BLEND_MULTIPLY = 3,
 }
 export const BLEND_ALPHA = 0;
 export const BLEND_ADDITIVE = 1;
 export const BLEND_PREMULALPHA = 2;
+export const BLEND_MULTIPLY = 3;
 
 export type HTMLImage = HTMLCanvasElement | HTMLImageElement;
 export interface Texture {
@@ -34,6 +36,7 @@ export interface Texture {
     data: Uint8Array | Uint8ClampedArray | HTMLImage,
     per_mipmap_data?: HTMLImage[]
   ): void;
+  setSamplerState(opts: TextureOptions): void;
 }
 
 export type ShaderParams = TSMap<number[]|ROVec1|ROVec2|ROVec3|ROVec4>;
@@ -81,6 +84,7 @@ export interface SpriteDraw3DParams {
   vshader?: Shader;
 }
 export interface Sprite {
+  readonly uid: number;
   uidata?: SpriteUIData;
   uvs: ROVec4;
   origin: ROVec2;
@@ -98,6 +102,7 @@ export interface Sprite {
   lazyLoad(): number;
   getAspect(): number;
   withOrigin(new_origin: ROVec2): Sprite;
+  withSamplerState(opts: TextureOptions): Sprite;
   onReInit(cb: VoidFunc): void;
   doReInit(): void;
 }

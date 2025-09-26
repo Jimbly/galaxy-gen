@@ -1,35 +1,40 @@
 // Portions Copyright 2023 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
-/* eslint-env browser */
+/* globals localStorage, alert */
 
 export const FRIEND_CAT_FRIENDS = 'friends';
 export const FRIEND_CAT_GLOBAL = 'global';
+export const FRIEND_CAT_JUSTME = 'justme';
 
 import assert from 'assert';
-import { CmdRespFunc } from 'glov/common/cmd_parse';
+import type { CmdRespFunc } from 'glov/common/cmd_parse';
 import { executeWithRetry } from 'glov/common/execute_with_retry';
-import {
-  asyncDictionaryGet,
-  nop,
-} from 'glov/common/util';
-import { cmd_parse } from './cmds';
-import { fetch } from './fetch';
-
 import type {
   ErrorCallback,
   NetErrorCallback,
   TSMap,
   VoidFunc,
 } from 'glov/common/types';
+import {
+  asyncDictionaryGet,
+  callEach,
+  clone,
+  nop,
+  plural,
+} from 'glov/common/util';
+import { MODE_DEVELOPMENT } from './client_config';
+import { cmd_parse } from './cmds';
+import { errorReportSetDetails } from './error_report';
+import { fetch } from './fetch';
+import {
+  score_user_provider_auto_web,
+} from './score_provider_autoweb';
 
-const PLAYER_NAME_KEY = 'ld.player_name';
-const USERID_KEY = 'score.userid';
-const FRIENDS_KEY = 'score.friends';
+const USERID_CACHE_KEY = 'score.idcache';
 const FRIEND_SET_CACHE_KEY = 'score.fsc';
 const SCORE_REFRESH_TIME = 5*60*1000; // also refreshes if we submit a new score, or forceRefreshScores() is called
 const SUBMIT_RATELIMIT = 5000; // Only kicks in if two are in-flight at the same time
 
-let player_name: string = '';
 let lsd = (function (): Partial<Record<string, string>> {
   try {
     localStorage.setItem('test', 'test');
@@ -40,34 +45,46 @@ let lsd = (function (): Partial<Record<string, string>> {
   }
 }());
 
-if (lsd[PLAYER_NAME_KEY]) {
-  player_name = lsd[PLAYER_NAME_KEY]!;
+export function scoreLSD(): Partial<Record<string, string>> {
+  return lsd;
 }
 
-let friend_cats: TSMap<string[]> = {};
-let friends_by_code: string[] = [];
-if (lsd[FRIENDS_KEY]) {
-  try {
-    friends_by_code = JSON.parse(lsd[FRIENDS_KEY]!) as string[];
-  } catch (e) {
-    // ignored
+export function scoreLSDParse<T>(key: string): T | undefined {
+  if (lsd[key]) {
+    try {
+      return JSON.parse(lsd[key]!) as T;
+    } catch (e) {
+      // ignored
+    }
   }
+  return undefined;
 }
-friend_cats.friends = friends_by_code;
+
+// Map from FRIEND_CAT_FRIENDS and user-specified categories to arrays of friend codes/u=user_ids
+let friend_cats: TSMap<string[]> = {};
 
 let score_host = 'http://scores.dashingstrike.com';
 let score_use_staging = false;
-if (window.location.host.indexOf('localhost') !== -1 ||
+if (MODE_DEVELOPMENT ||
   window.location.host.indexOf('staging') !== -1/* ||
   window.location.host.indexOf('pink') !== -1*/
 ) {
   score_host = 'http://scores.staging.dashingstrike.com';
+  // score_host = 'http://localhost:4005';
   score_use_staging = true;
 }
 if (window.location.href.startsWith('https://')) {
   score_host = score_host.replace(/^http:/, 'https:');
 }
-const friends_host = score_host.replace('scores.', 'friends.');
+const friends_host = score_host.replace('scores.', 'friends.').replace(':4005', ':4023');
+const auth_host = score_host.replace('scores.', 'auth.').replace(':4005', ':4024');
+export function scoreGetAuthHost(): string {
+  return auth_host;
+}
+export function scoreGetScoreHost(): string {
+  return score_host;
+}
+let player_name = '';
 export function scoreGetPlayerName(): string {
   return player_name;
 }
@@ -75,61 +92,146 @@ export function scoreIsStaging(): boolean {
   return score_use_staging;
 }
 
+let time_async_start = 0;
+let time_async_finish = 0;
+let likely_offline = false;
+export function scoreLikelyOffline(): boolean {
+  // Assumes this is called per-frame to keep state updated
+  if (!time_async_start) {
+    // no data, assume online
+    return likely_offline;
+  }
+  if (time_async_finish > time_async_start) {
+    // known online
+    likely_offline = false;
+  } else if (time_async_start < Date.now() - 2000) {
+    // nothing in 2 seconds, assume offline until we get a response
+    likely_offline = true;
+  } // else, use whatever state we last saw
+  return likely_offline;
+}
+
 function fetchJSON2<T>(url: string, cb: (err: string | undefined, o: T) => void): void {
+  time_async_start = Date.now();
   fetch({
     url: url,
     response_type: 'json',
   }, (err: string | undefined, resp: unknown) => {
+    if (!err) {
+      time_async_finish = Date.now();
+      likely_offline = false;
+    }
     cb(err, resp as T);
   });
 }
 
-function fetchJSON2Timeout<T>(url: string, timeout: number, cb: (err: string | undefined, o: T) => void): void {
+export function fetchJSON2Timeout<T>(url: string, timeout: number, cb: (err: string | undefined, o: T) => void): void {
+  time_async_start = Date.now();
   fetch({
     url: url,
     response_type: 'json',
     timeout,
   }, (err: string | undefined, resp: unknown) => {
+    if (!err) {
+      time_async_finish = Date.now();
+      likely_offline = false;
+    }
     cb(err, resp as T);
   });
 }
 
+export type ScoreUserInfo = {
+  user_id: string;
+  display_name: string | null;
+  friends: string[]; // array of `FriendCode` or `u=user_id` strings; mutable by provider if changed
+};
+
+export type ScoreUserProvider = {
+  provider_id: string;
+  // getUserID() - called once
+  getAccountInfo(cb: ErrorCallback<ScoreUserInfo, string>): void;
+  // getAuthToken() - called on every request (callee does caching/expiration)
+  getAuthToken(cb: ErrorCallback<string | null, string>): void;
+  // setName() - optional if provider allows renames to come from apps
+  setName: null | ((name: string) => void);
+};
+let score_user_provider = score_user_provider_auto_web;
+assert(score_user_provider);
+let has_requested_user = false;
+export function scoreUserProviderSet(provider: ScoreUserProvider): void {
+  assert(!has_requested_user);
+  score_user_provider = provider;
+}
+
 
 let allocated_user_id: string | null = null;
+export function scoreDebugUserID(): string | null {
+  return allocated_user_id;
+}
 type UserIDCB = (user_id: string) => void;
-type UserAllocResponse = { userid: string };
+type ScoreIDCache = ScoreUserInfo & {
+  provider_id: string;
+};
 function withUserID(f: UserIDCB): void {
-  if (allocated_user_id === null && lsd[USERID_KEY]) {
-    allocated_user_id = lsd[USERID_KEY]!;
-    console.log(`Using existing ScoreAPI UserID: "${allocated_user_id}"`);
-  }
+  has_requested_user = true;
   if (allocated_user_id !== null) {
     return f(allocated_user_id);
   }
 
   asyncDictionaryGet<string>('score_user_id', 'the', function (key_the_ignored: string, cb: (value: string) => void) {
-    let url = `${score_host}/api/useralloc`;
-    function fetchUserID(next: ErrorCallback<string, string>): void {
-      fetchJSON2Timeout<UserAllocResponse>(url, 20000, function (err: string | undefined, res: UserAllocResponse) {
-        if (err) {
-          return next(err);
-        }
-        assert(res);
-        assert(res.userid);
-        assert.equal(typeof res.userid, 'string');
-        next(null, res.userid);
-      });
-    }
-    function done(err?: string | null, result?: string | null): void {
+
+    function done(err?: string | null, result?: ScoreUserInfo | null): void {
       assert(!err);
       assert(result);
-      allocated_user_id = result;
-      lsd[USERID_KEY] = result;
-      console.log(`Allocated new ScoreAPI UserID: "${allocated_user_id}"`);
+      assert(result.user_id);
+      assert(result.friends); // possibly empty array, though
+      allocated_user_id = result.user_id;
+      player_name = result.display_name || '';
+      errorReportSetDetails('score_id', allocated_user_id);
+      errorReportSetDetails('score_name', player_name);
+
+      friend_cats[FRIEND_CAT_FRIENDS] = result.friends;
+      let new_user = false;
+      let need_rename = false;
+
+      let old_cache = scoreLSDParse<ScoreIDCache>(USERID_CACHE_KEY) || null;
+      if (old_cache) {
+        let id_changed = old_cache.user_id !== result.user_id;
+        if (id_changed) {
+          new_user = true;
+        } else {
+          need_rename = Boolean(old_cache.display_name !== result.display_name);
+        }
+      } else {
+        new_user = true;
+      }
+      if (new_user) {
+        // new user on this device
+        // clear per-level score cache if user ID has changed
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        scoreClearScoreCache();
+        // could also submit a rename here, but it causes a spurious rename for _every_ new user, which 400s
+      }
+      let cache_data: ScoreIDCache = {
+        ...result,
+        provider_id: score_user_provider.provider_id,
+      };
+      lsd[USERID_CACHE_KEY] = JSON.stringify(cache_data);
+      console.log(`Using ScoreAPI UserID: "${allocated_user_id}", display name: "${player_name}"`);
       cb(allocated_user_id);
+
+      if (need_rename && result.display_name) {
+        // Send current name to the server
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        scoreUpdatePlayerNameInternal(player_name, function (err: string | null) {
+          if (err) {
+            console.error('Error updating score server with new name:', err);
+          }
+        });
+      }
     }
-    executeWithRetry<string, string>(
-      fetchUserID, {
+    executeWithRetry<ScoreUserInfo, string>(
+      score_user_provider.getAccountInfo.bind(score_user_provider), {
         max_retries: Infinity,
         inc_backoff_duration: 250,
         max_backoff: 30000,
@@ -142,6 +244,30 @@ function withUserID(f: UserIDCB): void {
 
 export function scoreWithUserID(cb: UserIDCB): void {
   withUserID(cb);
+}
+
+let auth_in_flight: null | ((auth: string) => void)[] = null;
+function withAuthToken(cb: (auth: string) => void): void {
+  if (auth_in_flight) {
+    auth_in_flight.push(cb);
+    return;
+  }
+  auth_in_flight = [cb];
+  function done(err?: string | null, result?: string | null): void {
+    assert(!err);
+    assert(result !== undefined);
+    let auth_param = result ? `&auth=${result}` : '';
+    callEach(auth_in_flight, auth_in_flight = null, auth_param);
+  }
+  executeWithRetry<string, string>(
+    score_user_provider.getAuthToken.bind(score_user_provider), {
+      max_retries: Infinity,
+      inc_backoff_duration: 250,
+      max_backoff: 30000,
+      log_prefix: 'ScoreAPI Auth token fetch',
+    },
+    done,
+  );
 }
 
 type FriendSetResponse = { friendset: string };
@@ -191,21 +317,37 @@ if (lsd[FRIEND_SET_CACHE_KEY]) {
     // ignored
   }
 }
-function withFriendSet(friend_cat: string, cb: (friend_set_code: string) => void): void {
+let friend_set_dict_name = 'friend_set_code';
+function friendSetCacheWipe(): void {
+  friend_set_code_cache = {};
+  friend_set_code_persistent_cache = {};
+  delete lsd[FRIEND_SET_CACHE_KEY];
+  friend_set_dict_name += '2';
+}
+function providerFriendToParam(str: string): string {
+  if (str.startsWith('u=')) {
+    return str;
+  }
+  return `f=${str}`;
+}
+function withFriendSet(friend_cat: string, cb: (friend_set_code: string | null) => void): void {
   assert(allocated_user_id);
   if (friend_cat === FRIEND_CAT_GLOBAL) {
     // When fetching the global high score list, provide the user's friends' friend_set so
     //   they can be highlighted (but not filtered)
     friend_cat = FRIEND_CAT_FRIENDS;
   }
-  let friend_codes = (friend_cats[friend_cat] || []).map((a) => `f=${a}`);
+  let friend_codes = (friend_cats[friend_cat] || []).map(providerFriendToParam);
+  if (!friend_codes.length) {
+    return cb(null);
+  }
   friend_codes.push(`u=${allocated_user_id}`);
   friend_codes.sort();
   let friend_set_key = friend_codes.join('&');
   if (friend_set_code_cache[friend_set_key]) {
     return cb(friend_set_code_cache[friend_set_key]!);
   }
-  asyncDictionaryGet('friend_set_code', friend_set_key, friendSetFetch, function (friend_set_code: string) {
+  asyncDictionaryGet(friend_set_dict_name, friend_set_key, friendSetFetch, function (friend_set_code: string) {
     friend_set_code_cache[friend_set_key] = friend_set_code;
     friend_set_code_persistent_cache[friend_cat] = [friend_set_key, friend_set_code];
     lsd[FRIEND_SET_CACHE_KEY] = JSON.stringify(friend_set_code_persistent_cache);
@@ -245,23 +387,24 @@ export type ScoreSystemParam<ScoreType> = {
   num_names?: number;
   histogram?: boolean; // also fetch histogram data
 };
-type HighScoreListEntryRaw = {
+export type HighScoreListEntryRaw = {
   n?: string | string[]; // representative list of user display names
   s: number; // score value
   c?: number; // count of users at this score
   r?: number; // rank, if not implicit
 };
-type HighScoreHistogramRaw = {
+export type HighScoreHistogramRaw = {
   s: number; // start
   b: number; // bucket_size
   h: number[];
 };
-type HighScoreListRaw = {
+export type HighScoreListRaw = {
   total: number;
   my_rank?: number;
   my_score?: number;
   list: HighScoreListEntryRaw[];
   histo?: HighScoreHistogramRaw;
+  overloaded?: boolean;
 };
 export type HighScoreListEntry<ScoreType> = {
   names: string[];
@@ -281,6 +424,7 @@ export type HighScoreList<ScoreType> = {
   my_score?: number;
   list: HighScoreListEntry<ScoreType>[];
   histogram?: HighScoreListHistogram;
+  overloaded: boolean;
 };
 class ScoreSystemImpl<ScoreType> {
   score_to_value: (s: ScoreType) => number;
@@ -329,7 +473,7 @@ class ScoreSystemImpl<ScoreType> {
           ld.name = String(level_idx);
         }
       }
-      this.getScore(level_idx); // fetch .local_score for updatePlayerName to take advantage of
+      this.loadLocalScore(level_idx); // fetch .local_score for updatePlayerName to take advantage of
     }
   }
 
@@ -360,6 +504,7 @@ class ScoreSystemImpl<ScoreType> {
       my_rank: scores.my_rank,
       my_score: scores.my_score,
       list: [],
+      overloaded: scores.overloaded || false,
     };
     let rank = 1;
     for (let ii = 0; ii < scores.list.length; ++ii) {
@@ -388,7 +533,8 @@ class ScoreSystemImpl<ScoreType> {
       }
       let names_str = names.join(', ');
       if (count > names.length) {
-        names_str += `${names_str ? ', ' : ''}${count - names.length} ${names.length ? 'others' : 'users'}`;
+        let remaining = count - names.length;
+        names_str += `${names_str ? ', ' : ''}${remaining} ${plural(remaining, names.length ? 'other' : 'user')}`;
       }
       ret.list.push({
         score: this.value_to_score(entry.s),
@@ -423,8 +569,112 @@ class ScoreSystemImpl<ScoreType> {
 
     bc.high_scores = ret;
   }
+
+  getHighScoresOverride(level_idx: number, scores: HighScoreListRaw): HighScoreList<ScoreType> | null {
+    // Fetch "high scores" for just me to find my high score as known by the server
+    let my_high_score = this.getHighScores(level_idx, FRIEND_CAT_JUSTME);
+    let my_score = my_high_score?.my_score || undefined;
+    let my_name = scoreGetPlayerName();
+
+    if (!my_score) {
+      // also try local storage if it's there
+      let ld = this.level_defs[level_idx];
+      if (ld.local_score) {
+        my_score = this.score_to_value(ld.local_score);
+      }
+    }
+
+    let ret: HighScoreList<ScoreType> = {
+      total: scores.total,
+      my_rank: undefined,
+      my_score,
+      list: [],
+      overloaded: false,
+    };
+    if (my_score !== undefined) {
+      ret.total++;
+    }
+    let did_my_score = false;
+    let rank = 1;
+    let rank_offs = 0;
+    for (let ii = 0; ii < scores.list.length; ++ii) {
+      let entry = scores.list[ii];
+      let names = entry.n || [];
+      if (typeof names === 'string') {
+        names = [names];
+      } else {
+        names = names.slice(0);
+      }
+      let count = entry.c || 1;
+      if (!did_my_score && my_score && (this.asc && entry.s > my_score || !this.asc && entry.s < my_score)) {
+        // we passed my score, add an entry
+        ret.my_rank = rank;
+        ret.list.push({
+          score: this.value_to_score(my_score),
+          names: [my_name],
+          names_str: my_name,
+          count: 1,
+          rank,
+        });
+        rank_offs++;
+        rank++;
+        did_my_score = true;
+      }
+      let this_rank = (entry.r ? entry.r + rank_offs : 0) || rank;
+      if (entry.s === my_score) {
+        // Add own name is in list
+        names.unshift(my_name);
+        count++;
+        rank_offs++;
+        ret.my_rank = this_rank;
+        did_my_score = true;
+      }
+      if (!names.length) {
+        // If unknown names, add at least one "Anonymous" to the list, so no entry is name-less
+        names.push('Anonymous');
+      }
+      let names_str = names.join(', ');
+      if (count > names.length) {
+        let remaining = count - names.length;
+        names_str += `${names_str ? ', ' : ''}${remaining} ${plural(remaining, names.length ? 'other' : 'user')}`;
+      }
+      ret.list.push({
+        score: this.value_to_score(entry.s),
+        names,
+        names_str,
+        count,
+        rank: this_rank,
+      });
+      rank = this_rank + count;
+    }
+
+    if (!did_my_score && my_score) {
+      ret.my_rank = rank;
+      ret.list.push({
+        score: this.value_to_score(my_score),
+        names: [my_name],
+        names_str: my_name,
+        count: 1,
+        rank,
+      });
+    }
+
+    let { histo } = scores;
+    if (histo) {
+      let histogram: HighScoreListHistogram = {
+        start: histo.s,
+        bucket_size: histo.b,
+        counts: histo.h,
+      };
+      ret.histogram = histogram;
+    }
+
+    return ret;
+  }
+
+
   last_friend_cat = FRIEND_CAT_GLOBAL;
-  private makeURL(api: string, ld: LevelDef, friend_cat: string, friend_set_code: string): string {
+  private makeURL(api: string, ld: LevelDef, friend_cat: string, friend_set_code: string | null): string {
     assert(allocated_user_id);
     let url = `${score_host}/api/${api}?v2&key=${this.SCORE_KEY}.${ld.name}&userid=${allocated_user_id}`;
     if (this.rel) {
@@ -432,9 +682,9 @@ class ScoreSystemImpl<ScoreType> {
     }
     if (friend_set_code) {
       url += `&fs=${friend_set_code}`;
-      if (friend_cat !== FRIEND_CAT_GLOBAL) {
-        url += '&of';
-      }
+    }
+    if (friend_cat !== FRIEND_CAT_GLOBAL) {
+      url += '&of';
     }
     if (this.num_names !== 3) {
       url += `&num_names=${this.num_names}`;
@@ -474,7 +724,7 @@ class ScoreSystemImpl<ScoreType> {
     //   score, are using `rel`, and expect to have a remotely saved score
     //   for our user ID (shouldn't actually ever happen on web)
     withUserID(() => {
-      withFriendSet(friend_cat, (friend_set_code: string) => {
+      withFriendSet(friend_cat, (friend_set_code: string | null) => {
         let url = this.makeURL('scoreget', ld, friend_cat, friend_set_code);
 
         let my_score = ld.local_score ? this.score_to_value(ld.local_score) : null;
@@ -485,6 +735,14 @@ class ScoreSystemImpl<ScoreType> {
           url,
           (err: string | undefined, scores: HighScoreListRaw) => {
             bc.refresh_in_flight = false;
+            if (err && scores && typeof scores === 'string' &&
+              (scores as string).includes('ERR_INVALID_FRIENDSETID')
+            ) {
+              // probably a staging friendset on prod or vice versa, kill the cache
+              console.error('Received ERR_INVALID_FRIENDSETID from server, wiping friend set cache');
+              friendSetCacheWipe();
+              // Could also automatically do 1 retry here, but it's probably fine
+            }
             if (!err) {
               this.handleScoreResp(level_idx, friend_cat, scores);
             }
@@ -517,7 +775,7 @@ class ScoreSystemImpl<ScoreType> {
     let high_score = this.score_to_value(score);
     withUserID(() => {
       let friend_cat = this.last_friend_cat;
-      withFriendSet(friend_cat, (friend_set_code: string) => {
+      withFriendSet(friend_cat, (friend_set_code: string | null) => {
         let url = this.makeURL('scoreset', ld, friend_cat, friend_set_code);
         url += `&score=${high_score}`;
         if (player_name) {
@@ -533,26 +791,34 @@ class ScoreSystemImpl<ScoreType> {
           //   url = 'http://errornow.dashingstrike.com/scoreset/error';
           // }
         }
-        fetchJSON2(
-          url,
-          (err: string | undefined, scores: HighScoreListRaw) => {
-            if (!err) {
-              this.handleScoreResp(level_idx, friend_cat, scores);
-            }
-            cb?.(err || null);
-          },
-        );
+        withAuthToken((auth: string) => {
+          fetchJSON2(
+            url + auth,
+            (err: string | undefined, scores: HighScoreListRaw) => {
+              if (!err) {
+                this.handleScoreResp(level_idx, friend_cat, scores);
+              }
+              cb?.(err || null);
+            },
+          );
+        });
       });
     });
   }
 
   private saveScore(level_idx: number, obj_in: ScoreType, payload?: string): void {
     let ld = this.level_defs[level_idx];
-    let obj = obj_in as ScoreTypeInternal<ScoreType>;
+    let obj = clone(obj_in as ScoreTypeInternal<ScoreType>);
     obj.payload = payload;
     ld.local_score = obj;
     let key = `${this.LS_KEY}.score_${ld.name}`;
-    lsd[key] = JSON.stringify(obj);
+    withUserID((user_id: string) => {
+      lsd[key] = JSON.stringify({
+        ...obj,
+        submitted: false,
+        user_id,
+      });
+    });
     if (ld.save_in_flight) {
       return;
     }
@@ -565,7 +831,13 @@ class ScoreSystemImpl<ScoreType> {
         }
         if (obj === ld.local_score) {
           if (!err) {
-            lsd[key] = JSON.stringify(obj);
+            withUserID((user_id: string) => {
+              lsd[key] = JSON.stringify({
+                ...obj,
+                submitted: true,
+                user_id,
+              });
+            });
           }
         } else {
           // new score in the meantime
@@ -582,22 +854,36 @@ class ScoreSystemImpl<ScoreType> {
     return Boolean(this.getScore(level_idx));
   }
 
-  getScore(level_idx: number): ScoreType | null {
+  private loadLocalScore(level_idx: number): void {
     let ld = this.level_defs[level_idx];
     if (ld.local_score) {
-      return ld.local_score; // allow calling each frame and getting cached version instead of spamming submits
+      return;
     }
     let key = `${this.LS_KEY}.score_${ld.name}`;
-    if (lsd[key]) {
-      let ret = JSON.parse(lsd[key]!);
-      if (!ret) {
-        return null;
+    let saved = lsd[key];
+    if (!saved) {
+      return;
+    }
+    let ret = JSON.parse(saved);
+    if (!ret) {
+      return;
+    }
+    withUserID((user_id: string) => {
+      if (ret.user_id !== user_id) {
+        return;
       }
       ld.local_score = ret;
       if (!ret.submitted) {
         this.saveScore(level_idx, ret, ret.payload);
       }
       return ret;
+    });
+  }
+
+  getScore(level_idx: number): ScoreType | null {
+    let ld = this.level_defs[level_idx];
+    if (ld.local_score) {
+      return ld.local_score; // allow calling each frame and getting cached version instead of spamming submits
     }
     return null;
   }
@@ -607,7 +893,7 @@ class ScoreSystemImpl<ScoreType> {
     let encoded = this.score_to_value(score) || 0;
     let encoded_local = ld.local_score && this.score_to_value(ld.local_score) || (this.asc ? Infinity : 0);
     if (this.asc ? encoded < encoded_local : encoded > encoded_local ||
-      encoded === encoded_local && !ld.local_score?.submitted
+      encoded === encoded_local && !ld.local_score?.submitted && !ld.save_in_flight
     ) {
       this.saveScore(level_idx, score, payload);
     }
@@ -649,15 +935,31 @@ class ScoreSystemImpl<ScoreType> {
       }
     }
   }
+
+  clearScoreCache(): void {
+    for (let level_idx = 0; level_idx < this.level_defs.length; ++level_idx) {
+      let ld = this.level_defs[level_idx];
+      if (ld.local_score && ld.local_score.submitted && !ld.save_in_flight) {
+        console.log(`score: ${ld.name}: clearing cached score ${JSON.stringify(ld.local_score)}...`);
+        delete ld.local_score;
+        let key = `${this.LS_KEY}.score_${ld.name}`;
+        delete lsd[key];
+      }
+    }
+  }
 }
 
 
+let need_clear_at_startup = false;
 let all_score_systems: ScoreSystem<any>[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export function scoreAlloc<ScoreType>(param: ScoreSystemParam<ScoreType>): ScoreSystem<ScoreType> {
   withUserID(nop);
   let ret = new ScoreSystemImpl(param);
   all_score_systems.push(ret);
+  if (need_clear_at_startup) {
+    ret.clearScoreCache();
+  }
   return ret;
 }
 
@@ -665,7 +967,43 @@ export function scoreFormatName<ScoreType>(score: HighScoreListEntry<ScoreType>)
   return score.names_str;
 }
 
+export function scoreCanUpdatePlayerName(): boolean {
+  return Boolean(score_user_provider.setName);
+}
+
+// Just sends to server, no change to our state, call scoreUpdatePlayerName() for any run-time updates
+function scoreUpdatePlayerNameInternal(new_player_name: string, cb: (err: string | null) => void): void {
+  if (new_player_name) {
+    new_player_name = new_player_name.trim().slice(0, 64); // same logic as on server
+  }
+  if (!new_player_name) {
+    return cb(null);
+  }
+
+  withUserID((user_id: string) => {
+    let url = `${score_host}/api/userrename?userid=${user_id}&name=${encodeURIComponent(player_name)}`;
+    withAuthToken((auth: string) => {
+      fetch({
+        url: url + auth,
+      }, (err: string | undefined, res: string) => {
+        if (err) {
+          if (res) {
+            try {
+              err = JSON.parse(res).err || err;
+            } catch (e) {
+              // ignored
+            }
+          }
+          cb(err as string);
+        } else {
+          cb(null);
+        }
+      });
+    });
+  });
+}
 export function scoreUpdatePlayerName(new_player_name: string): void {
+  assert(score_user_provider.setName);
   if (new_player_name) {
     new_player_name = new_player_name.trim().slice(0, 64); // same logic as on server
   }
@@ -673,30 +1011,27 @@ export function scoreUpdatePlayerName(new_player_name: string): void {
     return;
   }
   let old_name = player_name;
-  lsd[PLAYER_NAME_KEY] = player_name = new_player_name;
-
-  withUserID((user_id: string) => {
-    let url = `${score_host}/api/userrename?userid=${user_id}&name=${encodeURIComponent(player_name)}`;
-    fetch({
-      url,
-    }, (err: string | undefined, res: string) => {
-      if (err) {
-        if (res) {
-          try {
-            err = JSON.parse(res).err || err;
-          } catch (e) {
-            // ignored
-          }
-        }
-        lsd[PLAYER_NAME_KEY] = player_name = old_name;
-        alert(`Error updating player name: "${err}"`); // eslint-disable-line no-alert
-      } else {
-        for (let ii = 0; ii < all_score_systems.length; ++ii) {
-          all_score_systems[ii].onUpdatePlayerName(old_name);
-        }
+  player_name = new_player_name;
+  errorReportSetDetails('score_name', player_name);
+  scoreUpdatePlayerNameInternal(new_player_name, function (err) {
+    if (err) {
+      player_name = old_name;
+      errorReportSetDetails('score_name', player_name);
+      alert(`Error updating player name: "${err}"`); // eslint-disable-line no-alert
+    } else {
+      score_user_provider.setName!(new_player_name);
+      for (let ii = 0; ii < all_score_systems.length; ++ii) {
+        all_score_systems[ii].onUpdatePlayerName(old_name);
       }
-    });
+    }
   });
+}
+
+function scoreClearScoreCache(): void {
+  need_clear_at_startup = true;
+  for (let ii = 0; ii < all_score_systems.length; ++ii) {
+    all_score_systems[ii].clearScoreCache();
+  }
 }
 
 export function scoreFriendCatAdd(cat: string, list: string[]): void {
@@ -730,52 +1065,22 @@ export function scoreFriendCodeGet(cb: (err: null | string, code: string) => voi
   });
 }
 
+let debug_friend_code: string | null = null;
+let friend_code_query_sent = false;
+export function scoreDebugFriendCode(): string | null {
+  if (!friend_code_query_sent) {
+    friend_code_query_sent = true;
+    scoreFriendCodeGet(function (err, code) {
+      debug_friend_code = err || code;
+    });
+  }
+  return debug_friend_code;
+}
+
 cmd_parse.register({
   cmd: 'score_friend_code_get',
   help: 'Displays one\'s own friend code',
   func: function (param: string, resp_func: CmdRespFunc): void {
     scoreFriendCodeGet(resp_func);
-  },
-});
-
-cmd_parse.register({
-  cmd: 'score_friend_list',
-  help: 'List friends',
-  func: function (param: string, resp_func: CmdRespFunc): void {
-    resp_func(null, friends_by_code.join(', ') || 'You have no friends');
-  },
-});
-
-cmd_parse.register({
-  cmd: 'score_friend_add',
-  help: 'Add friend by friend code',
-  func: function (param: string, resp_func: CmdRespFunc): void {
-    let fc = param.trim().toUpperCase();
-    if (!fc) {
-      return resp_func('Missing friend code');
-    }
-    if (friends_by_code.includes(fc)) {
-      return resp_func(null, 'Friend already on list.');
-    }
-    friends_by_code.push(fc);
-    lsd[FRIENDS_KEY] = JSON.stringify(friends_by_code);
-    resp_func(null, 'Friend added');
-  },
-});
-
-cmd_parse.register({
-  cmd: 'score_friend_remove',
-  help: 'Remove friend by friend code',
-  func: function (param: string, resp_func: CmdRespFunc): void {
-    let fc = param.trim().toUpperCase();
-    if (!fc) {
-      return resp_func('Missing friend code');
-    }
-    if (!friends_by_code.includes(fc)) {
-      return resp_func(null, 'Friend not on list.');
-    }
-    friends_by_code.splice(friends_by_code.indexOf(fc), 1);
-    lsd[FRIENDS_KEY] = JSON.stringify(friends_by_code);
-    resp_func(null, 'Friend removed');
   },
 });

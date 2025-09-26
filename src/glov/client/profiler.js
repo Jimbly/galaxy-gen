@@ -127,6 +127,10 @@ function memSizeNop() {
 let memSize = HAS_MEMSIZE ? memSizeChrome : memSizeNop;
 let mem_is_high_res = 10;
 
+export function profilerMemSize() {
+  return memSize();
+}
+
 export function profilerChildCallCount(node, with_mem, do_average) {
   let walk = node.child;
   let count = 0;

@@ -11,3 +11,13 @@ export function randNumericId(len: number): string {
   }
   return buf.toString();
 }
+
+let alphanum = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+export function randAlphaNumericId(len: number): string {
+  let buf = crypto.randomBytes(len);
+  let ret = new Array(len);
+  for (let ii = 0; ii < len; ++ii) {
+    ret[ii] = alphanum[(ii ? 0 : 1) + floor(buf[ii]/256 * (ii ? 36 : 35))];
+  }
+  return ret.join('');
+}

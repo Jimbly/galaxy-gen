@@ -70,7 +70,7 @@ function getShaderStats(stage, text, cb) {
   let validator_path;
   try {
     if (!glslang_validator) {
-      // eslint-disable-next-line global-require
+      // eslint-disable-next-line n/global-require
       glslang_validator = require('glslang-validator-prebuilt-predownloaded');
     }
     validator_path = glslang_validator.getPath();

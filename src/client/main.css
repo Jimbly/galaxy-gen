@@ -134,6 +134,7 @@ canvas {
 }
 .glovui_dynamic input,.glovui_dynamic textarea {
   font-size: 1em;
+  line-height: 1em; /* fixes Firefox extra-tall lines in textareas */
   width: 100%;
   padding: 0;
   margin: 0;
@@ -144,6 +145,10 @@ canvas {
 
 input[type="search"]::-webkit-search-cancel-button {
   -webkit-appearance: none;
+}
+
+span:focus-visible {
+  outline: none;
 }
 
 .glovui_dynamic .fixed {

@@ -26,6 +26,7 @@ const {
   v3scale,
   v3sub,
   vec3,
+  xaxis,
   zero_vec,
 } = require('glov/common/vmath.js');
 const { cmd_parse } = require('./cmds.js');
@@ -213,7 +214,6 @@ export function dynGeomLookAt(cam_pos_in, target_pos, up_in) {
 }
 
 let temp = vec3();
-const xaxis = vec3(1,0,0);
 let target_right = vec3();
 export function dynGeomSpriteSetup(params) {
   assert(look_at_called); // Must call dynGeomLookAt each frame!

@@ -1,6 +1,6 @@
 // Portions Copyright 2019 Jimb Esser (https://github.com/Jimbly/)
 // Released under MIT License: https://opensource.org/licenses/MIT
-/* eslint-env browser */
+/* globals localStorage */
 
 import assert from 'assert';
 
@@ -19,6 +19,16 @@ export function getStoragePrefix(): string {
   return storage_prefix;
 }
 
+export type StorageStore = {
+  test(key: string): boolean;
+  get(key: string): string | undefined;
+  set(key: string, value: undefined | string): void;
+};
+let external_store: StorageStore | null = null;
+export function localStorageAddExternalStore(store: StorageStore): void {
+  external_store = store;
+}
+
 let lsd = (function () {
   try {
     localStorage.setItem('test', 'test');
@@ -34,8 +44,13 @@ let lsd_overlay: Partial<Record<string, string>> = {};
 
 export function localStorageGet(key: string): string | undefined {
   assert(is_set);
-  key = `${storage_prefix}_${key}`;
-  let ret: string | null | undefined = lsd_overlay[key] || (lsd && lsd.getItem(key));
+  let ret: string | null | undefined;
+  if (external_store && external_store.test(key)) {
+    ret = external_store.get(key);
+  } else {
+    key = `${storage_prefix}_${key}`;
+    ret = lsd_overlay[key] || (lsd && lsd.getItem(key));
+  }
   if (ret === 'undefined') {
     ret = undefined;
   } else if (ret === null) {
@@ -44,24 +59,46 @@ export function localStorageGet(key: string): string | undefined {
   return ret;
 }
 
-export function localStorageSet(key: string, value: unknown): void {
+export function localStorageSet(key: string, value: string | null | undefined): void {
   assert(is_set);
-  key = `${storage_prefix}_${key}`;
-  if (value === undefined || value === null) {
-    if (lsd) {
-      lsd.removeItem(key);
-    }
-    delete lsd_overlay[key];
+  if (value === null) {
+    value = undefined;
+  }
+  let full_key = `${storage_prefix}_${key}`;
+  let unchanged = false;
+  let str: string;
+  if (value === undefined) {
+    delete lsd_overlay[full_key];
   } else {
-    let str = String(value);
-    lsd_overlay[key] = str;
-    try {
-      if (lsd) {
-        lsd.setItem(key, str);
+    str = String(value);
+    if (lsd_overlay[full_key] === str) {
+      unchanged = true;
+    } else {
+      lsd_overlay[full_key] = str;
+    }
+  }
+
+  if (external_store && external_store.test(key)) {
+    if (!unchanged) {
+      external_store.set(key, value);
+    }
+    return;
+  }
+  if (value === undefined) {
+    if (lsd) {
+      lsd.removeItem(full_key);
+    }
+    delete lsd_overlay[full_key];
+  } else {
+    if (!unchanged) {
+      try {
+        if (lsd) {
+          lsd.setItem(full_key, str!);
+        }
+      } catch (e) {
+        // ignored, it's in the overlay for the current session at least
+        // FireFox throws "The quota has been exceeded" errors here
       }
-    } catch (e) {
-      // ignored, it's in the overlay for the current session at least
-      // FireFox throws "The quota has been exceeded" errors here
     }
   }
 }

@@ -301,7 +301,7 @@ class OfflineEntityManagerImpl<
   }
 
   channelSend(): void {
-    assert(!'Online only');
+    assert(false, 'Online only');
   }
   action_queue: (()=>void)[] = [];
   actionSendQueued(
@@ -311,7 +311,7 @@ class OfflineEntityManagerImpl<
     assert(action.data_assignments); // Otherwise, definitely won't do anything
     this.action_queue.push(() => {
       let ent = action.ent;
-      let data = (ent.data as DataObject);
+      let data = ent.data as DataObject;
       for (let key in action.data_assignments) {
         let value = action.data_assignments[key];
         if (value === null) {

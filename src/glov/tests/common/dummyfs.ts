@@ -1,6 +1,6 @@
 import assert from 'assert';
 
-import type { FSAPI, FilewatchCB } from 'glov/common/fsapi';
+import type { FilewatchCB, FSAPI } from 'glov/common/fsapi';
 import type { DataObject } from 'glov/common/types';
 
 export class DummyFS<DataType> implements FSAPI {

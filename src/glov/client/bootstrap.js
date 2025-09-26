@@ -4,6 +4,12 @@
 // Things that should be done before requiring or running any user-level code or other engine code
 
 require('./polyfill.js');
+const { isbot } = require('./isbot');
+
+let crash_message = 'Please report this error to the developer, and then reload this page or restart the app.';
+export function setCrashMessage(msg) {
+  crash_message = msg;
+}
 
 let debug = document.getElementById('debug');
 window.onerror = function (e, file, line, col, errorobj) {
@@ -33,6 +39,12 @@ window.onerror = function (e, file, line, col, errorobj) {
     }
     let origin = document.location.origin || '';
     if (origin) {
+      if (origin === 'file://') {
+        let full_location = String(document.location);
+        if (full_location.includes('app.asar')) {
+          origin = `${full_location.split('app.asar')[0]}app.asar/`;
+        }
+      }
       if (origin.slice(-1) !== '/') {
         origin += '/';
       }
@@ -79,8 +91,23 @@ window.onerror = function (e, file, line, col, errorobj) {
     window.glov_error_early = { msg, file, line, col };
   }
   if (show) {
-    debug.innerText = `${msg}\n\nPlease report this error to the developer,` +
-      ' and then reload this page or restart the app.';
+    debug.innerText = `${msg}\n\n${crash_message}`;
+    if (isbot()) {
+      try {
+        let desc = document.getElementsByTagName('meta').Description.content;
+        if (desc) {
+          let crash_html = debug.innerHTML;
+          debug.innerHTML = `${desc}<br><br>This browser may not fully` +
+            ' support WebGL and encountered an error while loading the page.';
+          if (String(document.location).includes('verbose=1')) {
+            // include error
+            debug.innerHTML = `${debug.innerHTML}<br><br>${crash_html}`;
+          }
+        }
+      } catch (err) {
+        // ignored
+      }
+    }
   }
 };
 window.addEventListener('unhandledrejection', function (event) {

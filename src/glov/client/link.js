@@ -2,8 +2,8 @@
 // Released under MIT License: https://opensource.org/licenses/MIT
 
 /* eslint-disable import/order */
-const assert = require('assert');
 const verify = require('glov/common/verify');
+const { platformParameterGet } = require('./client_config');
 const engine = require('./engine.js');
 const { fontStyle } = require('./font.js');
 const camera2d = require('./camera2d.js');
@@ -11,13 +11,12 @@ const in_event = require('./in_event.js');
 const input = require('./input.js');
 const { abs } = Math;
 const {
-  playUISound,
   uiGetDOMElem,
 } = require('./ui.js');
 const ui = require('./ui.js');
 const { uiStyleCurrent } = require('./uistyle.js');
 const settings = require('./settings.js');
-const { SPOT_DEFAULT_BUTTON, spot, spotFocusSteal, spotKey } = require('./spot.js');
+const { SPOT_DEFAULT_BUTTON, spot, spotKey } = require('./spot.js');
 
 const { max, min } = Math;
 
@@ -150,7 +149,9 @@ export function link(param) {
   let rect = { x, y, w, h };
 
   // TODO: use spot_ret.allow_focus instead of all of this?
-  if (camera2d.clipTestRect(rect) && linkClipRect(rect) && !(settings.shader_debug || settings.show_profiler)) {
+  if (camera2d.clipTestRect(rect) && linkClipRect(rect) && !(
+    settings.shader_debug || settings.show_profiler || platformParameterGet('linkHandler')
+  )) {
     // at least some is not clipped
     let elem = uiGetDOMElem(state.elem, allow_modal);
     if (elem !== state.elem) {
@@ -164,6 +165,9 @@ export function link(param) {
         a_elem.className = 'glovui_link noglov';
         a_elem.setAttribute('target', '_blank');
         a_elem.setAttribute('href', url);
+        if (param.download) {
+          a_elem.setAttribute('download', param.download);
+        }
         // Make the element unfocusable, so that pressing enter at some point
         //   after clicking a link does not re-activate the link, additionally
         //   pressing tab should not (in the browser) focus these links.
@@ -214,7 +218,7 @@ export function link(param) {
 }
 
 export function linkText(param) {
-  let { style_link, style_link_hover, x, y, z, style, font_size, text, url, internal } = param;
+  let { style_link, style_link_hover, x, y, z, style, font_size, text, url } = param;
   text = text || url;
   z = z || Z.UI;
   style = style || uiStyleCurrent();
@@ -225,32 +229,21 @@ export function linkText(param) {
   param.w = w;
   param.h = h;
   param.def = SPOT_DEFAULT_BUTTON;
-  delete param.url; // do *not* let spot() do link/URL handling, we do it ourselves below
   let spot_ret = spot(param);
-  param.url = url;
   let style_use = spot_ret.focused ?
     (style_link_hover || style_link_hover_default) :
     (style_link || style_link_default);
   ui.font.drawSized(style_use, x, y, z, font_size, text);
   let underline_w = 1;
   ui.drawLine(x, y + h - underline_w, x + w, y + h - underline_w, z - 0.5, underline_w, 1, style_use.color_vec4);
-  let clicked = link(param);
-  if (clicked) {
-    const sound_button = param.sound_button === undefined ? param.def.sound_button : param.sound_button;
-    if (sound_button) {
-      playUISound(sound_button);
-    }
-    spotFocusSteal(param);
-  }
-  if (spot_ret.ret && !internal) {
-    // activated (via keyboard or gamepad), and an external link, act as if we clicked it
-    let key = spotKey(param);
-    let state = state_cache[key];
-    assert(state);
-    assert(state.a_elem);
+  return spot_ret.ret;
+}
+
+export function linkActivate(spot_key) {
+  let state = state_cache[spot_key];
+  if (verify(state) && state.a_elem) {
     state.a_elem.click();
   }
-  return clicked || spot_ret.ret;
 }
 
 export function linkTick() {

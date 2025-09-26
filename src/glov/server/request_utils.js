@@ -214,12 +214,17 @@ export function safeString(str) {
   return str.replace(/["<>\\]/g, '');
 }
 
+export function requestGetParsedURL(req) {
+  // Note: `new URL('/')` throws an exception, `url.parse('/')` does what we need
+  return req._parsedUrl || url.parse(req.url); //eslint-disable-line no-underscore-dangle, n/no-deprecated-api
+}
+
 // Gets a parsed, cached `query` from a request.  This is usually provided
 //   by Express's default middleware, but useful to call manually if not
 //   using Express or on low-level requests like `upgrade`s).
 export function requestGetQuery(req) {
   if (!req.query) {
-    req.query = querystring.parse(url.parse(req.url).query);
+    req.query = querystring.parse(requestGetParsedURL(req).query);
   }
   return req.query;
 }
@@ -264,7 +269,7 @@ function setOriginHeaders(req, res, next) {
 }
 
 function setCrossOriginHeadersAlways(req, res, next) {
-  let pathname = url.parse(req.url).pathname;
+  let pathname = requestGetParsedURL(req).pathname;
   if (pathname.endsWith('/') || pathname.endsWith('.html') || pathname.endsWith('.js')) {
     // For developers: Set as "cross-origin isolated", for access to high resolution timers
     // Disclaimer: I have no idea what this does, other than allows high resolution timers on Chrome/Firefox

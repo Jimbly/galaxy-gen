@@ -17,6 +17,7 @@ exports.register = settingsRegister;
 
 const assert = require('assert');
 const { titleCase } = require('glov/common/util.js');
+const { is_mac_osx_safari } = require('./browser.js');
 const { cmd_parse } = require('./cmds.js');
 const engine = require('./engine.js');
 
@@ -106,6 +107,13 @@ export function settingsRegister(defs) {
   });
 }
 
+// Mac OS Safari has problems on variable refresh rate displays (IIRC, queues up
+// more frames than can be handled, causing huge input lag), so use max FPS of
+// 60 there.  Electron on G-Sync GPUs seems to get 200+ms long frames if we don't
+// render anything in our requestAnimationFrame callback, so we want to simply
+// rely on requestAnimationFrame there (runs at 240fps, which is overkill, but
+// better than 12!)
+const DEFAULT_MAX_FPS = is_mac_osx_safari ? 60 : 0;
 settingsRegister({
   max_fps: {
     label: 'Maximum frame rate (FPS)',
@@ -115,8 +123,8 @@ settingsRegister({
       'Set maximum FPS limit: /max_fps 30\n' +
       'Set automatic by browser: /max_fps 0 (may be unresponsive)\n' +
       'Set unlimited: /max_fps 1000 (may be unresponsive)\n' +
-      'Default: /max_fps 60',
-    default_value: 60,
+      `Default: /max_fps ${DEFAULT_MAX_FPS}`,
+    default_value: DEFAULT_MAX_FPS,
     type: cmd_parse.TYPE_FLOAT,
     ver: 2,
   },

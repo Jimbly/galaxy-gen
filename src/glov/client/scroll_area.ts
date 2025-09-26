@@ -3,7 +3,7 @@
 
 import assert from 'assert';
 import { clamp, merge } from 'glov/common/util';
-import { Vec4, vec2, vec4 } from 'glov/common/vmath';
+import { vec2, Vec4, vec4 } from 'glov/common/vmath';
 import * as camera2d from './camera2d';
 import * as engine from './engine';
 import { renderNeeded } from './engine';
@@ -15,10 +15,10 @@ import {
   PAD,
 } from './input';
 import {
+  spot,
   SPOT_DEFAULT_BUTTON,
   SPOT_STATE_DOWN,
   SPOT_STATE_FOCUSED,
-  spot,
   spotPadMode,
   spotSubBegin,
   spotSubEnd,
@@ -53,7 +53,8 @@ interface ScrollAreaOptsAll extends Box {
   // configuration options
   z: number;
   // h: number (from Box) is height of visible area, not interior scrolled area
-  rate_scroll_click: number;
+  rate_scroll_click: number; // default uiTextHeight()
+  rate_scroll_wheel: number; // default rate_scroll_click * 2
   pixel_scale: number;
   top_pad: boolean; // set to false it the top/bottom "buttons" don't look like buttons
   color: Vec4;
@@ -64,9 +65,9 @@ interface ScrollAreaOptsAll extends Box {
   focusable_elem: FocusableElement | null; // Another element to call .focus() on if we think we are focused
   min_dist: number | undefined; // Minimum drag distance for background drag
   disabled: boolean;
+  clip_horiz_xpad: number;
 
   // Calculated (only once) if not set
-  rate_scroll_wheel: number;
   rollover_color: Vec4;
   rollover_color_light: Vec4;
   disabled_color: Vec4;
@@ -99,7 +100,8 @@ class ScrollAreaInternal implements ScrollArea {
   z = Z.UI;
   w = 10;
   h = 10;
-  rate_scroll_click = uiTextHeight();
+  rate_scroll_click = 0;
+  rate_scroll_wheel = 0;
   pixel_scale = default_pixel_scale;
   top_pad = true;
   color = vec4(1,1,1,1);
@@ -110,9 +112,9 @@ class ScrollAreaInternal implements ScrollArea {
   focusable_elem: FocusableElement | null = null;
   min_dist: number | undefined;
   disabled = false;
+  clip_horiz_xpad = 0;
 
   // Calculated (only once) if not set
-  rate_scroll_wheel;
   rollover_color;
   rollover_color_light;
   disabled_color;
@@ -136,7 +138,6 @@ class ScrollAreaInternal implements ScrollArea {
   constructor(params?: ScrollAreaOpts) {
     params = params || {};
     this.applyParams(params);
-    this.rate_scroll_wheel = params.rate_scroll_wheel || this.rate_scroll_click * 2;
     this.rollover_color = params.rollover_color || darken(this.color, 0.75);
     this.rollover_color_light = params.rollover_color_light || darken(this.color, 0.95);
     // equality is used to detect if this gets used and prevent rollover
@@ -177,7 +178,7 @@ class ScrollAreaInternal implements ScrollArea {
     this.began = true;
     spotSubBegin({ x, y, w, h, key: id });
     // Set up camera and clippers
-    spriteClipPush(z + 0.05, x, y, w - this.barWidth(), h);
+    spriteClipPush(z + 0.05, x - this.clip_horiz_xpad, y, w - this.barWidth() + this.clip_horiz_xpad, h);
     let camera_orig_x0 = camera2d.x0();
     let camera_orig_x1 = camera2d.x1();
     let camera_orig_y0 = camera2d.y0();
@@ -356,7 +357,9 @@ class ScrollAreaInternal implements ScrollArea {
       });
       if (wheel_delta) {
         this.overscroll_delay = OVERSCROLL_DELAY_WHEEL;
-        this.scroll_pos -= this.rate_scroll_wheel * wheel_delta;
+        let rate_scroll_click = (this.rate_scroll_click || uiTextHeight());
+        let rate_scroll_wheel = this.rate_scroll_wheel || rate_scroll_click * 2;
+        this.scroll_pos -= rate_scroll_wheel * wheel_delta;
         if (focused_sub_elem) {
           spotUnfocus();
         }
@@ -431,7 +434,7 @@ class ScrollAreaInternal implements ScrollArea {
       while (button_spot_ret.ret) {
         --button_spot_ret.ret;
         gained_focus = true;
-        this.scroll_pos -= this.rate_scroll_click;
+        this.scroll_pos -= (this.rate_scroll_click || uiTextHeight());
         this.consumed_click = true;
       }
       if (button_spot_ret.spot_state === SPOT_STATE_DOWN) {
@@ -443,7 +446,7 @@ class ScrollAreaInternal implements ScrollArea {
       while (button_spot_ret.ret) {
         --button_spot_ret.ret;
         gained_focus = true;
-        this.scroll_pos += this.rate_scroll_click;
+        this.scroll_pos += (this.rate_scroll_click || uiTextHeight());
         this.consumed_click = true;
       }
       if (button_spot_ret.spot_state === SPOT_STATE_DOWN) {

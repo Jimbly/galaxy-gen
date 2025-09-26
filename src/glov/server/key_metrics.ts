@@ -1,9 +1,8 @@
+import type { TSMap } from 'glov/common/types';
 import { empty } from 'glov/common/util';
 import { logCategoryEnabled } from './log';
 import { MetricFreq, metricsAdd } from './metrics';
 import { UserTimeAccumulator } from './usertime';
-
-import type { TSMap } from 'glov/common/types';
 
 
 const TICK_TIME = 10000; // Moderate frequency reporting to metrics
