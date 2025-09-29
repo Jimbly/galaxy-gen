@@ -209,24 +209,24 @@ module.exports = {
   },
 
   bicubicInterpolation: function (src, dst, options) {
-    let interpolateCubic = function (x0, x1, x2, x3, t) {
+    function interpolateCubic(x0, x1, x2, x3, t) {
       let a0 = x3 - x2 - x0 + x1;
       let a1 = x0 - x1 - a0;
       let a2 = x2 - x0;
       let a3 = x1;
       return Math.max(0,Math.min(255,(a0 * (t * t * t)) + (a1 * (t * t)) + (a2 * t) + (a3)));
-    };
+    }
     return this._interpolate2D(src, dst, options, interpolateCubic);
   },
 
   hermiteInterpolation: function (src, dst, options) {
-    let interpolateHermite = function (x0, x1, x2, x3, t) {
+    function interpolateHermite(x0, x1, x2, x3, t) {
       let c0 = x1;
       let c1 = 0.5 * (x2 - x0);
       let c2 = x0 - (2.5 * x1) + (2 * x2) - (0.5 * x3);
       let c3 = (0.5 * (x3 - x0)) + (1.5 * (x1 - x2));
       return Math.max(0,Math.min(255,Math.round((((((c3 * t) + c2) * t) + c1) * t) + c0)));
-    };
+    }
     return this._interpolate2D(src, dst, options, interpolateHermite);
   },
 
@@ -242,7 +242,7 @@ module.exports = {
     //  y(-1) = y(0) - 2*(y(1)-y(0))
     //  y(w) = y(w-1) + 2*(y(w-1)-y(w-2))
     // but can go with y(-1) = y(0) and y(w) = y(w-1)
-    let interpolateBezier = function (x0, x1, x2, x3, t) {
+    function interpolateBezier(x0, x1, x2, x3, t) {
       // x1, x2 are the knots, use x0 and x3 to calculate control points
       let cp1 = x1 + (x2-x0)/4;
       let cp2 = x2 - (x3-x1)/4;
@@ -252,7 +252,7 @@ module.exports = {
       let c2 = 3 * cp2 * nt * t * t;
       let c3 = x2 * t * t * t;
       return Math.max(0,Math.min(255,Math.round(c0 + c1 + c2 + c3)));
-    };
+    }
     return this._interpolate2D(src, dst, options, interpolateBezier);
   }
 };

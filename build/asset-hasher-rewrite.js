@@ -32,10 +32,15 @@ function assetHasherRewriteInternal(job, out_base, asset_prefix, file, mappings)
     let use_prefix = asset_prefix;
     if (!new_name) {
       // Look for a relative path if we happen to not be at the root, and adjust for that
-      match = forwardSlashes(path.join(dirname, match)); // e.g. 'tools/foo.html'
-      new_name = mappings[match]; // e.g. 'tools/bundle.js'
+      match = forwardSlashes(path.join(dirname, match)); // e.g. 'tools/foo.bundle.js'
+      new_name = mappings[match];
       if (new_name) {
-        use_prefix = forwardSlashes(path.relative(path.dirname(match), `${asset_prefix}`)); // e.g. ../a
+        let base_dir = asset_prefix ?
+          // We're referencing a hashed asset from outside of it (e.g. tools/foo.html)
+          path.relative('client', path.dirname(file.relative)) :
+          // We're referencing a hashed asset from another hashed assets
+          '';
+        use_prefix = forwardSlashes(path.relative(base_dir, `${asset_prefix}`)) || '.'; // e.g. ../a
         if (!use_prefix.endsWith('/')) {
           use_prefix += '/';
         }

@@ -101,10 +101,14 @@ function pngRead(file_contents) {
 exports.pngRead = pngRead;
 
 
-function pngAlloc({ width, height, byte_depth }) {
+function pngAlloc({ width, height, byte_depth, comment }) {
+  // console.log('pngAlloc', width, height, comment || 'unknown');
   let colorType = byte_depth === 3 ? PNG_RGB : PNG_RGBA;
   let ret = new PNG({ width, height, colorType });
   let num_bytes = width * height * 4;
+  if (!ret.data) {
+    throw new Error(`Out of memory allocating ${width}x${height}x${byte_depth} PNG`);
+  }
   assert.equal(ret.data.length, num_bytes);
   return ret;
 }

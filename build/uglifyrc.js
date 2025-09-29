@@ -1,4 +1,4 @@
-/* eslint max-len:off */
+/* eslint-disable @stylistic/max-len */
 module.exports = {
   compress: {
     // Maybe for production builds

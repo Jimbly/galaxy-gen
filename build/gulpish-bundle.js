@@ -1,4 +1,5 @@
 // Deprecated - using gulpish to wrap old bundling code; More efficient bundling done in build/bundle.js now
+/* eslint-disable import/order */
 const assert = require('assert');
 const babelify = require('babelify');
 const browserify = require('browserify');

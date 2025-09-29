@@ -42,8 +42,15 @@ module.exports = function (opts, streamfunc) {
     target = target[0];
   }
 
+  let semaphore;
   function func(job, done) {
     done = once(done);
+
+    if (semaphore) {
+      semaphore.push(func.bind(null, job, done));
+      return;
+    }
+    semaphore = [];
     // Creating a new stream per-file, might need something smarter? Or they should be gb.ALL tasks anyway?
     let source_stream = new Transform({
       objectMode: true,
@@ -89,6 +96,12 @@ module.exports = function (opts, streamfunc) {
         job.error('No files written');
       }
       done(err);
+      let nexttasks = semaphore;
+      semaphore = null;
+      if (nexttasks.length) {
+        nexttasks[0]();
+        semaphore = semaphore.concat(nexttasks.slice(1));
+      }
     });
     if (input_file) {
       source_stream.push(input_file);

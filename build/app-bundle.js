@@ -3,6 +3,7 @@ const gb = require('glov-build');
 const browserify = require('glov-build-browserify');
 const concat = require('glov-build-concat');
 const argv = require('minimist')(process.argv.slice(2));
+const sourcemapRemap = require('./sourcemap-remap');
 const uglify = require('./uglify.js');
 
 const uglify_options_ext = { compress: true, keep_fnames: false, mangle: true };
@@ -28,10 +29,10 @@ const browserify_options_deps = {
   bundleExternal: true,
   builtins: {
     // super-simple replacements, if needed
-    assert: './src/glov/client/shims/assert.js',
-    buffer: './src/glov/client/shims/buffer.js',
-    // timers: './src/glov/client/shims/timers.js',
-    _process: './src/glov/client/shims/empty.js',
+    assert: 'glov/client/shims/assert.js',
+    buffer: 'glov/client/shims/buffer.js',
+    // timers: 'glov/client/shims/timers.js',
+    _process: 'glov/client/shims/empty.js',
   },
   transform: [
     ['babelify', babelify_opts_deps],
@@ -59,9 +60,6 @@ function concatJS(opts) {
     }),
   };
 }
-
-const SOURCEMAP_STRING = '//# sourceMappingURL=';
-const SOURCEMAP_BUFFER = Buffer.from(SOURCEMAP_STRING);
 
 function bundlePair(opts) {
   // entrypoint: 'client/app.js',
@@ -176,42 +174,46 @@ function bundlePair(opts) {
   if (sourcemap_host) {
     let sourcemap_host_apply_task = `${subtask_name}_sourcemap_host`;
     gb.task({
-      type: gb.SINGLE,
       name: sourcemap_host_apply_task,
+      deps: [entrypoint_name],
       input: tasks.map((a) => `${a}:**`),
       target,
-      func: function (job, done) {
-        let file = job.getFile();
-        let { relative, contents } = file;
-        if (relative.endsWith('.js')) {
-          let idx = contents.lastIndexOf(SOURCEMAP_BUFFER);
-          if (idx !== -1) {
-            idx += SOURCEMAP_BUFFER.length;
-            let str_len = contents.length - idx;
-            assert(str_len < 1000); // something gone wrong?  Should be exactly one of these at the end of the buffer
-            let rest = contents.toString('utf8', idx);
-            let m = rest.match(/^([^\s]+\.map)/);
-            assert(m);
-            let filename = m[1];
-            rest = rest.slice(filename.length);
-            filename = `${sourcemap_host}${filename}`;
-            if (do_version) {
-              assert(opts.last_ver); // do we need to extract the version from the buffer?
-              filename = `${filename}?ver=${opts.last_ver}`;
-            }
-            rest = `${filename}${rest}`;
-            let newbuf = Buffer.alloc(idx + Buffer.byteLength(rest, 'utf8'));
-            contents.copy(newbuf);
-            newbuf.write(rest, idx, 'utf8');
-            contents = newbuf;
+      ...sourcemapRemap(function (job, filename, next) {
+        filename = `${sourcemap_host}${filename}`;
+        function ensureVersion(next) {
+          if (opts.last_ver) {
+            return void next();
           }
+          job.depAdd(`${entrypoint_name}:${out}`, function (err, dep) {
+            if (err) {
+              return void next(err);
+            }
+            // need to extract the version from the buffer, the bundling task must not have run in this process
+            let idx = dep.contents.indexOf('glov_build_version="');
+            if (idx === -1) {
+              return void next('Bundle with `do_version` failed: could not find' +
+                ' "window.glov_build_version=BUILD_TIMESTAMP;"');
+            }
+            let last_build_timestamp = dep.contents.slice(idx + 'glov_build_version='.length,
+              idx + 'glov_build_version=BUILD_TIMESTAMP'.length).toString();
+            let ver = Number(JSON.parse(last_build_timestamp));
+            assert(isFinite(ver));
+            opts.last_ver = ver;
+            next();
+          });
         }
-        job.out({
-          relative,
-          contents,
-        });
-        done();
-      },
+        if (do_version) {
+          ensureVersion(function (err) {
+            if (err) {
+              return void next(err);
+            }
+            filename = `${filename}?ver=${opts.last_ver}`;
+            next(null, filename);
+          });
+        } else {
+          next(null, filename);
+        }
+      }),
     });
     tasks = [sourcemap_host_apply_task];
   }

@@ -53,7 +53,7 @@ module.exports = function exec(opts) {
     }
   }
 
-  process.on('exit', function onExitCleanup() {
+  function onExitCleanup() {
     // Doesn't seem to help
     if (proc && proc.exitCode !== null) {
       // Previous run exited
@@ -63,19 +63,32 @@ module.exports = function exec(opts) {
       proc.kill('SIGTERM');
       setProc(null);
     }
-  });
+  }
+  process.on('exit', onExitCleanup);
+
+  let version;
+  if (opts.do_versioning) {
+    version = [
+      opts,
+      setProc,
+      onExitCleanup,
+    ];
+  } else {
+    version = Date.now(); // always runs once per process
+  }
 
   return {
     type: gb.ALL,
-    version: Date.now(), // always runs once per process
+    version,
     read: false,
     func: function (job, done) {
+      let task = job.task;
       if (proc && proc.exitCode !== null) {
         // Previous run exited
         setProc(null);
       }
       if (proc) {
-        job.log(`Restarting ${opts.cmd} ${opts.args.join(' ')}`);
+        job.log(`Restarting (pid ${proc.pid}) ${opts.cmd} ${opts.args.join(' ')}`);
         let kill_proc = proc;
         setProc(null);
         kill_proc.on('exit', startProc);
@@ -105,7 +118,8 @@ module.exports = function exec(opts) {
         let is_done = false;
         proc.on('close', guard(function (code) {
           gb[code !== 0 ? 'error' : opts.await ? 'info' : 'warn'](
-            `Sub-process "${opts.cmd}" (PID ${proc.pid}) exited with code=${code}`);
+            `Task "${task.name}": Sub-process "${opts.cmd}"` +
+            ` (PID ${proc.pid}) exited with code=${code}`);
           if (!is_done) {
             is_done = true;
             done(code || undefined);

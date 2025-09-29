@@ -9,14 +9,11 @@ function BlobMock(buffers, metadata) {
   this.my_buf = Buffer.concat(buffers);
   this.metadata = metadata;
 }
-// eslint-disable-next-line no-undef
 let blob_saved = globalThis.Blob;
 function wrapBlob() {
-  // eslint-disable-next-line no-undef
   globalThis.Blob = BlobMock;
 }
 function unwrapBlob() {
-  // eslint-disable-next-line no-undef
   globalThis.Blob = blob_saved;
 }
 
@@ -75,15 +72,15 @@ module.exports = function (options) {
   let lamejs;
   function autosoundInit(next) {
     if (all_exts.includes('wav')) {
-      // eslint-disable-next-line global-require
+      // eslint-disable-next-line n/global-require
       wav = require('node-wav');
     }
     if (options.outputs.includes('ogg')) {
-      // eslint-disable-next-line global-require
+      // eslint-disable-next-line n/global-require
       VorbisEncoder = require('@jimbly/vorbis-encoder-js').encoder;
     }
     if (options.outputs.includes('mp3')) {
-      // eslint-disable-next-line global-require
+      // eslint-disable-next-line n/global-require
       lamejs = require('lamejs');
     }
 

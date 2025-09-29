@@ -20,6 +20,7 @@ module.exports = function (gb) {
     ],
     client_json_files: ['client/**/*.json', 'client/**/*.json5', '!client/vendor/**/*.json'],
     server_json_files: ['server/**/*.json', 'server/**/*.json5'],
+    test_json_files: ['tests/**/*.json'],
     client_html: ['client/**/*.html'],
     client_html_index: ['**/client/index.html'],
     extra_client_html: [],
@@ -46,6 +47,7 @@ module.exports = function (gb) {
       'client/**/*.jpg',
       'client/**/*.glb',
       'client/**/*.ico',
+      'client/**/*.icns',
       'client/**/*.ttf',
       'client/**/*.woff',
       'client/**/*.woff2',
@@ -116,7 +118,9 @@ module.exports = function (gb) {
       do_version: 'client/app.ver.json',
       do_reload: true,
     }],
+    prod_build_version_file: 'client_bundle_app_ver:client/app.ver.json',
     extra_client_tasks: [],
+    extra_server_tasks: [],
     extra_prod_inputs: [], // Will bypass the production zip bundling, but still get in the raw production output
     extra_prod_tasks: [],
     extra_zip_inputs: [],
@@ -142,8 +146,9 @@ module.exports = function (gb) {
       more: false,
     },
     browsersync_queryparams: '', // e.g. '?D=FOO'
+    autoatlas_ignore: ['someatlas:sometile'],
   };
-  // eslint-disable-next-line global-require
+  // eslint-disable-next-line n/global-require
   require('./config.project.js')(config, gb);
   return config;
 };

@@ -6,7 +6,7 @@ module.exports = function (opts, uglify_opts) {
   return {
     type: gb.SINGLE,
     init: function (next) {
-      uglify = require('uglify-js'); // eslint-disable-line global-require
+      uglify = require('uglify-js'); // eslint-disable-line n/global-require
       next();
     },
     func: function (job, done) {

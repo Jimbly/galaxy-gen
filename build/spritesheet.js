@@ -1,5 +1,3 @@
-/* eslint max-len:off */
-
 const { inspect } = require('util');
 const gb = require('glov-build');
 const { max } = Math;

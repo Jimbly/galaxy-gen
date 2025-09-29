@@ -1,4 +1,4 @@
-/* eslint global-require:off */
+/* eslint n/global-require:off */
 const gulpish = require('./gulpish.js');
 
 // example, superseded by `build/eslint.js`

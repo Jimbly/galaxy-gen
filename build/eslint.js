@@ -19,7 +19,7 @@ module.exports = function (opts) {
     if (linter) {
       return;
     }
-    // eslint-disable-next-line global-require
+    // eslint-disable-next-line n/global-require
     const { ESLint } = require('eslint');
     eslint = new ESLint();
     linter = callbackify(eslint.lintText.bind(eslint));
@@ -114,7 +114,7 @@ module.exports = function (opts) {
     input,
     init: eslintFilesTaskInit,
     func: eslintFilesTask,
-    version: [timestamp('.eslintrc.js')],
+    version: [timestamp('eslint.config.mjs')],
   });
 
   return {

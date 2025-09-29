@@ -1,3 +1,5 @@
+require('./checks.js')(__filename);
+
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -25,6 +27,7 @@ const eslint = require('./eslint.js');
 const exec = require('./exec.js');
 const gulpish_tasks = require('./gulpish-tasks.js');
 const json5 = require('./json5.js');
+const sourcemapRemap = require('./sourcemap-remap.js');
 const testRunner = require('./test-runner.js');
 const { texPackExtractPNG, texPackRecombinePNG } = require('./texpack.js');
 const texproc = require('./texproc.js');
@@ -34,8 +37,6 @@ const uglifyrc = require('./uglifyrc.js');
 const warnMatch = require('./warn-match.js');
 const webfs = require('./webfs_build.js');
 const yamlproc = require('./yamlproc.js');
-
-require('./checks.js')(__filename);
 
 // Suppress nonsensical warning from `caniuse-lite` that shows up even when targeting Node
 process.env.BROWSERSLIST_IGNORE_OLD_DATA = 1;
@@ -227,9 +228,17 @@ gb.task({
 });
 
 gb.task({
-  name: 'client_autoatlas',
-  input: 'client/atlases/**/*.png',
-  ...autoatlas(),
+  name: 'test_json',
+  input: config.test_json_files,
+  ...json5({ beautify: true })
+});
+
+gb.task({
+  ...autoatlas({
+    name: 'client_autoatlas',
+    input: 'client/atlases',
+    ignore: config.autoatlas_ignore,
+  }),
 });
 
 gb.task({
@@ -495,11 +504,20 @@ gb.task({
   },
 });
 
-const server_input_globs = [
-  'server_static:**',
-  'server_js_notest:**',
-  'server_json:**',
+const server_tasks = [
+  'server_static',
+  'server_js_notest',
+  'server_json',
+  ...config.extra_server_tasks,
 ];
+const server_input_globs = server_tasks.map(addStarStar);
+
+// helper task usable by app build tasks that need to reload upon any server
+//   file changing (e.g. an Electron development task)
+gb.task({
+  name: 'server_dev_outputs',
+  deps: server_tasks,
+});
 
 gb.task({
   name: 'run_server',
@@ -619,6 +637,12 @@ let client_tasks = [
 
 let client_input_globs = client_tasks.map(addStarStar);
 
+// helper task usable by app build tasks that need to reload upon any client
+//   file changing (e.g. an Electron development task)
+gb.task({
+  name: 'client_dev_outputs',
+  deps: client_tasks,
+});
 
 let bs_target = `http://localhost:${server_port}`;
 let bs_target_https = `https://localhost:${server_port_https}`;
@@ -631,7 +655,7 @@ gb.task({
   version: Date.now(), // always runs once per process
   init: function (next) {
     if (!bs) {
-      // eslint-disable-next-line global-require
+      // eslint-disable-next-line n/global-require
       let utils = require('browser-sync/dist/utils.js');
       // hack the browser opening to go to the URL we want
       let old_open = utils.opnWrapper;
@@ -644,7 +668,7 @@ gb.task({
         }
         old_open(url, name, instance);
       };
-      // eslint-disable-next-line global-require
+      // eslint-disable-next-line n/global-require
       bs = require('browser-sync').create();
     }
     next();
@@ -714,8 +738,15 @@ gb.task({
 gb.task({
   name: 'test',
   ...testRunner({
-    input_server: 'server_js_glov_preresolve',
-    input_client: 'client_intermediate',
+    input_server: [
+      'server_json:**',
+      'test_json:**',
+      'server_js_glov_preresolve:**',
+    ],
+    input_client: [
+      'test_json:**',
+      'client_intermediate:**',
+    ],
   }),
 });
 
@@ -770,6 +801,31 @@ if (argv['prod-uglify'] === false) {
     ],
     type: gb.SINGLE,
     func: copy,
+  });
+} else if (config.prod_build_version_file) {
+  gb.task({
+    name: 'build.prod.uglify.doit',
+    input: [
+      ...bundle_tasks.map(addStarStarJS),
+    ],
+    ...uglify({ inline: false }, prod_uglify_opts),
+  });
+  gb.task({
+    name: 'build.prod.uglify',
+    input: 'build.prod.uglify.doit:**',
+    deps: [config.prod_build_version_file.split(':')[0]],
+    ...sourcemapRemap(function (job, filename, next) {
+      job.depAdd(config.prod_build_version_file, function (err, ver_file) {
+        if (err) {
+          return void next(err);
+        }
+
+        let version = JSON.parse(ver_file.contents.toString()).ver;
+        assert(typeof version === 'string');
+
+        next(null, `http://localhost:3500/sourcemap/auto/${version}/${filename}`);
+      });
+    }),
   });
 } else {
   gb.task({

@@ -20,7 +20,7 @@ module.exports = function (opts) {
     if (ts) {
       return next();
     }
-    // eslint-disable-next-line global-require
+    // eslint-disable-next-line n/global-require
     ts = require('typescript');
 
     files = {};
