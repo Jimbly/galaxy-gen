@@ -1,4 +1,4 @@
-/* eslint no-multi-spaces:off, key-spacing:off */
+/* eslint @stylistic/no-multi-spaces:off, @stylistic/key-spacing:off */
 import assert from 'assert';
 import * as engine from 'glov/client/engine';
 import { mashI53 } from 'glov/common/rand_alea';
